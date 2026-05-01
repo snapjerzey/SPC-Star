@@ -16,6 +16,7 @@ This repository contains the first backend-focused slice:
 - Material lot change logging for job/resource traceability.
 - QA summary CSV export.
 - Unit tests for the high-risk rules and calculations.
+- Dependency-free smoke tests that can run even when NuGet package restore is unavailable.
 
 ## Run tests
 
@@ -23,6 +24,12 @@ The local session used to create this foundation did not have the .NET SDK on PA
 
 ```powershell
 dotnet test SPCStar.sln
+```
+
+If NuGet is unavailable, run the dependency-free smoke tests:
+
+```powershell
+dotnet run --project tests/SPCStar.SmokeTests/SPCStar.SmokeTests.csproj
 ```
 
 ## What is intentionally not built yet

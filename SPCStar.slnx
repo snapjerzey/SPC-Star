@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/SPCStar.Core/SPCStar.Core.csproj" />
+  <Project Path="src/SPCStar.Api/SPCStar.Api.csproj" />
   <Project Path="tests/SPCStar.Core.Tests/SPCStar.Core.Tests.csproj" />
   <Project Path="tests/SPCStar.SmokeTests/SPCStar.SmokeTests.csproj" />
 </Solution>

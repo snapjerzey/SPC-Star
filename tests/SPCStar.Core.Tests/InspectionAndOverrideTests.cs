@@ -23,13 +23,25 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_RejectsUnknownInspectionTarget()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(5m) with { CharacteristicName = "Unknown" });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("No configured inspection characteristic", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Override_RejectsOperator()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
-        var service = new AlertOverrideService(repository, new PermissionService(repository));
+        var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "operator1", "Cause", "Fix", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "operator1", "operator1", "Cause", "Fix", null, DateTimeOffset.UtcNow));
 
         Assert.False(result.Succeeded);
     }
@@ -39,9 +51,9 @@ public sealed class InspectionAndOverrideTests
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
-        var service = new AlertOverrideService(repository, new PermissionService(repository));
+        var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "qa1", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "qa1", "qa1", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
 
         Assert.True(result.Succeeded);
         Assert.Equal(AlertStatus.Overridden, alert.Status);
@@ -53,18 +65,32 @@ public sealed class InspectionAndOverrideTests
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
-        var service = new AlertOverrideService(repository, new PermissionService(repository));
+        var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "god1", "Emergency", "Released", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "Emergency", "Released", null, DateTimeOffset.UtcNow));
 
         Assert.False(result.Succeeded);
         Assert.Contains(result.Errors, error => error.Contains("required for GOD", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Override_RejectsInvalidCredentials()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var service = OverrideService(repository);
+
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "qa1", "wrong", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Invalid override credentials", StringComparison.OrdinalIgnoreCase));
     }
 
     private static InMemorySpcRepository RepositoryWithSecurityAndLimits()
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        SeedData.SeedSampleInspectionPlans(repository);
         repository.ControlLimits.Add(new ControlLimitSet
         {
             PartNum = "P100",
@@ -106,5 +132,10 @@ public sealed class InspectionAndOverrideTests
         };
         repository.Alerts.Add(alert);
         return alert;
+    }
+
+    private static AlertOverrideService OverrideService(InMemorySpcRepository repository)
+    {
+        return new AlertOverrideService(repository, new PermissionService(repository), new CredentialService(repository));
     }
 }

@@ -1,0 +1,114 @@
+@baseUrl = http://localhost:5088
+
+### Health
+GET {{baseUrl}}/health
+
+### Import setup CSV
+POST {{baseUrl}}/setup/import-csv
+Content-Type: application/json
+
+{
+  "csv": "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA\nP200,Demo part,MOLD,Molding,10,Diameter,Variable,5.0,4.5,5.5,mm,1,Time,30,Minutes,WesternElectric,true"
+}
+
+### Enter inspection measurement
+POST {{baseUrl}}/inspections/measurements
+Content-Type: application/json
+
+{
+  "jobNum": "J100",
+  "partNum": "P100",
+  "processCode": "MOLD",
+  "operationSeq": 10,
+  "resourceId": "PRESS1",
+  "characteristicName": "Diameter",
+  "value": 5.1,
+  "timestamp": "2026-05-01T12:00:00Z",
+  "operatorUserId": "operator1"
+}
+
+### Record material lot change
+POST {{baseUrl}}/material-changes
+Content-Type: application/json
+
+{
+  "jobNum": "J100",
+  "partNum": "P100",
+  "materialPartNum": "RESIN-A",
+  "oldLotNum": "LOT1",
+  "newLotNum": "LOT2",
+  "quantityLoaded": 500,
+  "resourceId": "PRESS1",
+  "operatorUserId": "operator1",
+  "timestamp": "2026-05-01T12:10:00Z",
+  "reason": "Loaded next material lot"
+}
+
+### Evaluate inspection frequency
+POST {{baseUrl}}/inspection-frequency/evaluate
+Content-Type: application/json
+
+{
+  "jobNum": "J100",
+  "partNum": "P100",
+  "processCode": "MOLD",
+  "operationSeq": 10,
+  "characteristicName": "Diameter",
+  "resourceId": "PRESS1",
+  "now": "2026-05-01T12:45:00Z",
+  "currentQuantity": null,
+  "quantityAtLastInspection": null,
+  "events": []
+}
+
+### Chart data
+POST {{baseUrl}}/charts/data
+Content-Type: application/json
+
+{
+  "chartType": "IndividualsMovingRange",
+  "jobNum": "J100",
+  "partNum": "P100",
+  "resourceId": "PRESS1",
+  "characteristicName": "Diameter",
+  "from": null,
+  "to": null
+}
+
+### QA summary CSV
+POST {{baseUrl}}/qa/summary.csv
+Content-Type: application/json
+
+{
+  "partNums": ["P100"],
+  "jobNums": ["J100"],
+  "characteristicNames": ["Diameter"],
+  "from": null,
+  "to": null
+}
+
+### Override alert lock
+POST {{baseUrl}}/alerts/00000000-0000-0000-0000-000000000000/override
+Content-Type: application/json
+
+{
+  "overrideUserName": "qa1",
+  "overridePassword": "qa1",
+  "causeText": "Tool wear",
+  "solutionText": "Changed tool and restarted inspection",
+  "whyStandardProcessWasBypassed": null,
+  "unlockedAt": "2026-05-01T12:30:00Z"
+}
+
+### Export raw inspection data CSV
+POST {{baseUrl}}/exports/inspection-data.csv
+Content-Type: application/json
+
+{
+  "partNums": ["P100"],
+  "jobNums": ["J100"],
+  "resourceIds": ["PRESS1"],
+  "characteristicNames": ["Diameter"],
+  "from": null,
+  "to": null
+}

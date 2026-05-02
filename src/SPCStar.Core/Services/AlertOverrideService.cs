@@ -6,6 +6,7 @@ namespace SPCStar.Core.Services;
 public sealed record AlertOverrideRequest(
     Guid AlertId,
     string OverrideUserName,
+    string OverridePassword,
     string CauseText,
     string SolutionText,
     string? WhyStandardProcessWasBypassed,
@@ -13,7 +14,8 @@ public sealed record AlertOverrideRequest(
 
 public sealed class AlertOverrideService(
     InMemorySpcRepository repository,
-    PermissionService permissionService)
+    PermissionService permissionService,
+    CredentialService credentialService)
 {
     public ServiceResult<AlertOverride> Override(AlertOverrideRequest request)
     {
@@ -31,6 +33,11 @@ public sealed class AlertOverrideService(
         if (!permissionService.UserHasPermission(request.OverrideUserName, PermissionNames.CanOverrideDriftLock))
         {
             return ServiceResult<AlertOverride>.Fail("User is not authorized to override drift locks.");
+        }
+
+        if (!credentialService.ValidateCredential(request.OverrideUserName, request.OverridePassword))
+        {
+            return ServiceResult<AlertOverride>.Fail("Invalid override credentials.");
         }
 
         var overrideRole = permissionService.HighestOverrideRole(request.OverrideUserName);

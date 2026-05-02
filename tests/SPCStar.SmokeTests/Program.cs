@@ -6,15 +6,25 @@ var tests = new (string Name, Action Run)[]
 {
     ("setup import rejects invalid limits", SetupImportRejectsInvalidLimits),
     ("setup import upserts", SetupImportUpserts),
+    ("setup query returns seeded inspection plan", SetupQueryReturnsSeededInspectionPlan),
     ("western electric detects beyond limit", WesternElectricDetectsBeyondLimit),
+    ("measurement rejects unknown inspection target", MeasurementRejectsUnknownInspectionTarget),
     ("measurement creates lock alert", MeasurementCreatesLockAlert),
     ("override rejects operator", OverrideRejectsOperator),
     ("override allows QA", OverrideAllowsQa),
+    ("override rejects bad credentials", OverrideRejectsBadCredentials),
     ("GOD override requires bypass reason", GodOverrideRequiresBypassReason),
     ("QA export requires characteristic", QaExportRequiresCharacteristic),
     ("QA export calculates summary CSV", QaExportCalculatesSummaryCsv),
     ("material change validates required fields", MaterialChangeValidatesRequiredFields),
-    ("material change stores lot change", MaterialChangeStoresLotChange)
+    ("material change stores lot change", MaterialChangeStoresLotChange),
+    ("frequency service detects overdue time inspection", FrequencyDetectsOverdueTimeInspection),
+    ("frequency service detects event due", FrequencyDetectsEventDue),
+    ("chart service returns points and limits", ChartServiceReturnsPointsAndLimits),
+    ("chart service marks rule violations", ChartServiceMarksRuleViolations),
+    ("history export writes inspection csv", HistoryExportWritesInspectionCsv),
+    ("history export writes alert csv", HistoryExportWritesAlertCsv),
+    ("history export writes material csv", HistoryExportWritesMaterialCsv)
 };
 
 var failures = new List<string>();
@@ -67,6 +77,23 @@ static void SetupImportUpserts()
     AssertEqual(3, repository.InspectionPlans.Single().SampleSize);
 }
 
+static void SetupQueryReturnsSeededInspectionPlan()
+{
+    var repository = new InMemorySpcRepository();
+    SeedData.SeedAll(repository);
+    var service = new SetupQueryService(repository);
+
+    var parts = service.GetParts();
+    var plans = service.GetInspectionPlans("P100");
+
+    AssertTrue(parts.Any(part => part.PartNum == "P100"));
+    AssertTrue(plans.Any(plan =>
+        plan.PartNum == "P100" &&
+        plan.ProcessCode == "MOLD" &&
+        plan.OperationSeq == 10 &&
+        plan.CharacteristicName == "Diameter"));
+}
+
 static void WesternElectricDetectsBeyondLimit()
 {
     var points = new[]
@@ -89,12 +116,20 @@ static void MeasurementCreatesLockAlert()
     AssertFalse(locked.Succeeded);
 }
 
+static void MeasurementRejectsUnknownInspectionTarget()
+{
+    var repository = RepositoryWithSecurityAndLimits();
+    var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+    var result = service.EnterMeasurement(Entry(5m) with { CharacteristicName = "Unknown" });
+    AssertFalse(result.Succeeded);
+}
+
 static void OverrideRejectsOperator()
 {
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
-    var result = new AlertOverrideService(repository, new PermissionService(repository))
-        .Override(new AlertOverrideRequest(alert.Id, "operator1", "Cause", "Fix", null, DateTimeOffset.UtcNow));
+    var result = OverrideService(repository)
+        .Override(new AlertOverrideRequest(alert.Id, "operator1", "operator1", "Cause", "Fix", null, DateTimeOffset.UtcNow));
     AssertFalse(result.Succeeded);
 }
 
@@ -102,18 +137,27 @@ static void OverrideAllowsQa()
 {
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
-    var result = new AlertOverrideService(repository, new PermissionService(repository))
-        .Override(new AlertOverrideRequest(alert.Id, "qa1", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
+    var result = OverrideService(repository)
+        .Override(new AlertOverrideRequest(alert.Id, "qa1", "qa1", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
     AssertTrue(result.Succeeded);
     AssertEqual(AlertStatus.Overridden, alert.Status);
+}
+
+static void OverrideRejectsBadCredentials()
+{
+    var repository = RepositoryWithSecurityAndLimits();
+    var alert = AddAlert(repository);
+    var result = OverrideService(repository)
+        .Override(new AlertOverrideRequest(alert.Id, "qa1", "wrong", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
+    AssertFalse(result.Succeeded);
 }
 
 static void GodOverrideRequiresBypassReason()
 {
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
-    var result = new AlertOverrideService(repository, new PermissionService(repository))
-        .Override(new AlertOverrideRequest(alert.Id, "god1", "Emergency", "Released", null, DateTimeOffset.UtcNow));
+    var result = OverrideService(repository)
+        .Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "Emergency", "Released", null, DateTimeOffset.UtcNow));
     AssertFalse(result.Succeeded);
 }
 
@@ -166,10 +210,128 @@ static void MaterialChangeStoresLotChange()
     AssertEqual("LOT2", repository.MaterialChanges.Single().NewLotNum);
 }
 
+static void FrequencyDetectsOverdueTimeInspection()
+{
+    var repository = RepositoryWithPlan(FrequencyType.Time, 30, FrequencyUnit.Minutes);
+    repository.Measurements.Add(Measurement(5m, 0));
+    var result = new InspectionFrequencyService(repository).Evaluate(FrequencyRequest(now: Now(45)));
+    AssertEqual(InspectionDueStatus.Overdue, result.Status);
+}
+
+static void FrequencyDetectsEventDue()
+{
+    var repository = RepositoryWithPlan(FrequencyType.Event, 1, FrequencyUnit.MaterialChange);
+    repository.Measurements.Add(Measurement(5m, 0));
+    var result = new InspectionFrequencyService(repository).Evaluate(FrequencyRequest(
+        events:
+        [
+            new InspectionFrequencyEvent(FrequencyUnit.MaterialChange, Now(10))
+        ]));
+    AssertEqual(InspectionDueStatus.DueNow, result.Status);
+}
+
+static void ChartServiceReturnsPointsAndLimits()
+{
+    var repository = RepositoryWithMeasurements();
+    repository.ControlLimits.Add(new ControlLimitSet
+    {
+        PartNum = "P100",
+        ProcessCode = "MOLD",
+        OperationSeq = 10,
+        CharacteristicName = "Diameter",
+        CenterLine = 5m,
+        Lcl = 4m,
+        Ucl = 6m
+    });
+
+    var result = new ChartDataService(repository).Build(new ChartDataRequest(
+        ChartType.IndividualsMovingRange,
+        "J100",
+        "P100",
+        "PRESS1",
+        "Diameter",
+        null,
+        null));
+
+    AssertEqual(3, result.Points.Count);
+    AssertEqual(5m, result.Mean);
+    AssertEqual(4m, result.LowerControlLimit);
+    AssertEqual(6m, result.UpperControlLimit);
+    AssertEqual(4.5m, result.LowerSpecLimit);
+    AssertEqual(5.5m, result.UpperSpecLimit);
+}
+
+static void ChartServiceMarksRuleViolations()
+{
+    var repository = RepositoryWithMeasurements();
+    var alert = AddAlert(repository);
+    var violation = new RuleViolation
+    {
+        AlertId = alert.Id,
+        RuleTriggered = RuleTriggered.OnePointBeyondControlLimit,
+        DetectedAt = alert.LockedAt
+    };
+    violation.MeasurementIds.Add(repository.Measurements.Last().Id);
+    repository.RuleViolations.Add(violation);
+
+    var result = new ChartDataService(repository).Build(new ChartDataRequest(
+        ChartType.Run,
+        "J100",
+        "P100",
+        "PRESS1",
+        "Diameter",
+        null,
+        null));
+
+    AssertTrue(result.Points.Last().HasRuleViolation);
+}
+
+static void HistoryExportWritesInspectionCsv()
+{
+    var repository = RepositoryWithMeasurements();
+    var csv = new HistoryExportService(repository)
+        .ExportInspectionCsv(new InspectionHistoryExportRequest([], ["J100"], [], ["Diameter"], null, null));
+    AssertTrue(csv.Contains("JobNum,PartNum,ProcessCode,OperationSeq,ResourceID,CharacteristicName,MeasurementValue,Timestamp,OperatorUserID", StringComparison.Ordinal));
+    AssertTrue(csv.Contains("J100,P100,MOLD,10,PRESS1,Diameter", StringComparison.Ordinal));
+}
+
+static void HistoryExportWritesAlertCsv()
+{
+    var repository = RepositoryWithMeasurements();
+    var alert = AddAlert(repository);
+    alert.Status = AlertStatus.Overridden;
+    var csv = new HistoryExportService(repository)
+        .ExportAlertHistoryCsv(new AlertHistoryExportRequest([], [], [], [], null, null, IncludeOverridden: true));
+    AssertTrue(csv.Contains("RuleTriggered", StringComparison.Ordinal));
+    AssertTrue(csv.Contains("Overridden", StringComparison.Ordinal));
+}
+
+static void HistoryExportWritesMaterialCsv()
+{
+    var repository = new InMemorySpcRepository();
+    repository.MaterialChanges.Add(new MaterialChangeLog
+    {
+        JobNum = "J100",
+        PartNum = "P100",
+        MaterialPartNum = "RESIN-A",
+        OldLotNum = "LOT1",
+        NewLotNum = "LOT2",
+        QuantityLoaded = 500m,
+        ResourceId = "PRESS1",
+        OperatorUserId = "operator1",
+        Timestamp = Now(0),
+        Reason = "Loaded next lot"
+    });
+    var csv = new HistoryExportService(repository)
+        .ExportMaterialChangeHistoryCsv(new MaterialHistoryExportRequest(["P100"], ["J100"], ["PRESS1"], null, null));
+    AssertTrue(csv.Contains("RESIN-A,LOT1,LOT2", StringComparison.Ordinal));
+}
+
 static InMemorySpcRepository RepositoryWithSecurityAndLimits()
 {
     var repository = new InMemorySpcRepository();
     SeedData.SeedSecurity(repository);
+    SeedData.SeedSampleInspectionPlans(repository);
     repository.ControlLimits.Add(new ControlLimitSet
     {
         PartNum = "P100",
@@ -206,6 +368,40 @@ static InMemorySpcRepository RepositoryWithMeasurements()
     return repository;
 }
 
+static InMemorySpcRepository RepositoryWithPlan(FrequencyType type, int value, FrequencyUnit unit)
+{
+    var repository = RepositoryWithMeasurements();
+    var characteristic = repository.Characteristics.Single();
+    repository.InspectionPlans.Add(new InspectionPlan
+    {
+        CharacteristicId = characteristic.Id,
+        SampleSize = 1,
+        AlertRuleSet = "WesternElectric",
+        Frequency = new InspectionFrequency { Type = type, Value = value, Unit = unit }
+    });
+    repository.Measurements.Clear();
+    return repository;
+}
+
+static InspectionFrequencyCheckRequest FrequencyRequest(
+    DateTimeOffset? now = null,
+    int? currentQuantity = null,
+    int? quantityAtLastInspection = null,
+    IReadOnlyCollection<InspectionFrequencyEvent>? events = null)
+{
+    return new InspectionFrequencyCheckRequest(
+        "J100",
+        "P100",
+        "MOLD",
+        10,
+        "Diameter",
+        "PRESS1",
+        now ?? Now(0),
+        currentQuantity,
+        quantityAtLastInspection,
+        events ?? []);
+}
+
 static ProcessAlert AddAlert(InMemorySpcRepository repository)
 {
     var alert = new ProcessAlert
@@ -220,6 +416,11 @@ static ProcessAlert AddAlert(InMemorySpcRepository repository)
     };
     repository.Alerts.Add(alert);
     return alert;
+}
+
+static AlertOverrideService OverrideService(InMemorySpcRepository repository)
+{
+    return new AlertOverrideService(repository, new PermissionService(repository), new CredentialService(repository));
 }
 
 static InspectionMeasurementEntry Entry(decimal value, int minutes = 0)

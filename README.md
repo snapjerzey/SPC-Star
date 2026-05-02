@@ -12,11 +12,12 @@ This repository contains the first backend-focused slice:
 - Inspection measurement entry service.
 - Western Electric rule detection service.
 - Drift alert creation and lock enforcement.
-- Authorized override workflow with GOD-mode bypass reason validation.
+- Authorized override workflow with credential validation and GOD-mode bypass reason validation.
 - Material lot change logging for job/resource traceability.
 - QA summary CSV export.
 - Unit tests for the high-risk rules and calculations.
 - Dependency-free smoke tests that can run even when NuGet package restore is unavailable.
+- Minimal API shell exposing the first backend workflows.
 
 ## Run tests
 
@@ -31,6 +32,43 @@ If NuGet is unavailable, run the dependency-free smoke tests:
 ```powershell
 dotnet run --project tests/SPCStar.SmokeTests/SPCStar.SmokeTests.csproj
 ```
+
+## Run API locally
+
+```powershell
+dotnet run --project src/SPCStar.Api/SPCStar.Api.csproj
+```
+
+Example requests are in `docs/api-examples.http`.
+
+Initial endpoints include:
+
+- `GET /health`
+- `POST /setup/import-csv`
+- `GET /setup/parts`
+- `GET /setup/inspection-plans`
+- `POST /inspections/measurements`
+- `POST /material-changes`
+- `POST /alerts/{alertId}/override`
+- `POST /inspection-frequency/evaluate`
+- `POST /charts/data`
+- `POST /qa/summary`
+- `POST /qa/summary.csv`
+- `POST /exports/inspection-data.csv`
+- `GET /exports/jobs/{jobNum}/inspection-history.csv`
+- `POST /exports/drift-alerts.csv`
+- `POST /exports/material-changes.csv`
+- `GET /alerts/active`
+
+The API seeds demo security users and one sample inspection plan:
+
+- Part `P100`
+- Process `MOLD`
+- Operation `10`
+- Characteristic `Diameter`
+- Spec limits `4.5` to `5.5` mm
+- Control limits `4.0` to `6.0`
+- Time frequency every `30` minutes
 
 ## What is intentionally not built yet
 

@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SPCStar.Core.Tests", "tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SPCStar.SmokeTests", "tests\SPCStar.SmokeTests\SPCStar.SmokeTests.csproj", "{79351E26-A2ED-4A9C-BA05-CA3265456B30}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SPCStar.Api", "src\SPCStar.Api\SPCStar.Api.csproj", "{43C3C8EC-9380-4922-A714-D938643AD685}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,5 +28,9 @@ Global
 		{79351E26-A2ED-4A9C-BA05-CA3265456B30}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{79351E26-A2ED-4A9C-BA05-CA3265456B30}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{79351E26-A2ED-4A9C-BA05-CA3265456B30}.Release|Any CPU.Build.0 = Release|Any CPU
+		{43C3C8EC-9380-4922-A714-D938643AD685}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{43C3C8EC-9380-4922-A714-D938643AD685}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{43C3C8EC-9380-4922-A714-D938643AD685}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{43C3C8EC-9380-4922-A714-D938643AD685}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

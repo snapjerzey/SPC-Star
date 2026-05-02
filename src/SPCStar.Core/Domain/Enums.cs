@@ -43,3 +43,19 @@ public enum PassFailStatus
     Pass,
     Fail
 }
+
+public enum InspectionDueStatus
+{
+    NotConfigured,
+    NotDue,
+    DueNow,
+    Overdue,
+    Completed
+}
+
+public enum ChartType
+{
+    IndividualsMovingRange,
+    XbarR,
+    Run
+}

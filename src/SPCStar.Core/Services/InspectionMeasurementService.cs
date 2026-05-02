@@ -26,6 +26,11 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Fail(errors);
         }
 
+        if (!InspectionTargetExists(entry))
+        {
+            return ServiceResult<InspectionMeasurement>.Fail("No configured inspection characteristic was found for the submitted part/process/operation/characteristic.");
+        }
+
         if (HasActiveLock(entry))
         {
             return ServiceResult<InspectionMeasurement>.Fail("Inspection entry is locked for this job/resource/characteristic due to an active drift alert.");
@@ -57,6 +62,29 @@ public sealed class InspectionMeasurementService(
             alert.PartNum.Equals(entry.PartNum, StringComparison.OrdinalIgnoreCase) &&
             alert.ResourceId.Equals(entry.ResourceId, StringComparison.OrdinalIgnoreCase) &&
             alert.CharacteristicName.Equals(entry.CharacteristicName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool InspectionTargetExists(InspectionMeasurementEntry entry)
+    {
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(entry.PartNum, StringComparison.OrdinalIgnoreCase));
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(entry.ProcessCode, StringComparison.OrdinalIgnoreCase));
+        if (part is null || process is null)
+        {
+            return false;
+        }
+
+        var operation = repository.Operations.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.ProcessId == process.Id &&
+            item.OperationSeq == entry.OperationSeq);
+        if (operation is null)
+        {
+            return false;
+        }
+
+        return repository.Characteristics.Any(item =>
+            item.OperationId == operation.Id &&
+            item.Name.Equals(entry.CharacteristicName, StringComparison.OrdinalIgnoreCase));
     }
 
     private void CreateAlertsForViolations(InspectionMeasurement measurement)

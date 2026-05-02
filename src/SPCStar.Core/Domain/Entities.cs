@@ -4,6 +4,8 @@ public sealed class User
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string UserName { get; set; }
+    public required string PasswordHash { get; set; }
+    public required string PasswordSalt { get; set; }
     public List<Role> Roles { get; } = [];
 }
 

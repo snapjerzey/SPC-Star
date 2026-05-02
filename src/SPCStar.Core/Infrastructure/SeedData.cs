@@ -4,13 +4,13 @@ namespace SPCStar.Core.Infrastructure;
 
 public static class SeedData
 {
-    public static void SeedAll(InMemorySpcRepository repository)
+    public static void SeedAll(ISpcRepository repository)
     {
         SeedSecurity(repository);
         SeedSampleInspectionPlans(repository);
     }
 
-    public static void SeedSecurity(InMemorySpcRepository repository)
+    public static void SeedSecurity(ISpcRepository repository)
     {
         if (repository.Roles.Count > 0)
         {
@@ -42,7 +42,7 @@ public static class SeedData
         repository.Users.Add(User("god1", "god1", god));
     }
 
-    public static void SeedSampleInspectionPlans(InMemorySpcRepository repository)
+    public static void SeedSampleInspectionPlans(ISpcRepository repository)
     {
         if (repository.Parts.Any(part => part.PartNum.Equals("P100", StringComparison.OrdinalIgnoreCase)))
         {

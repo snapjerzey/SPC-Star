@@ -3,7 +3,7 @@ using SPCStar.Core.Infrastructure;
 
 namespace SPCStar.Core.Services;
 
-public sealed class PermissionService(InMemorySpcRepository repository)
+public sealed class PermissionService(ISpcRepository repository)
 {
     public bool UserHasPermission(string userName, string permission)
     {

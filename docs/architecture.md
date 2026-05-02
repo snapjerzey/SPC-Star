@@ -12,7 +12,7 @@ The xUnit project remains in place for normal development and CI.
 
 ## Current storage
 
-The app intentionally uses `InMemorySpcRepository` for the first foundation slice. This keeps business rules isolated and testable before adding EF Core/SQLite persistence.
+The app intentionally uses `ISpcRepository` with an `InMemorySpcRepository` implementation for the first foundation slice. This keeps business rules isolated and testable before adding EF Core/SQLite persistence.
 
 SQL schema scripts live in `database/` and mirror the initial relational model.
 

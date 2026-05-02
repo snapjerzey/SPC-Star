@@ -27,7 +27,7 @@ public sealed record MaterialHistoryExportRequest(
     DateTimeOffset? From,
     DateTimeOffset? To);
 
-public sealed class HistoryExportService(InMemorySpcRepository repository)
+public sealed class HistoryExportService(ISpcRepository repository)
 {
     private static readonly string[] InspectionHeaders =
     [

@@ -24,7 +24,7 @@ public sealed record InspectionFrequencyStatus(
     int? NextInspectionDueQuantity,
     IReadOnlyList<string> Reasons);
 
-public sealed class InspectionFrequencyService(InMemorySpcRepository repository)
+public sealed class InspectionFrequencyService(ISpcRepository repository)
 {
     public InspectionFrequencyStatus Evaluate(InspectionFrequencyCheckRequest request)
     {

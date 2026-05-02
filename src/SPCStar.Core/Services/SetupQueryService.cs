@@ -24,7 +24,7 @@ public sealed record InspectionPlanSetupDto(
     string AlertRuleSet,
     bool IsRequiredForCoa);
 
-public sealed class SetupQueryService(InMemorySpcRepository repository)
+public sealed class SetupQueryService(ISpcRepository repository)
 {
     public IReadOnlyList<PartSetupDto> GetParts()
     {

@@ -29,7 +29,7 @@ public sealed record ChartDataSet(
     decimal? LowerSpecLimit,
     decimal? UpperSpecLimit);
 
-public sealed class ChartDataService(InMemorySpcRepository repository)
+public sealed class ChartDataService(ISpcRepository repository)
 {
     public ChartDataSet Build(ChartDataRequest request)
     {

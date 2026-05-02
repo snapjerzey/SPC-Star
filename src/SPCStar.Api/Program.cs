@@ -4,7 +4,7 @@ using SPCStar.Core.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<InMemorySpcRepository>();
+builder.Services.AddSingleton<ISpcRepository, InMemorySpcRepository>();
 builder.Services.AddSingleton<WesternElectricRuleService>();
 builder.Services.AddSingleton<PermissionService>();
 builder.Services.AddSingleton<CredentialService>();
@@ -20,7 +20,7 @@ builder.Services.AddSingleton<SetupQueryService>();
 
 var app = builder.Build();
 
-SeedData.SeedAll(app.Services.GetRequiredService<InMemorySpcRepository>());
+SeedData.SeedAll(app.Services.GetRequiredService<ISpcRepository>());
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", app = "SPC Star" }));
 
@@ -123,7 +123,7 @@ app.MapPost("/exports/material-changes.csv", (MaterialHistoryExportRequest reque
     return Results.Text(service.ExportMaterialChangeHistoryCsv(request), "text/csv");
 });
 
-app.MapGet("/alerts/active", (InMemorySpcRepository repository) =>
+app.MapGet("/alerts/active", (ISpcRepository repository) =>
 {
     return Results.Ok(repository.Alerts.Where(alert => alert.Status == AlertStatus.Active));
 });

@@ -23,7 +23,7 @@ public sealed record QaSummaryRow(
     decimal? Usl,
     PassFailStatus PassFailStatus);
 
-public sealed class QaSummaryExportService(InMemorySpcRepository repository)
+public sealed class QaSummaryExportService(ISpcRepository repository)
 {
     private static readonly string[] Headers =
     [

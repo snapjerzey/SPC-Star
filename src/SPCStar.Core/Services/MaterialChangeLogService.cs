@@ -15,7 +15,7 @@ public sealed record MaterialChangeLogEntry(
     DateTimeOffset Timestamp,
     string Reason);
 
-public sealed class MaterialChangeLogService(InMemorySpcRepository repository)
+public sealed class MaterialChangeLogService(ISpcRepository repository)
 {
     public ServiceResult<MaterialChangeLog> Record(MaterialChangeLogEntry entry)
     {

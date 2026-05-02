@@ -3,7 +3,7 @@ using SPCStar.Core.Infrastructure;
 
 namespace SPCStar.Core.Services;
 
-public sealed class SetupImportService(InMemorySpcRepository repository)
+public sealed class SetupImportService(ISpcRepository repository)
 {
     private static readonly string[] RequiredFields =
     [

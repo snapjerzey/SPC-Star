@@ -13,7 +13,7 @@ public sealed record AlertOverrideRequest(
     DateTimeOffset UnlockedAt);
 
 public sealed class AlertOverrideService(
-    InMemorySpcRepository repository,
+    ISpcRepository repository,
     PermissionService permissionService,
     CredentialService credentialService)
 {

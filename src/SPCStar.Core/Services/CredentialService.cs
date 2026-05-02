@@ -2,7 +2,7 @@ using SPCStar.Core.Infrastructure;
 
 namespace SPCStar.Core.Services;
 
-public sealed class CredentialService(InMemorySpcRepository repository)
+public sealed class CredentialService(ISpcRepository repository)
 {
     public bool ValidateCredential(string userName, string password)
     {

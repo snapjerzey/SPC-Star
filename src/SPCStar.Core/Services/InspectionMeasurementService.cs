@@ -15,7 +15,7 @@ public sealed record InspectionMeasurementEntry(
     string OperatorUserId);
 
 public sealed class InspectionMeasurementService(
-    InMemorySpcRepository repository,
+    ISpcRepository repository,
     WesternElectricRuleService westernElectricRuleService)
 {
     public ServiceResult<InspectionMeasurement> EnterMeasurement(InspectionMeasurementEntry entry)

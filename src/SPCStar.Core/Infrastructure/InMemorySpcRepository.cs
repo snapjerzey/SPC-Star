@@ -12,6 +12,7 @@ public sealed class InMemorySpcRepository : ISpcRepository
     public List<Characteristic> Characteristics { get; } = [];
     public List<SpecLimit> SpecLimits { get; } = [];
     public List<InspectionPlan> InspectionPlans { get; } = [];
+    public List<Device> Devices { get; } = [];
     public List<InspectionMeasurement> Measurements { get; } = [];
     public List<ControlLimitSet> ControlLimits { get; } = [];
     public List<ProcessAlert> Alerts { get; } = [];

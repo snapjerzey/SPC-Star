@@ -27,7 +27,8 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 - `ChartDataService`: chart-ready measurement points with moving range, limits, specs, and violations.
 - `QaSummaryExportService`: COA-style summary calculations and CSV export.
 - `HistoryExportService`: raw inspection, job history, drift alert, and material change CSV exports.
+- `OfflineSyncService`: first batch upload contract for retry-safe tablet/offline writes.
 
 ## Next architecture step
 
-Move persistence behind an interface and add an EF Core SQLite implementation. Keep the service APIs stable so tests continue to protect the manufacturing rules while storage changes underneath.
+Add an EF Core SQLite implementation behind `ISpcRepository`. Keep the service APIs stable so tests continue to protect the manufacturing rules while storage changes underneath.

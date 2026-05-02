@@ -13,7 +13,10 @@ public sealed record MaterialChangeLogEntry(
     string ResourceId,
     string OperatorUserId,
     DateTimeOffset Timestamp,
-    string Reason);
+    string Reason,
+    string? DeviceId = null,
+    string? ClientRecordId = null,
+    DateTimeOffset? SubmittedAt = null);
 
 public sealed class MaterialChangeLogService(ISpcRepository repository)
 {
@@ -25,8 +28,16 @@ public sealed class MaterialChangeLogService(ISpcRepository repository)
             return ServiceResult<MaterialChangeLog>.Fail(errors);
         }
 
+        var duplicate = FindDuplicate(entry.DeviceId, entry.ClientRecordId);
+        if (duplicate is not null)
+        {
+            return ServiceResult<MaterialChangeLog>.Ok(duplicate);
+        }
+
         var log = new MaterialChangeLog
         {
+            ClientRecordId = CleanOptional(entry.ClientRecordId),
+            DeviceId = CleanOptional(entry.DeviceId),
             JobNum = entry.JobNum.Trim(),
             PartNum = entry.PartNum.Trim(),
             MaterialPartNum = entry.MaterialPartNum.Trim(),
@@ -36,11 +47,25 @@ public sealed class MaterialChangeLogService(ISpcRepository repository)
             ResourceId = entry.ResourceId.Trim(),
             OperatorUserId = entry.OperatorUserId.Trim(),
             Timestamp = entry.Timestamp,
-            Reason = entry.Reason.Trim()
+            Reason = entry.Reason.Trim(),
+            SubmittedAt = entry.SubmittedAt ?? entry.Timestamp,
+            SyncedAt = DateTimeOffset.UtcNow
         };
 
         repository.MaterialChanges.Add(log);
         return ServiceResult<MaterialChangeLog>.Ok(log);
+    }
+
+    private MaterialChangeLog? FindDuplicate(string? deviceId, string? clientRecordId)
+    {
+        if (string.IsNullOrWhiteSpace(deviceId) || string.IsNullOrWhiteSpace(clientRecordId))
+        {
+            return null;
+        }
+
+        return repository.MaterialChanges.FirstOrDefault(item =>
+            item.DeviceId?.Equals(deviceId.Trim(), StringComparison.OrdinalIgnoreCase) == true &&
+            item.ClientRecordId?.Equals(clientRecordId.Trim(), StringComparison.OrdinalIgnoreCase) == true);
     }
 
     private static List<string> Validate(MaterialChangeLogEntry entry)
@@ -68,5 +93,10 @@ public sealed class MaterialChangeLogService(ISpcRepository repository)
         {
             errors.Add($"{field} is required.");
         }
+    }
+
+    private static string? CleanOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

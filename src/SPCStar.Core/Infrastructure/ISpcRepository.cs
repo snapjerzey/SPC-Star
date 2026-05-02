@@ -12,6 +12,7 @@ public interface ISpcRepository
     List<Characteristic> Characteristics { get; }
     List<SpecLimit> SpecLimits { get; }
     List<InspectionPlan> InspectionPlans { get; }
+    List<Device> Devices { get; }
     List<InspectionMeasurement> Measurements { get; }
     List<ControlLimitSet> ControlLimits { get; }
     List<ProcessAlert> Alerts { get; }

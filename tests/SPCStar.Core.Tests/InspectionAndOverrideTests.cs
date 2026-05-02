@@ -35,6 +35,29 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_ReturnsExistingMeasurement_WhenOfflineRecordIsRetried()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        var entry = Entry(10m) with
+        {
+            DeviceId = "tablet-press1",
+            ClientRecordId = "measurement-001",
+            SubmittedAt = DateTimeOffset.Parse("2026-01-01T00:05:00Z")
+        };
+
+        var first = service.EnterMeasurement(entry);
+        var retry = service.EnterMeasurement(entry);
+
+        Assert.True(first.Succeeded);
+        Assert.True(retry.Succeeded);
+        Assert.Single(repository.Measurements);
+        Assert.Equal(first.Value!.Id, retry.Value!.Id);
+        Assert.Equal("tablet-press1", retry.Value.DeviceId);
+        Assert.Equal("measurement-001", retry.Value.ClientRecordId);
+    }
+
+    [Fact]
     public void Override_RejectsOperator()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -84,6 +107,35 @@ public sealed class InspectionAndOverrideTests
 
         Assert.False(result.Succeeded);
         Assert.Contains(result.Errors, error => error.Contains("Invalid override credentials", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Override_ReturnsExistingAudit_WhenOfflineRecordIsRetried()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var service = OverrideService(repository);
+        var request = new AlertOverrideRequest(
+            alert.Id,
+            "qa1",
+            "qa1",
+            "Tool wear",
+            "Changed tool",
+            null,
+            DateTimeOffset.Parse("2026-01-01T00:10:00Z"),
+            "tablet-qa1",
+            "override-001",
+            DateTimeOffset.Parse("2026-01-01T00:11:00Z"));
+
+        var first = service.Override(request);
+        var retry = service.Override(request);
+
+        Assert.True(first.Succeeded);
+        Assert.True(retry.Succeeded);
+        Assert.Single(repository.AlertOverrides);
+        Assert.Equal(first.Value!.Id, retry.Value!.Id);
+        Assert.Equal("tablet-qa1", retry.Value.DeviceId);
+        Assert.Equal("override-001", retry.Value.ClientRecordId);
     }
 
     private static InMemorySpcRepository RepositoryWithSecurityAndLimits()

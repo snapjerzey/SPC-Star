@@ -17,6 +17,7 @@ builder.Services.AddSingleton<InspectionFrequencyService>();
 builder.Services.AddSingleton<ChartDataService>();
 builder.Services.AddSingleton<HistoryExportService>();
 builder.Services.AddSingleton<SetupQueryService>();
+builder.Services.AddSingleton<OfflineSyncService>();
 
 var app = builder.Build();
 
@@ -121,6 +122,14 @@ app.MapPost("/exports/drift-alerts.csv", (AlertHistoryExportRequest request, His
 app.MapPost("/exports/material-changes.csv", (MaterialHistoryExportRequest request, HistoryExportService service) =>
 {
     return Results.Text(service.ExportMaterialChangeHistoryCsv(request), "text/csv");
+});
+
+app.MapPost("/sync/offline-changes", (OfflineSyncRequest request, OfflineSyncService service) =>
+{
+    var result = service.Sync(request);
+    return result.HasErrors
+        ? Results.BadRequest(result)
+        : Results.Ok(result);
 });
 
 app.MapGet("/alerts/active", (ISpcRepository repository) =>

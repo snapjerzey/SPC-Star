@@ -24,7 +24,10 @@ Content-Type: application/json
   "characteristicName": "Diameter",
   "value": 5.1,
   "timestamp": "2026-05-01T12:00:00Z",
-  "operatorUserId": "operator1"
+  "operatorUserId": "operator1",
+  "deviceId": "tablet-press1",
+  "clientRecordId": "measurement-001",
+  "submittedAt": "2026-05-01T12:01:00Z"
 }
 
 ### Record material lot change
@@ -41,7 +44,35 @@ Content-Type: application/json
   "resourceId": "PRESS1",
   "operatorUserId": "operator1",
   "timestamp": "2026-05-01T12:10:00Z",
-  "reason": "Loaded next material lot"
+  "reason": "Loaded next material lot",
+  "deviceId": "tablet-press1",
+  "clientRecordId": "material-001",
+  "submittedAt": "2026-05-01T12:11:00Z"
+}
+
+### Sync queued offline tablet changes
+POST {{baseUrl}}/sync/offline-changes
+Content-Type: application/json
+
+{
+  "measurements": [
+    {
+      "jobNum": "J100",
+      "partNum": "P100",
+      "processCode": "MOLD",
+      "operationSeq": 10,
+      "resourceId": "PRESS1",
+      "characteristicName": "Diameter",
+      "value": 5.1,
+      "timestamp": "2026-05-01T12:00:00Z",
+      "operatorUserId": "operator1",
+      "deviceId": "tablet-press1",
+      "clientRecordId": "measurement-001",
+      "submittedAt": "2026-05-01T12:01:00Z"
+    }
+  ],
+  "materialChanges": [],
+  "alertOverrides": []
 }
 
 ### Evaluate inspection frequency
@@ -97,7 +128,10 @@ Content-Type: application/json
   "causeText": "Tool wear",
   "solutionText": "Changed tool and restarted inspection",
   "whyStandardProcessWasBypassed": null,
-  "unlockedAt": "2026-05-01T12:30:00Z"
+  "unlockedAt": "2026-05-01T12:30:00Z",
+  "deviceId": "tablet-qa1",
+  "clientRecordId": "override-001",
+  "submittedAt": "2026-05-01T12:31:00Z"
 }
 
 ### Export raw inspection data CSV

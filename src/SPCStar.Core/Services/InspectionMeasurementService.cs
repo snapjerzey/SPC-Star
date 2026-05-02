@@ -12,7 +12,10 @@ public sealed record InspectionMeasurementEntry(
     string CharacteristicName,
     decimal Value,
     DateTimeOffset Timestamp,
-    string OperatorUserId);
+    string OperatorUserId,
+    string? DeviceId = null,
+    string? ClientRecordId = null,
+    DateTimeOffset? SubmittedAt = null);
 
 public sealed class InspectionMeasurementService(
     ISpcRepository repository,
@@ -24,6 +27,12 @@ public sealed class InspectionMeasurementService(
         if (errors.Count > 0)
         {
             return ServiceResult<InspectionMeasurement>.Fail(errors);
+        }
+
+        var duplicate = FindDuplicate(entry.DeviceId, entry.ClientRecordId);
+        if (duplicate is not null)
+        {
+            return ServiceResult<InspectionMeasurement>.Ok(duplicate);
         }
 
         if (!InspectionTargetExists(entry))
@@ -38,6 +47,8 @@ public sealed class InspectionMeasurementService(
 
         var measurement = new InspectionMeasurement
         {
+            ClientRecordId = CleanOptional(entry.ClientRecordId),
+            DeviceId = CleanOptional(entry.DeviceId),
             JobNum = entry.JobNum.Trim(),
             PartNum = entry.PartNum.Trim(),
             ProcessCode = entry.ProcessCode.Trim(),
@@ -46,12 +57,26 @@ public sealed class InspectionMeasurementService(
             CharacteristicName = entry.CharacteristicName.Trim(),
             Value = entry.Value,
             Timestamp = entry.Timestamp,
-            OperatorUserId = entry.OperatorUserId.Trim()
+            OperatorUserId = entry.OperatorUserId.Trim(),
+            SubmittedAt = entry.SubmittedAt ?? entry.Timestamp,
+            SyncedAt = DateTimeOffset.UtcNow
         };
 
         repository.Measurements.Add(measurement);
         CreateAlertsForViolations(measurement);
         return ServiceResult<InspectionMeasurement>.Ok(measurement);
+    }
+
+    private InspectionMeasurement? FindDuplicate(string? deviceId, string? clientRecordId)
+    {
+        if (string.IsNullOrWhiteSpace(deviceId) || string.IsNullOrWhiteSpace(clientRecordId))
+        {
+            return null;
+        }
+
+        return repository.Measurements.FirstOrDefault(item =>
+            item.DeviceId?.Equals(deviceId.Trim(), StringComparison.OrdinalIgnoreCase) == true &&
+            item.ClientRecordId?.Equals(clientRecordId.Trim(), StringComparison.OrdinalIgnoreCase) == true);
     }
 
     private bool HasActiveLock(InspectionMeasurementEntry entry)
@@ -169,5 +194,10 @@ public sealed class InspectionMeasurementService(
         {
             errors.Add($"{field} is required.");
         }
+    }
+
+    private static string? CleanOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

@@ -64,6 +64,7 @@ Initial endpoints include:
 - `GET /exports/jobs/{jobNum}/inspection-history.csv`
 - `POST /exports/drift-alerts.csv`
 - `POST /exports/material-changes.csv`
+- `POST /sync/offline-changes`
 - `GET /alerts/active`
 
 The API seeds demo security users and one sample inspection plan:

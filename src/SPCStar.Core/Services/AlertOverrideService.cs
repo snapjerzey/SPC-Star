@@ -10,7 +10,10 @@ public sealed record AlertOverrideRequest(
     string CauseText,
     string SolutionText,
     string? WhyStandardProcessWasBypassed,
-    DateTimeOffset UnlockedAt);
+    DateTimeOffset UnlockedAt,
+    string? DeviceId = null,
+    string? ClientRecordId = null,
+    DateTimeOffset? SubmittedAt = null);
 
 public sealed class AlertOverrideService(
     ISpcRepository repository,
@@ -19,6 +22,12 @@ public sealed class AlertOverrideService(
 {
     public ServiceResult<AlertOverride> Override(AlertOverrideRequest request)
     {
+        var duplicate = FindDuplicate(request.DeviceId, request.ClientRecordId);
+        if (duplicate is not null)
+        {
+            return ServiceResult<AlertOverride>.Ok(duplicate);
+        }
+
         var alert = repository.Alerts.FirstOrDefault(item => item.Id == request.AlertId);
         if (alert is null)
         {
@@ -58,6 +67,8 @@ public sealed class AlertOverrideService(
 
         var audit = new AlertOverride
         {
+            ClientRecordId = CleanOptional(request.ClientRecordId),
+            DeviceId = CleanOptional(request.DeviceId),
             AlertId = alert.Id,
             OperatorUserId = alert.OperatorUserId,
             OverrideUserId = request.OverrideUserName,
@@ -71,11 +82,30 @@ public sealed class AlertOverrideService(
             SolutionText = request.SolutionText.Trim(),
             WhyStandardProcessWasBypassed = request.WhyStandardProcessWasBypassed?.Trim(),
             LockedAt = alert.LockedAt,
-            UnlockedAt = request.UnlockedAt
+            UnlockedAt = request.UnlockedAt,
+            SubmittedAt = request.SubmittedAt ?? request.UnlockedAt,
+            SyncedAt = DateTimeOffset.UtcNow
         };
 
         repository.AlertOverrides.Add(audit);
         alert.Status = AlertStatus.Overridden;
         return ServiceResult<AlertOverride>.Ok(audit);
+    }
+
+    private AlertOverride? FindDuplicate(string? deviceId, string? clientRecordId)
+    {
+        if (string.IsNullOrWhiteSpace(deviceId) || string.IsNullOrWhiteSpace(clientRecordId))
+        {
+            return null;
+        }
+
+        return repository.AlertOverrides.FirstOrDefault(item =>
+            item.DeviceId?.Equals(deviceId.Trim(), StringComparison.OrdinalIgnoreCase) == true &&
+            item.ClientRecordId?.Equals(clientRecordId.Trim(), StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    private static string? CleanOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

@@ -86,9 +86,19 @@ public sealed class ResourceMachine
     public string? Description { get; set; }
 }
 
+public sealed class Device
+{
+    public required string DeviceId { get; set; }
+    public required string DisplayName { get; set; }
+    public DateTimeOffset RegisteredAt { get; set; }
+    public DateTimeOffset? LastSeenAt { get; set; }
+}
+
 public sealed class InspectionMeasurement
 {
     public Guid Id { get; init; } = Guid.NewGuid();
+    public string? ClientRecordId { get; set; }
+    public string? DeviceId { get; set; }
     public required string JobNum { get; set; }
     public required string PartNum { get; set; }
     public required string ProcessCode { get; set; }
@@ -98,11 +108,15 @@ public sealed class InspectionMeasurement
     public decimal Value { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public required string OperatorUserId { get; set; }
+    public DateTimeOffset SubmittedAt { get; set; }
+    public DateTimeOffset? SyncedAt { get; set; }
 }
 
 public sealed class MaterialChangeLog
 {
     public Guid Id { get; init; } = Guid.NewGuid();
+    public string? ClientRecordId { get; set; }
+    public string? DeviceId { get; set; }
     public required string JobNum { get; set; }
     public required string PartNum { get; set; }
     public required string MaterialPartNum { get; set; }
@@ -113,6 +127,8 @@ public sealed class MaterialChangeLog
     public required string OperatorUserId { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public required string Reason { get; set; }
+    public DateTimeOffset SubmittedAt { get; set; }
+    public DateTimeOffset? SyncedAt { get; set; }
 }
 
 public sealed class ControlLimitSet
@@ -151,6 +167,8 @@ public sealed class ProcessAlert
 public sealed class AlertOverride
 {
     public Guid Id { get; init; } = Guid.NewGuid();
+    public string? ClientRecordId { get; set; }
+    public string? DeviceId { get; set; }
     public Guid AlertId { get; set; }
     public required string OperatorUserId { get; set; }
     public required string OverrideUserId { get; set; }
@@ -165,4 +183,6 @@ public sealed class AlertOverride
     public string? WhyStandardProcessWasBypassed { get; set; }
     public DateTimeOffset LockedAt { get; set; }
     public DateTimeOffset UnlockedAt { get; set; }
+    public DateTimeOffset SubmittedAt { get; set; }
+    public DateTimeOffset? SyncedAt { get; set; }
 }

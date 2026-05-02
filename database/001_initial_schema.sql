@@ -93,8 +93,17 @@ CREATE TABLE Resources (
     Description TEXT NULL
 );
 
+CREATE TABLE Devices (
+    DeviceId TEXT PRIMARY KEY,
+    DisplayName TEXT NOT NULL,
+    RegisteredAt TEXT NOT NULL,
+    LastSeenAt TEXT NULL
+);
+
 CREATE TABLE InspectionMeasurements (
     Id TEXT PRIMARY KEY,
+    ClientRecordId TEXT NULL,
+    DeviceId TEXT NULL,
     JobNum TEXT NOT NULL,
     PartNum TEXT NOT NULL,
     ProcessCode TEXT NOT NULL,
@@ -103,14 +112,23 @@ CREATE TABLE InspectionMeasurements (
     CharacteristicName TEXT NOT NULL,
     Value NUMERIC NOT NULL,
     Timestamp TEXT NOT NULL,
-    OperatorUserId TEXT NOT NULL
+    OperatorUserId TEXT NOT NULL,
+    SubmittedAt TEXT NOT NULL,
+    SyncedAt TEXT NULL,
+    FOREIGN KEY (DeviceId) REFERENCES Devices(DeviceId)
 );
 
 CREATE INDEX IX_InspectionMeasurements_Search
 ON InspectionMeasurements (JobNum, PartNum, ResourceId, CharacteristicName, Timestamp);
 
+CREATE UNIQUE INDEX UX_InspectionMeasurements_DeviceClientRecord
+ON InspectionMeasurements (DeviceId, ClientRecordId)
+WHERE DeviceId IS NOT NULL AND ClientRecordId IS NOT NULL;
+
 CREATE TABLE MaterialChangeLogs (
     Id TEXT PRIMARY KEY,
+    ClientRecordId TEXT NULL,
+    DeviceId TEXT NULL,
     JobNum TEXT NOT NULL,
     PartNum TEXT NOT NULL,
     MaterialPartNum TEXT NOT NULL,
@@ -120,8 +138,15 @@ CREATE TABLE MaterialChangeLogs (
     ResourceId TEXT NOT NULL,
     OperatorUserId TEXT NOT NULL,
     Timestamp TEXT NOT NULL,
-    Reason TEXT NOT NULL
+    Reason TEXT NOT NULL,
+    SubmittedAt TEXT NOT NULL,
+    SyncedAt TEXT NULL,
+    FOREIGN KEY (DeviceId) REFERENCES Devices(DeviceId)
 );
+
+CREATE UNIQUE INDEX UX_MaterialChangeLogs_DeviceClientRecord
+ON MaterialChangeLogs (DeviceId, ClientRecordId)
+WHERE DeviceId IS NOT NULL AND ClientRecordId IS NOT NULL;
 
 CREATE TABLE ControlLimitSets (
     PartNum TEXT NOT NULL,
@@ -158,6 +183,8 @@ CREATE TABLE RuleViolations (
 
 CREATE TABLE AlertOverrides (
     Id TEXT PRIMARY KEY,
+    ClientRecordId TEXT NULL,
+    DeviceId TEXT NULL,
     AlertId TEXT NOT NULL,
     OperatorUserId TEXT NOT NULL,
     OverrideUserId TEXT NOT NULL,
@@ -172,5 +199,12 @@ CREATE TABLE AlertOverrides (
     WhyStandardProcessWasBypassed TEXT NULL,
     LockedAt TEXT NOT NULL,
     UnlockedAt TEXT NOT NULL,
+    SubmittedAt TEXT NOT NULL,
+    SyncedAt TEXT NULL,
+    FOREIGN KEY (DeviceId) REFERENCES Devices(DeviceId),
     FOREIGN KEY (AlertId) REFERENCES ProcessAlerts(Id)
 );
+
+CREATE UNIQUE INDEX UX_AlertOverrides_DeviceClientRecord
+ON AlertOverrides (DeviceId, ClientRecordId)
+WHERE DeviceId IS NOT NULL AND ClientRecordId IS NOT NULL;

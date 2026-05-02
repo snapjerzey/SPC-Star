@@ -43,6 +43,11 @@ app.MapGet("/setup/inspection-plans", (string? partNum, SetupQueryService servic
     return Results.Ok(service.GetInspectionPlans(partNum));
 });
 
+app.MapGet("/sync/setup-snapshot", (SetupQueryService service) =>
+{
+    return Results.Ok(service.GetSetupSnapshot());
+});
+
 app.MapPost("/inspections/measurements", (InspectionMeasurementEntry request, InspectionMeasurementService service) =>
 {
     var result = service.EnterMeasurement(request);

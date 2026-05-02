@@ -1,5 +1,7 @@
 using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SPCStar.Core.Services;
 
@@ -23,6 +25,46 @@ public sealed record InspectionPlanSetupDto(
     FrequencyUnit FrequencyUnit,
     string AlertRuleSet,
     bool IsRequiredForCoa);
+
+public sealed record ProcessSetupDto(Guid Id, string ProcessCode, string Description);
+
+public sealed record OperationSetupDto(Guid Id, Guid PartId, Guid ProcessId, int OperationSeq);
+
+public sealed record CharacteristicSetupDto(
+    Guid Id,
+    Guid OperationId,
+    string Name,
+    CharacteristicType Type,
+    string UnitOfMeasure,
+    bool IsRequiredForCoa);
+
+public sealed record SpecLimitSetupDto(Guid CharacteristicId, decimal Nominal, decimal Lsl, decimal Usl);
+
+public sealed record ControlLimitSetupDto(
+    string PartNum,
+    string ProcessCode,
+    int OperationSeq,
+    string CharacteristicName,
+    decimal CenterLine,
+    decimal Lcl,
+    decimal Ucl);
+
+public sealed record JobSetupDto(string JobNum, string PartNum);
+
+public sealed record ResourceSetupDto(string ResourceId, string? Description);
+
+public sealed record SetupSnapshotDto(
+    DateTimeOffset GeneratedAt,
+    string SetupVersion,
+    IReadOnlyList<PartSetupDto> Parts,
+    IReadOnlyList<ProcessSetupDto> Processes,
+    IReadOnlyList<OperationSetupDto> Operations,
+    IReadOnlyList<CharacteristicSetupDto> Characteristics,
+    IReadOnlyList<SpecLimitSetupDto> SpecLimits,
+    IReadOnlyList<InspectionPlanSetupDto> InspectionPlans,
+    IReadOnlyList<ControlLimitSetupDto> ControlLimits,
+    IReadOnlyList<JobSetupDto> Jobs,
+    IReadOnlyList<ResourceSetupDto> Resources);
 
 public sealed class SetupQueryService(ISpcRepository repository)
 {
@@ -65,5 +107,105 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 characteristic.IsRequiredForCoa);
 
         return query.ToArray();
+    }
+
+    public SetupSnapshotDto GetSetupSnapshot(DateTimeOffset? generatedAt = null)
+    {
+        var parts = GetParts();
+        var processes = repository.Processes
+            .OrderBy(process => process.ProcessCode)
+            .Select(process => new ProcessSetupDto(process.Id, process.ProcessCode, process.Description))
+            .ToArray();
+        var operations = repository.Operations
+            .OrderBy(operation => operation.PartId)
+            .ThenBy(operation => operation.ProcessId)
+            .ThenBy(operation => operation.OperationSeq)
+            .Select(operation => new OperationSetupDto(operation.Id, operation.PartId, operation.ProcessId, operation.OperationSeq))
+            .ToArray();
+        var characteristics = repository.Characteristics
+            .OrderBy(characteristic => characteristic.OperationId)
+            .ThenBy(characteristic => characteristic.Name)
+            .Select(characteristic => new CharacteristicSetupDto(
+                characteristic.Id,
+                characteristic.OperationId,
+                characteristic.Name,
+                characteristic.Type,
+                characteristic.UnitOfMeasure,
+                characteristic.IsRequiredForCoa))
+            .ToArray();
+        var specLimits = repository.SpecLimits
+            .OrderBy(spec => spec.CharacteristicId)
+            .Select(spec => new SpecLimitSetupDto(spec.CharacteristicId, spec.Nominal, spec.Lsl, spec.Usl))
+            .ToArray();
+        var inspectionPlans = GetInspectionPlans();
+        var controlLimits = repository.ControlLimits
+            .OrderBy(limit => limit.PartNum)
+            .ThenBy(limit => limit.ProcessCode)
+            .ThenBy(limit => limit.OperationSeq)
+            .ThenBy(limit => limit.CharacteristicName)
+            .Select(limit => new ControlLimitSetupDto(
+                limit.PartNum,
+                limit.ProcessCode,
+                limit.OperationSeq,
+                limit.CharacteristicName,
+                limit.CenterLine,
+                limit.Lcl,
+                limit.Ucl))
+            .ToArray();
+        var jobs = repository.Jobs
+            .OrderBy(job => job.JobNum)
+            .Select(job => new JobSetupDto(job.JobNum, job.PartNum))
+            .ToArray();
+        var resources = repository.Resources
+            .OrderBy(resource => resource.ResourceId)
+            .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description))
+            .ToArray();
+
+        return new SetupSnapshotDto(
+            generatedAt ?? DateTimeOffset.UtcNow,
+            BuildSetupVersion(parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources),
+            parts,
+            processes,
+            operations,
+            characteristics,
+            specLimits,
+            inspectionPlans,
+            controlLimits,
+            jobs,
+            resources);
+    }
+
+    private static string BuildSetupVersion(
+        IReadOnlyList<PartSetupDto> parts,
+        IReadOnlyList<ProcessSetupDto> processes,
+        IReadOnlyList<OperationSetupDto> operations,
+        IReadOnlyList<CharacteristicSetupDto> characteristics,
+        IReadOnlyList<SpecLimitSetupDto> specLimits,
+        IReadOnlyList<InspectionPlanSetupDto> inspectionPlans,
+        IReadOnlyList<ControlLimitSetupDto> controlLimits,
+        IReadOnlyList<JobSetupDto> jobs,
+        IReadOnlyList<ResourceSetupDto> resources)
+    {
+        var builder = new StringBuilder();
+        AppendRows(builder, parts);
+        AppendRows(builder, processes);
+        AppendRows(builder, operations);
+        AppendRows(builder, characteristics);
+        AppendRows(builder, specLimits);
+        AppendRows(builder, inspectionPlans);
+        AppendRows(builder, controlLimits);
+        AppendRows(builder, jobs);
+        AppendRows(builder, resources);
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
+        return Convert.ToHexString(hash)[..16];
+    }
+
+    private static void AppendRows<T>(StringBuilder builder, IReadOnlyList<T> rows)
+    {
+        foreach (var row in rows)
+        {
+            builder.Append(typeof(T).Name).Append('|').Append(row).AppendLine();
+        }
     }
 }

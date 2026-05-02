@@ -92,6 +92,9 @@ Content-Type: application/json
   "events": []
 }
 
+### Tablet setup snapshot for offline cache
+GET {{baseUrl}}/sync/setup-snapshot
+
 ### Chart data
 POST {{baseUrl}}/charts/data
 Content-Type: application/json

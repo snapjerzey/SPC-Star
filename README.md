@@ -53,6 +53,7 @@ Initial endpoints include:
 - `POST /setup/import-csv`
 - `GET /setup/parts`
 - `GET /setup/inspection-plans`
+- `GET /sync/setup-snapshot`
 - `POST /inspections/measurements`
 - `POST /material-changes`
 - `POST /alerts/{alertId}/override`

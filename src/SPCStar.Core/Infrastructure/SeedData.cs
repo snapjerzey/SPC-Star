@@ -65,6 +65,8 @@ public static class SeedData
         repository.Processes.Add(process);
         repository.Operations.Add(operation);
         repository.Characteristics.Add(characteristic);
+        repository.Jobs.Add(new Job { JobNum = "J100", PartNum = part.PartNum });
+        repository.Resources.Add(new ResourceMachine { ResourceId = "PRESS1", Description = "Demo press" });
         repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = 5m, Lsl = 4.5m, Usl = 5.5m });
         repository.InspectionPlans.Add(new InspectionPlan
         {

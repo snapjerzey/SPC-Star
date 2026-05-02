@@ -19,6 +19,7 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 ## Implemented services
 
 - `SetupImportService`: CSV setup validation and upsert.
+- `SetupQueryService`: tablet setup snapshot, part lookup, and inspection plan lookup.
 - `InspectionMeasurementService`: operator measurement entry, active lock enforcement, alert creation.
 - `WesternElectricRuleService`: first Western Electric drift rules.
 - `AlertOverrideService`: permission-based lock override and audit creation.
@@ -31,4 +32,4 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 
 ## Next architecture step
 
-Add an EF Core SQLite implementation behind `ISpcRepository`. Keep the service APIs stable so tests continue to protect the manufacturing rules while storage changes underneath.
+Add authentication/session contracts and active work-context APIs for the tablet UI. Keep the service APIs stable so tests continue to protect the manufacturing rules while storage changes underneath.

@@ -6,6 +6,7 @@ SPC Star currently has three projects:
 
 - `SPCStar.Core`: domain entities and business services.
 - `SPCStar.Api`: minimal HTTP API over the core services.
+- `SPCStar.Api/wwwroot`: first tablet-oriented inspection UI served by the API.
 - `SPCStar.SmokeTests`: dependency-free executable tests for sandbox-safe verification.
 
 The xUnit project remains in place for normal development and CI.
@@ -20,6 +21,8 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 
 - `SetupImportService`: CSV setup validation and upsert.
 - `SetupQueryService`: tablet setup snapshot, part lookup, and inspection plan lookup.
+- `AuthSessionService`: development login/session contract for role-aware UI flows.
+- `WorkContextService`: one-call inspection screen context for tablet entry.
 - `InspectionMeasurementService`: operator measurement entry, active lock enforcement, alert creation.
 - `WesternElectricRuleService`: first Western Electric drift rules.
 - `AlertOverrideService`: permission-based lock override and audit creation.
@@ -32,4 +35,4 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 
 ## Next architecture step
 
-Add authentication/session contracts and active work-context APIs for the tablet UI. Keep the service APIs stable so tests continue to protect the manufacturing rules while storage changes underneath.
+Expand the tablet UI into offline queueing, active alerts, and override workflows. Keep the service APIs stable so tests continue to protect the manufacturing rules while storage changes underneath.

@@ -1,8 +1,13 @@
 using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
 using SPCStar.Core.Services;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 
 builder.Services.AddSingleton<ISpcRepository, InMemorySpcRepository>();
 builder.Services.AddSingleton<WesternElectricRuleService>();
@@ -18,12 +23,33 @@ builder.Services.AddSingleton<ChartDataService>();
 builder.Services.AddSingleton<HistoryExportService>();
 builder.Services.AddSingleton<SetupQueryService>();
 builder.Services.AddSingleton<OfflineSyncService>();
+builder.Services.AddSingleton<AuthSessionService>();
+builder.Services.AddSingleton<WorkContextService>();
 
 var app = builder.Build();
 
 SeedData.SeedAll(app.Services.GetRequiredService<ISpcRepository>());
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok", app = "SPC Star" }));
+
+app.MapPost("/auth/login", (LoginRequest request, AuthSessionService service) =>
+{
+    var result = service.Login(request);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.Unauthorized();
+});
+
+app.MapGet("/auth/me", (string userName, AuthSessionService service) =>
+{
+    var result = service.CurrentUser(userName);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.NotFound(new { errors = result.Errors });
+});
 
 app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService service) =>
 {
@@ -86,6 +112,25 @@ app.MapPost("/alerts/{alertId:guid}/override", (
 app.MapPost("/inspection-frequency/evaluate", (InspectionFrequencyCheckRequest request, InspectionFrequencyService service) =>
 {
     return Results.Ok(service.Evaluate(request));
+});
+
+app.MapGet("/work-context", (
+    string jobNum,
+    string partNum,
+    string processCode,
+    int operationSeq,
+    string resourceId,
+    string characteristicName,
+    WorkContextService service) =>
+{
+    return Results.Ok(service.Build(new WorkContextRequest(
+        jobNum,
+        partNum,
+        processCode,
+        operationSeq,
+        resourceId,
+        characteristicName,
+        DateTimeOffset.UtcNow)));
 });
 
 app.MapPost("/charts/data", (ChartDataRequest request, ChartDataService service) =>

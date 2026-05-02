@@ -50,6 +50,8 @@ Example requests are in `docs/api-examples.http`.
 Initial endpoints include:
 
 - `GET /health`
+- `POST /auth/login`
+- `GET /auth/me`
 - `POST /setup/import-csv`
 - `GET /setup/parts`
 - `GET /setup/inspection-plans`
@@ -58,6 +60,7 @@ Initial endpoints include:
 - `POST /material-changes`
 - `POST /alerts/{alertId}/override`
 - `POST /inspection-frequency/evaluate`
+- `GET /work-context`
 - `POST /charts/data`
 - `POST /qa/summary`
 - `POST /qa/summary.csv`
@@ -68,8 +71,12 @@ Initial endpoints include:
 - `POST /sync/offline-changes`
 - `GET /alerts/active`
 
+The API also serves the first tablet-oriented inspection UI at `/`.
+
 The API seeds demo security users and one sample inspection plan:
 
+- Users `operator1`, `linetech1`, `qa1`, `admin1`, and `god1`
+- Demo passwords match the usernames
 - Part `P100`
 - Process `MOLD`
 - Operation `10`

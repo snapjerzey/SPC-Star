@@ -3,6 +3,15 @@
 ### Health
 GET {{baseUrl}}/health
 
+### Login as demo operator
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "userName": "operator1",
+  "password": "operator1"
+}
+
 ### Import setup CSV
 POST {{baseUrl}}/setup/import-csv
 Content-Type: application/json
@@ -94,6 +103,9 @@ Content-Type: application/json
 
 ### Tablet setup snapshot for offline cache
 GET {{baseUrl}}/sync/setup-snapshot
+
+### Tablet work context
+GET {{baseUrl}}/work-context?jobNum=J100&partNum=P100&processCode=MOLD&operationSeq=10&resourceId=PRESS1&characteristicName=Diameter
 
 ### Chart data
 POST {{baseUrl}}/charts/data

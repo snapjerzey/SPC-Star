@@ -39,7 +39,7 @@ public sealed class ChartDataServiceTests
             RuleTriggered = RuleTriggered.OnePointBeyondControlLimit,
             LockedAt = DateTimeOffset.Parse("2026-01-01T08:02:00Z")
         };
-        var violatedMeasurement = repository.Measurements.Last();
+        var violatedMeasurement = repository.Measurements.Last(measurement => measurement.JobNum == "J100");
         var violation = new RuleViolation
         {
             AlertId = alert.Id,

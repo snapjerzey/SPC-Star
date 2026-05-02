@@ -39,18 +39,6 @@ dotnet run --project tests/SPCStar.SmokeTests/SPCStar.SmokeTests.csproj
 dotnet run --project src/SPCStar.Api/SPCStar.Api.csproj
 ```
 
-If `dotnet` is not recognized on this machine but a previous build exists, use the local launcher:
-
-```powershell
-.\run-api.ps1
-```
-
-If PowerShell script execution is blocked, use:
-
-```cmd
-run-api.cmd
-```
-
 Then check:
 
 ```powershell

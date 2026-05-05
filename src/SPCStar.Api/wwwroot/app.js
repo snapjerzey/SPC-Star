@@ -1,8 +1,8 @@
 const state = {
   user: null,
   snapshot: null,
-  context: null,
-  selectedPlan: null
+  contexts: [],
+  selectedPlans: []
 };
 
 const $ = (id) => document.getElementById(id);
@@ -24,12 +24,32 @@ function setStatus(element, text, kind = "neutral") {
   element.className = `status-pill ${kind}`;
 }
 
+function inspectionSets() {
+  const map = new Map();
+  state.snapshot.inspectionPlans.forEach((plan) => {
+    const key = `${plan.partNum}|${plan.processCode}|${plan.operationSeq}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        partNum: plan.partNum,
+        partDescription: plan.partDescription,
+        processCode: plan.processCode,
+        processDescription: plan.processDescription,
+        operationSeq: plan.operationSeq,
+        plans: []
+      });
+    }
+    map.get(key).plans.push(plan);
+  });
+  return [...map.values()];
+}
+
 function selectedValues() {
-  const plan = state.snapshot.inspectionPlans[Number($("inspectionPlan").value)];
+  const set = inspectionSets()[Number($("inspectionSet").value)];
   return {
     jobNum: $("jobNum").value,
     resourceId: $("resourceId").value,
-    plan
+    set
   };
 }
 
@@ -53,10 +73,10 @@ async function loadSnapshot() {
   fillSelect($("jobNum"), state.snapshot.jobs, (job) => job.jobNum, (job) => job.jobNum);
   fillSelect($("resourceId"), state.snapshot.resources, (resource) => resource.resourceId, (resource) => resource.resourceId);
   fillSelect(
-    $("inspectionPlan"),
-    state.snapshot.inspectionPlans,
+    $("inspectionSet"),
+    inspectionSets(),
     (_, index) => String(index),
-    (plan) => `${plan.partNum} / ${plan.processCode} ${plan.operationSeq} / ${plan.characteristicName}`);
+    (set) => `${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.plans.length} variables`);
   await loadContext();
 }
 
@@ -72,8 +92,13 @@ function fillSelect(select, rows, valueOf, labelOf) {
 
 async function loadContext(event) {
   event?.preventDefault();
-  const { jobNum, resourceId, plan } = selectedValues();
-  state.selectedPlan = plan;
+  const { jobNum, resourceId, set } = selectedValues();
+  state.selectedPlans = set.plans;
+  state.contexts = await Promise.all(set.plans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
+  renderContext();
+}
+
+async function loadVariableContext(jobNum, resourceId, plan) {
   const params = new URLSearchParams({
     jobNum,
     partNum: plan.partNum,
@@ -82,27 +107,22 @@ async function loadContext(event) {
     resourceId,
     characteristicName: plan.characteristicName
   });
-  state.context = await api(`/work-context?${params}`);
-  renderContext();
+  return api(`/work-context?${params}`);
 }
 
 function renderContext() {
-  const context = state.context;
-  const plan = state.selectedPlan;
-  $("contextTitle").textContent = `${context.request.jobNum} ${context.request.resourceId}`;
-  $("contextSubtitle").textContent = `${plan.partNum} / ${plan.processCode} ${plan.operationSeq} / ${plan.characteristicName}`;
-  $("lsl").textContent = formatNumber(context.lowerSpecLimit);
-  $("nominal").textContent = formatNumber(plan.nominal);
-  $("usl").textContent = formatNumber(context.upperSpecLimit);
-  $("lcl").textContent = formatNumber(context.lowerControlLimit);
-  $("center").textContent = formatNumber(context.inspectionPlan?.nominal);
-  $("ucl").textContent = formatNumber(context.upperControlLimit);
-  renderDueStatus(context.frequencyStatus.status);
-  renderLock(context.activeLock);
-  renderMeasurements(context.recentMeasurements);
+  const { jobNum, resourceId, set } = selectedValues();
+  $("contextTitle").textContent = `${jobNum} ${resourceId}`;
+  $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.plans.length} variables`;
+  renderOverallDueStatus();
+  renderLock(state.contexts.find((context) => context.activeLock)?.activeLock);
+  renderVariables();
+  renderMeasurements();
 }
 
-function renderDueStatus(status) {
+function renderOverallDueStatus() {
+  const statuses = state.contexts.map((context) => context.frequencyStatus.status);
+  const status = statuses.includes("Overdue") ? "Overdue" : statuses.includes("DueNow") ? "DueNow" : "NotDue";
   const kind = status === "Overdue" ? "danger" : status === "DueNow" ? "warn" : "ok";
   setStatus($("dueStatus"), status, kind);
 }
@@ -118,55 +138,109 @@ function renderLock(activeLock) {
   banner.textContent = `LOCKED: ${activeLock.ruleTriggered} at ${formatTime(activeLock.lockedAt)}`;
 }
 
-function renderMeasurements(points) {
+function renderVariables() {
+  const list = $("variableList");
+  list.innerHTML = "";
+  state.selectedPlans.forEach((plan, index) => {
+    const context = state.contexts[index];
+    const card = document.createElement("section");
+    card.className = "variable-card";
+    card.innerHTML = `
+      <div>
+        <div class="variable-title">
+          <strong>${plan.characteristicName}</strong>
+          <span>${plan.unitOfMeasure}</span>
+        </div>
+        <div class="limit-grid">
+          <div><span>LSL</span><strong>${formatNumber(context.lowerSpecLimit)}</strong></div>
+          <div><span>Target</span><strong>${formatNumber(plan.nominal)}</strong></div>
+          <div><span>USL</span><strong>${formatNumber(context.upperSpecLimit)}</strong></div>
+          <div><span>LCL</span><strong>${formatNumber(context.lowerControlLimit)}</strong></div>
+          <div><span>Center</span><strong>${formatNumber(plan.nominal)}</strong></div>
+          <div><span>UCL</span><strong>${formatNumber(context.upperControlLimit)}</strong></div>
+        </div>
+      </div>
+      <label>
+        Measurement
+        <input class="measurement-input" data-plan-index="${index}" type="number" step="0.0001" inputmode="decimal" placeholder="0.0000">
+      </label>`;
+    list.appendChild(card);
+  });
+}
+
+function renderMeasurements() {
   const list = $("measurementList");
-  if (!points.length) {
+  const rows = state.contexts.flatMap((context) =>
+    context.recentMeasurements.map((point) => ({
+      characteristicName: context.request.characteristicName,
+      ...point
+    })));
+  if (!rows.length) {
     list.className = "measurement-list empty";
     list.textContent = "No measurements yet.";
     return;
   }
   list.className = "measurement-list";
   list.innerHTML = "";
-  [...points].reverse().forEach((point) => {
-    const row = document.createElement("div");
-    row.className = "measurement-row";
-    row.innerHTML = `<span>${formatTime(point.timestamp)}</span><strong>${formatNumber(point.value)}</strong><span>${point.hasRuleViolation ? "Violation" : "OK"}</span>`;
-    list.appendChild(row);
-  });
+  rows
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, 12)
+    .forEach((point) => {
+      const row = document.createElement("div");
+      row.className = "measurement-row";
+      row.innerHTML = `<span>${formatTime(point.timestamp)} ${point.characteristicName}</span><strong>${formatNumber(point.value)}</strong><span>${point.hasRuleViolation ? "Violation" : "OK"}</span>`;
+      list.appendChild(row);
+    });
 }
 
 async function submitMeasurement(event) {
   event.preventDefault();
-  const value = Number($("measurementValue").value);
-  if (!Number.isFinite(value)) {
-    showEntryMessage("Enter a measurement value.", "error");
+  const { jobNum, resourceId } = selectedValues();
+  const inputs = [...document.querySelectorAll(".measurement-input")];
+  const entries = inputs
+    .map((input) => ({ input, plan: state.selectedPlans[Number(input.dataset.planIndex)], value: Number(input.value) }))
+    .filter((entry) => inputHasValue(entry.input));
+
+  if (!entries.length) {
+    showEntryMessage("Enter at least one measurement value.", "error");
     return;
   }
-  const { jobNum, resourceId, plan } = selectedValues();
+
+  if (entries.some((entry) => !Number.isFinite(entry.value))) {
+    showEntryMessage("Every entered measurement must be numeric.", "error");
+    return;
+  }
+
   try {
-    await api("/inspections/measurements", {
-      method: "POST",
-      body: JSON.stringify({
-        jobNum,
-        partNum: plan.partNum,
-        processCode: plan.processCode,
-        operationSeq: plan.operationSeq,
-        resourceId,
-        characteristicName: plan.characteristicName,
-        value,
-        timestamp: new Date().toISOString(),
-        operatorUserId: state.user.userName,
-        deviceId: "browser-dev",
-        clientRecordId: crypto.randomUUID(),
-        submittedAt: new Date().toISOString()
-      })
-    });
-    $("measurementValue").value = "";
-    showEntryMessage("Measurement submitted.", "ok");
+    for (const entry of entries) {
+      await api("/inspections/measurements", {
+        method: "POST",
+        body: JSON.stringify({
+          jobNum,
+          partNum: entry.plan.partNum,
+          processCode: entry.plan.processCode,
+          operationSeq: entry.plan.operationSeq,
+          resourceId,
+          characteristicName: entry.plan.characteristicName,
+          value: entry.value,
+          timestamp: new Date().toISOString(),
+          operatorUserId: state.user.userName,
+          deviceId: "browser-dev",
+          clientRecordId: crypto.randomUUID(),
+          submittedAt: new Date().toISOString()
+        })
+      });
+    }
+    inputs.forEach((input) => { input.value = ""; });
+    showEntryMessage(`${entries.length} measurement${entries.length === 1 ? "" : "s"} submitted.`, "ok");
     await loadContext();
   } catch (error) {
     showEntryMessage("Measurement rejected. " + readableError(error), "error");
   }
+}
+
+function inputHasValue(input) {
+  return input.value.trim().length > 0;
 }
 
 function showEntryMessage(message, kind) {

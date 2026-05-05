@@ -55,8 +55,8 @@
             <select id="resourceId"></select>
           </label>
           <label>
-            Inspection Plan
-            <select id="inspectionPlan"></select>
+            Inspection Set
+            <select id="inspectionSet"></select>
           </label>
           <button type="submit">Load</button>
         </form>
@@ -73,20 +73,8 @@
             <span id="dueStatus" class="status-pill neutral">Not checked</span>
           </div>
 
-          <div class="limit-grid">
-            <div><span>LSL</span><strong id="lsl">-</strong></div>
-            <div><span>Target</span><strong id="nominal">-</strong></div>
-            <div><span>USL</span><strong id="usl">-</strong></div>
-            <div><span>LCL</span><strong id="lcl">-</strong></div>
-            <div><span>Center</span><strong id="center">-</strong></div>
-            <div><span>UCL</span><strong id="ucl">-</strong></div>
-          </div>
-
           <form id="measurementForm" class="measurement-form">
-            <label>
-              Measurement
-              <input id="measurementValue" type="number" step="0.0001" inputmode="decimal" placeholder="0.0000">
-            </label>
+            <div id="variableList" class="variable-list"></div>
             <button type="submit">Submit Measurement</button>
           </form>
           <p id="entryMessage" class="message"></p>

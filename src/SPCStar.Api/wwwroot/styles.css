@@ -127,11 +127,7 @@ p { color: var(--muted); }
   display: grid;
   gap: 12px;
 }
-.measurement-form {
-  grid-template-columns: minmax(180px, 1fr) auto;
-  align-items: end;
-  margin-top: 18px;
-}
+.measurement-form { margin-top: 18px; }
 
 label {
   display: grid;
@@ -150,26 +146,46 @@ input, select {
   padding: 8px 10px;
 }
 
-.limit-grid {
+.variable-list {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 10px;
+  gap: 12px;
 }
-.limit-grid div {
+.variable-card {
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr minmax(150px, 220px);
+  gap: 14px;
+  padding: 12px;
+  align-items: center;
 }
-.limit-grid span {
-  display: block;
+.variable-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.variable-title strong { font-size: 18px; }
+.variable-title span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
 }
+.limit-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(58px, 1fr));
+  gap: 6px;
+}
+.limit-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
 .limit-grid strong {
   display: block;
-  margin-top: 4px;
-  font-size: 20px;
+  margin-top: 2px;
+  font-size: 14px;
 }
 
 .lock-banner {
@@ -206,5 +222,6 @@ input, select {
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
   .form-grid, .measurement-form { grid-template-columns: 1fr; }
-  .limit-grid { grid-template-columns: repeat(2, 1fr); }
+  .variable-card { grid-template-columns: 1fr; }
+  .limit-grid { grid-template-columns: repeat(3, 1fr); }
 }

@@ -80,9 +80,9 @@ The API seeds demo security users and one sample inspection plan:
 - Part `P100`
 - Process `MOLD`
 - Operation `10`
-- Characteristic `Diameter`
-- Spec limits `4.5` to `5.5` mm
-- Control limits `4.0` to `6.0`
+- Characteristics `Diameter`, `Length`, and `Weight`
+- Diameter spec limits `4.5` to `5.5` mm
+- Diameter control limits `4.0` to `6.0`
 - Time frequency every `30` minutes
 
 ## What is intentionally not built yet

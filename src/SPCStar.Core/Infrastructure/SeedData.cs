@@ -52,7 +52,7 @@ public static class SeedData
         var part = new Part { PartNum = "P100", Description = "Sample molded widget" };
         var process = new ManufacturingProcess { ProcessCode = "MOLD", Description = "Injection molding" };
         var operation = new Operation { PartId = part.Id, ProcessId = process.Id, OperationSeq = 10 };
-        var characteristic = new Characteristic
+        var diameter = new Characteristic
         {
             OperationId = operation.Id,
             Name = "Diameter",
@@ -60,31 +60,32 @@ public static class SeedData
             UnitOfMeasure = "mm",
             IsRequiredForCoa = true
         };
+        var length = new Characteristic
+        {
+            OperationId = operation.Id,
+            Name = "Length",
+            Type = CharacteristicType.Variable,
+            UnitOfMeasure = "mm",
+            IsRequiredForCoa = true
+        };
+        var weight = new Characteristic
+        {
+            OperationId = operation.Id,
+            Name = "Weight",
+            Type = CharacteristicType.Variable,
+            UnitOfMeasure = "g",
+            IsRequiredForCoa = true
+        };
 
         repository.Parts.Add(part);
         repository.Processes.Add(process);
         repository.Operations.Add(operation);
-        repository.Characteristics.Add(characteristic);
+        repository.Characteristics.AddRange([diameter, length, weight]);
         repository.Jobs.Add(new Job { JobNum = "J100", PartNum = part.PartNum });
         repository.Resources.Add(new ResourceMachine { ResourceId = "PRESS1", Description = "Demo press" });
-        repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = 5m, Lsl = 4.5m, Usl = 5.5m });
-        repository.InspectionPlans.Add(new InspectionPlan
-        {
-            CharacteristicId = characteristic.Id,
-            SampleSize = 1,
-            AlertRuleSet = "WesternElectric",
-            Frequency = new InspectionFrequency { Type = FrequencyType.Time, Value = 30, Unit = FrequencyUnit.Minutes }
-        });
-        repository.ControlLimits.Add(new ControlLimitSet
-        {
-            PartNum = part.PartNum,
-            ProcessCode = process.ProcessCode,
-            OperationSeq = operation.OperationSeq,
-            CharacteristicName = characteristic.Name,
-            CenterLine = 5m,
-            Lcl = 4m,
-            Ucl = 6m
-        });
+        AddVariablePlan(repository, part, process, operation, diameter, 5m, 4.5m, 5.5m, 4m, 6m);
+        AddVariablePlan(repository, part, process, operation, length, 42m, 41.5m, 42.5m, 41m, 43m);
+        AddVariablePlan(repository, part, process, operation, weight, 18m, 17.2m, 18.8m, 16.8m, 19.2m);
     }
 
     private static Role Role(string name, params string[] permissions)
@@ -102,5 +103,37 @@ public static class SeedData
     {
         var (hash, salt) = Services.PasswordHasher.HashPassword(password);
         return new User { UserName = userName, PasswordHash = hash, PasswordSalt = salt, Roles = { role } };
+    }
+
+    private static void AddVariablePlan(
+        ISpcRepository repository,
+        Part part,
+        ManufacturingProcess process,
+        Operation operation,
+        Characteristic characteristic,
+        decimal nominal,
+        decimal lsl,
+        decimal usl,
+        decimal lcl,
+        decimal ucl)
+    {
+        repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = nominal, Lsl = lsl, Usl = usl });
+        repository.InspectionPlans.Add(new InspectionPlan
+        {
+            CharacteristicId = characteristic.Id,
+            SampleSize = 1,
+            AlertRuleSet = "WesternElectric",
+            Frequency = new InspectionFrequency { Type = FrequencyType.Time, Value = 30, Unit = FrequencyUnit.Minutes }
+        });
+        repository.ControlLimits.Add(new ControlLimitSet
+        {
+            PartNum = part.PartNum,
+            ProcessCode = process.ProcessCode,
+            OperationSeq = operation.OperationSeq,
+            CharacteristicName = characteristic.Name,
+            CenterLine = nominal,
+            Lcl = lcl,
+            Ucl = ucl
+        });
     }
 }

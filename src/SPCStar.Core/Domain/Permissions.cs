@@ -2,6 +2,7 @@ namespace SPCStar.Core.Domain;
 
 public static class PermissionNames
 {
+    public const string CanEnterInspections = nameof(CanEnterInspections);
     public const string CanOverrideDriftLock = nameof(CanOverrideDriftLock);
     public const string CanManageInspectionPlans = nameof(CanManageInspectionPlans);
     public const string CanImportSetupData = nameof(CanImportSetupData);

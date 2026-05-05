@@ -12,22 +12,25 @@ public static class SeedData
 
     public static void SeedSecurity(ISpcRepository repository)
     {
-        if (repository.Roles.Count > 0)
-        {
-            return;
-        }
-
-        var operatorRole = Role(RoleNames.Operator);
-        var lineTech = Role(RoleNames.LineTech, PermissionNames.CanOverrideDriftLock);
-        var qa = Role(RoleNames.QA, PermissionNames.CanOverrideDriftLock, PermissionNames.CanExportQAData);
-        var admin = Role(
+        var operatorRole = UpsertRole(repository, RoleNames.Operator, PermissionNames.CanEnterInspections);
+        var lineTech = UpsertRole(
+            repository,
+            RoleNames.LineTech,
+            PermissionNames.CanEnterInspections,
+            PermissionNames.CanOverrideDriftLock);
+        var qa = UpsertRole(repository, RoleNames.QA, PermissionNames.CanOverrideDriftLock, PermissionNames.CanExportQAData);
+        var admin = UpsertRole(
+            repository,
             RoleNames.Admin,
+            PermissionNames.CanEnterInspections,
             PermissionNames.CanManageInspectionPlans,
             PermissionNames.CanImportSetupData,
             PermissionNames.CanOverrideDriftLock,
             PermissionNames.CanManageUsers);
-        var god = Role(
+        var god = UpsertRole(
+            repository,
             RoleNames.GOD,
+            PermissionNames.CanEnterInspections,
             PermissionNames.CanOverrideDriftLock,
             PermissionNames.CanManageInspectionPlans,
             PermissionNames.CanImportSetupData,
@@ -35,12 +38,11 @@ public static class SeedData
             PermissionNames.CanManageUsers,
             PermissionNames.CanUseGodMode);
 
-        repository.Roles.AddRange([operatorRole, lineTech, qa, admin, god]);
-        repository.Users.Add(User("operator1", "operator1", operatorRole));
-        repository.Users.Add(User("linetech1", "linetech1", lineTech));
-        repository.Users.Add(User("qa1", "qa1", qa));
-        repository.Users.Add(User("admin1", "admin1", admin));
-        repository.Users.Add(User("god1", "god1", god));
+        AddDefaultUser(repository, "operator1", "operator1", operatorRole);
+        AddDefaultUser(repository, "linetech1", "linetech1", lineTech);
+        AddDefaultUser(repository, "qa1", "qa1", qa);
+        AddDefaultUser(repository, "admin1", "admin1", admin);
+        AddDefaultUser(repository, "god1", "god1", god);
     }
 
     public static void SeedSampleInspectionPlans(ISpcRepository repository)
@@ -89,15 +91,31 @@ public static class SeedData
         AddVariablePlan(repository, part, process, operation, weight, 18m, 17.2m, 18.8m, 16.8m, 19.2m);
     }
 
-    private static Role Role(string name, params string[] permissions)
+    private static Role UpsertRole(ISpcRepository repository, string name, params string[] permissions)
     {
-        var role = new Role { Name = name };
+        var role = repository.Roles.FirstOrDefault(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (role is null)
+        {
+            role = new Role { Name = name };
+            repository.Roles.Add(role);
+        }
+
         foreach (var permission in permissions)
         {
             role.Permissions.Add(permission);
         }
 
         return role;
+    }
+
+    private static void AddDefaultUser(ISpcRepository repository, string userName, string password, Role role)
+    {
+        if (repository.Users.Any(user => user.UserName.Equals(userName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        repository.Users.Add(User(userName, password, role));
     }
 
     private static User User(string userName, string password, Role role)

@@ -1,4 +1,5 @@
 INSERT INTO Permissions (Name) VALUES
+('CanEnterInspections'),
 ('CanOverrideDriftLock'),
 ('CanManageInspectionPlans'),
 ('CanImportSetupData'),
@@ -14,12 +15,16 @@ INSERT INTO Roles (Id, Name) VALUES
 ('role-god', 'GOD');
 
 INSERT INTO RolePermissions (RoleId, PermissionName) VALUES
+('role-operator', 'CanEnterInspections'),
+('role-linetech', 'CanEnterInspections'),
 ('role-linetech', 'CanOverrideDriftLock'),
 ('role-qa', 'CanOverrideDriftLock'),
 ('role-qa', 'CanExportQAData'),
+('role-admin', 'CanEnterInspections'),
 ('role-admin', 'CanManageInspectionPlans'),
 ('role-admin', 'CanImportSetupData'),
 ('role-admin', 'CanManageUsers'),
+('role-god', 'CanEnterInspections'),
 ('role-god', 'CanOverrideDriftLock'),
 ('role-god', 'CanManageInspectionPlans'),
 ('role-god', 'CanImportSetupData'),

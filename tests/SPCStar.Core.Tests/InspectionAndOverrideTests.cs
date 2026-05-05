@@ -88,6 +88,31 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_AllowsLineTechToInspect()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(10m) with { OperatorUserId = "linetech1" });
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("linetech1", repository.Measurements.Single().OperatorUserId);
+    }
+
+    [Fact]
+    public void EnterMeasurement_RejectsUserWithoutInspectionPermission()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(10m) with { OperatorUserId = "qa1" });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("not authorized", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(repository.Measurements);
+    }
+
+    [Fact]
     public void Override_RejectsOperator()
     {
         var repository = RepositoryWithSecurityAndLimits();

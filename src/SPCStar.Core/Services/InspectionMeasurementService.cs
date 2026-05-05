@@ -40,6 +40,11 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Fail("No configured inspection characteristic was found for the submitted part/process/operation/characteristic.");
         }
 
+        if (!CanEnterInspections(entry.OperatorUserId))
+        {
+            return ServiceResult<InspectionMeasurement>.Fail("User is not authorized to enter inspections.");
+        }
+
         if (HasActiveLock(entry))
         {
             return ServiceResult<InspectionMeasurement>.Fail("Inspection entry is locked for this job/resource/characteristic due to an active drift alert.");
@@ -135,6 +140,13 @@ public sealed class InspectionMeasurementService(
         return repository.Characteristics.Any(item =>
             item.OperationId == operation.Id &&
             item.Name.Equals(entry.CharacteristicName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool CanEnterInspections(string userName)
+    {
+        return repository.Users
+            .FirstOrDefault(user => user.UserName.Equals(userName.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?.Roles.Any(role => role.Permissions.Contains(PermissionNames.CanEnterInspections)) == true;
     }
 
     private void CreateAlertsForViolations(InspectionMeasurement measurement)

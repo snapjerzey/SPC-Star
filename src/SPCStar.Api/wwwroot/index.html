@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260505-running-mean">
+  <link rel="stylesheet" href="/styles.css?v=20260505-operator-workflow">
 </head>
 <body>
   <main class="shell">
@@ -18,6 +18,7 @@
       <div class="status-row">
         <span id="syncStatus" class="status-pill neutral">Online</span>
         <span id="userBadge" class="status-pill">Not signed in</span>
+        <button id="logoutButton" type="button" class="secondary compact-button hidden">Sign Out</button>
       </div>
     </section>
 
@@ -51,18 +52,23 @@
         </div>
         <form id="contextForm" class="stacked-form">
           <label>
-            Job
-            <select id="jobNum"></select>
+            Scan Job
+            <input id="jobNum" list="jobOptions" autocomplete="off" inputmode="text">
+            <datalist id="jobOptions"></datalist>
           </label>
           <label>
             Resource
             <select id="resourceId"></select>
           </label>
           <label>
-            Inspection Set
-            <select id="inspectionSet"></select>
+            Part Number
+            <select id="partNum"></select>
           </label>
-          <button type="submit">Load</button>
+          <div class="readonly-summary">
+            <span>Inspection</span>
+            <strong id="currentInspection">Not loaded</strong>
+          </div>
+          <button type="submit">Start Inspecting</button>
         </form>
 
         <hr>
@@ -136,7 +142,7 @@
           <div class="panel-heading horizontal">
             <div>
               <h2 id="contextTitle">No context loaded</h2>
-              <p id="contextSubtitle">Choose a job, resource, and inspection plan.</p>
+              <p id="contextSubtitle">Scan a job, choose a resource and part, then start inspecting.</p>
             </div>
             <span id="dueStatus" class="status-pill neutral">Not checked</span>
           </div>
@@ -263,6 +269,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260505-running-mean"></script>
+  <script src="/app.js?v=20260505-operator-workflow"></script>
 </body>
 </html>

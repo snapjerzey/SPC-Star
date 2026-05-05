@@ -48,10 +48,15 @@ function inspectionSets() {
   return [...map.values()];
 }
 
+function selectedInspectionSet() {
+  const partNum = $("partNum").value;
+  return inspectionSets().find((set) => set.partNum === partNum) || null;
+}
+
 function selectedValues() {
-  const set = inspectionSets()[Number($("inspectionSet").value)];
+  const set = selectedInspectionSet();
   return {
-    jobNum: $("jobNum").value,
+    jobNum: $("jobNum").value.trim(),
     resourceId: $("resourceId").value,
     set
   };
@@ -66,6 +71,7 @@ async function login(event) {
     body: JSON.stringify({ userName, password })
   });
   setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")})`, "ok");
+  $("logoutButton").classList.remove("hidden");
   $("loginPanel").classList.add("hidden");
   $("workPanel").classList.remove("hidden");
   if (canManageSetup()) {
@@ -78,15 +84,13 @@ async function login(event) {
 async function loadSnapshot() {
   state.snapshot = await api("/sync/setup-snapshot");
   $("setupVersion").textContent = `Setup ${state.snapshot.setupVersion}`;
-  fillSelect($("jobNum"), state.snapshot.jobs, (job) => job.jobNum, (job) => job.jobNum);
+  fillDatalist($("jobOptions"), state.snapshot.jobs, (job) => job.jobNum);
+  $("jobNum").value = state.snapshot.jobs[0]?.jobNum || "";
   fillSelect($("resourceId"), state.snapshot.resources, (resource) => resource.resourceId, (resource) => resource.resourceId);
-  const sets = inspectionSets();
-  fillSelect(
-    $("inspectionSet"),
-    sets,
-    (_, index) => String(index),
-    (set) => `${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.plans.length} variables`);
-  if (sets.length && state.snapshot.jobs.length && state.snapshot.resources.length) {
+  fillSelect($("partNum"), state.snapshot.parts, (part) => part.partNum, (part) => part.partNum);
+  updatePartFromJob();
+  renderSelectedInspection();
+  if (selectedInspectionSet() && $("jobNum").value && state.snapshot.resources.length) {
     await loadContext();
   }
 }
@@ -101,15 +105,54 @@ function fillSelect(select, rows, valueOf, labelOf) {
   });
 }
 
+function fillDatalist(list, rows, valueOf) {
+  list.innerHTML = "";
+  rows.forEach((row) => {
+    const option = document.createElement("option");
+    option.value = valueOf(row);
+    list.appendChild(option);
+  });
+}
+
+function updatePartFromJob() {
+  const job = state.snapshot.jobs.find((item) => item.jobNum.toLowerCase() === $("jobNum").value.trim().toLowerCase());
+  if (job && state.snapshot.parts.some((part) => part.partNum === job.partNum)) {
+    $("partNum").value = job.partNum;
+  }
+}
+
+function renderSelectedInspection() {
+  const set = selectedInspectionSet();
+  $("currentInspection").textContent = set
+    ? `${set.processCode} ${set.operationSeq} / ${set.plans.length} measurement${set.plans.length === 1 ? "" : "s"}`
+    : "No inspection configured";
+}
+
 async function loadContext(event) {
   event?.preventDefault();
+  updatePartFromJob();
+  renderSelectedInspection();
   const { jobNum, resourceId, set } = selectedValues();
   if (!set || !jobNum || !resourceId) {
+    state.selectedPlans = [];
+    state.contexts = [];
+    renderEmptyContext();
     return;
   }
   state.selectedPlans = set.plans;
   state.contexts = await Promise.all(set.plans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
   renderContext();
+}
+
+function renderEmptyContext() {
+  $("contextTitle").textContent = "No inspection loaded";
+  $("contextSubtitle").textContent = "Scan a job, choose a resource and part, then start inspecting.";
+  setStatus($("dueStatus"), "Not checked", "neutral");
+  renderLock(null);
+  $("variableList").innerHTML = "";
+  $("meanSummary").innerHTML = "";
+  $("trendCharacteristic").innerHTML = "";
+  drawTrend([]);
 }
 
 async function loadVariableContext(jobNum, resourceId, plan) {
@@ -470,6 +513,27 @@ function showPanel(panelName) {
   $("setupTab").classList.toggle("active", showSetup);
 }
 
+function logout() {
+  state.user = null;
+  state.snapshot = null;
+  state.contexts = [];
+  state.selectedPlans = [];
+  state.trendCharacteristic = "";
+  state.activeLock = null;
+  state.users = [];
+  state.roles = [];
+  setStatus($("userBadge"), "Not signed in");
+  $("logoutButton").classList.add("hidden");
+  $("navTabs").classList.add("hidden");
+  $("loginPanel").classList.remove("hidden");
+  $("workPanel").classList.add("hidden");
+  $("setupPanel").classList.add("hidden");
+  $("inspectionTab").classList.add("active");
+  $("setupTab").classList.remove("active");
+  $("password").value = "";
+  renderEmptyContext();
+}
+
 async function loadSetupAdmin() {
   state.roles = await api("/setup/roles");
   state.users = await api("/setup/users");
@@ -618,6 +682,10 @@ window.addEventListener("online", () => setStatus($("syncStatus"), "Online", "ok
 window.addEventListener("offline", () => setStatus($("syncStatus"), "Offline", "warn"));
 $("loginForm").addEventListener("submit", login);
 $("contextForm").addEventListener("submit", loadContext);
+$("jobNum").addEventListener("change", loadContext);
+$("partNum").addEventListener("change", loadContext);
+$("resourceId").addEventListener("change", loadContext);
+$("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("materialForm").addEventListener("submit", saveMaterialChange);
 $("overrideForm").addEventListener("submit", clearLock);

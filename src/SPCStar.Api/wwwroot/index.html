@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260505-sample-job-data">
+  <link rel="stylesheet" href="/styles.css?v=20260505-operator-work-start">
 </head>
 <body>
   <main class="shell">
@@ -53,23 +53,24 @@
         <form id="contextForm" class="stacked-form">
           <label>
             Job Number
-            <input id="jobNum" list="jobOptions" autocomplete="off" inputmode="text">
+            <input id="jobNum" list="jobOptions" autocomplete="off" inputmode="text" required>
             <datalist id="jobOptions"></datalist>
           </label>
           <label>
             Machine
-            <select id="resourceId"></select>
+            <select id="resourceId" required></select>
           </label>
           <label>
             Part Number
-            <input id="partNum" list="partOptions" autocomplete="off" inputmode="text">
+            <input id="partNum" list="partOptions" autocomplete="off" inputmode="text" required>
             <datalist id="partOptions"></datalist>
           </label>
           <button type="submit">Start Inspecting</button>
         </form>
 
-        <hr>
+        <hr id="materialDivider" class="hidden">
 
+        <div id="materialSection" class="hidden">
         <div class="panel-heading tight">
           <h2>Material</h2>
         </div>
@@ -96,6 +97,7 @@
           <button type="submit" class="secondary">Save Material Event</button>
         </form>
         <p id="materialMessage" class="message"></p>
+        </div>
       </aside>
 
       <section class="main-column">
@@ -129,7 +131,7 @@
           </form>
           <p id="overrideMessage" class="message"></p>
         </section>
-        <section class="panel">
+        <section id="measurementPanel" class="panel">
           <div class="panel-heading horizontal">
             <div>
               <h2 id="contextTitle">No context loaded</h2>
@@ -137,7 +139,7 @@
             </div>
           </div>
 
-          <form id="measurementForm" class="measurement-form">
+          <form id="measurementForm" class="measurement-form hidden">
             <div id="variableList" class="variable-list"></div>
             <button type="submit">Submit Measurement</button>
           </form>
@@ -146,7 +148,7 @@
           <div id="meanSummary" class="mean-summary"></div>
         </section>
 
-        <section class="panel">
+        <section id="trendPanel" class="panel hidden">
           <div class="panel-heading horizontal">
             <h2>Trend</h2>
             <select id="trendCharacteristic" class="compact-select"></select>
@@ -292,6 +294,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260505-sample-job-data"></script>
+  <script src="/app.js?v=20260505-operator-work-start"></script>
 </body>
 </html>

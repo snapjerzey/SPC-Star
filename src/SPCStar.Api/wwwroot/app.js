@@ -85,19 +85,15 @@ async function loadSnapshot() {
   state.snapshot = await api("/sync/setup-snapshot");
   $("setupVersion").textContent = `Setup ${state.snapshot.setupVersion}`;
   fillDatalist($("jobOptions"), state.snapshot.jobs, (job) => job.jobNum);
-  $("jobNum").value = state.snapshot.jobs[0]?.jobNum || "";
-  fillSelect($("resourceId"), state.snapshot.resources, (resource) => resource.resourceId, (resource) => resource.resourceId);
+  $("jobNum").value = "";
+  fillSelect($("resourceId"), [{ resourceId: "", description: "Select machine" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
   fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
-  $("partNum").value = state.snapshot.parts[0]?.partNum || "";
-  updatePartFromJob();
+  $("partNum").value = "";
   if (canManageSetup()) {
     renderPartReviewControls();
     renderPartReview();
-    $("summaryJobNum").value = $("summaryJobNum").value || state.snapshot.jobs[0]?.jobNum || "";
   }
-  if (selectedInspectionSet() && $("jobNum").value && state.snapshot.resources.length) {
-    await loadContext();
-  }
+  clearWorkContext();
 }
 
 function fillSelect(select, rows, valueOf, labelOf) {
@@ -128,7 +124,6 @@ function updatePartFromJob() {
 
 async function loadContext(event) {
   event?.preventDefault();
-  updatePartFromJob();
   const { jobNum, resourceId, set } = selectedValues();
   if (!set || !jobNum || !resourceId) {
     state.selectedPlans = [];
@@ -142,12 +137,18 @@ async function loadContext(event) {
 }
 
 function renderEmptyContext() {
-  $("contextTitle").textContent = "No inspection loaded";
+  $("contextTitle").textContent = "Select work to begin";
   $("contextSubtitle").textContent = "Enter a job number, machine, and part number, then start inspecting.";
   renderLock(null);
+  $("measurementForm").classList.add("hidden");
+  $("trendPanel").classList.add("hidden");
+  $("materialDivider").classList.add("hidden");
+  $("materialSection").classList.add("hidden");
   $("variableList").innerHTML = "";
   $("meanSummary").innerHTML = "";
   $("trendCharacteristic").innerHTML = "";
+  $("entryMessage").textContent = "";
+  $("materialMessage").textContent = "";
   drawTrend([]);
 }
 
@@ -167,6 +168,10 @@ function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
   $("contextTitle").textContent = `${jobNum} ${resourceId}`;
   $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq}`;
+  $("measurementForm").classList.remove("hidden");
+  $("trendPanel").classList.remove("hidden");
+  $("materialDivider").classList.remove("hidden");
+  $("materialSection").classList.remove("hidden");
   state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderVariables();
@@ -450,6 +455,12 @@ function drawLimitLine(ctx, scaleY, value, label, color, width, padding) {
 async function saveMaterialChange(event) {
   event.preventDefault();
   const { jobNum, resourceId, set } = selectedValues();
+  if (!jobNum || !resourceId || !set) {
+    $("materialMessage").textContent = "Start work before saving a material event.";
+    $("materialMessage").className = "message error";
+    return;
+  }
+
   try {
     await api("/material-changes", {
       method: "POST",
@@ -547,6 +558,14 @@ function logout() {
   $("inspectionTab").classList.add("active");
   $("setupTab").classList.remove("active");
   $("password").value = "";
+  renderEmptyContext();
+}
+
+function clearWorkContext() {
+  state.contexts = [];
+  state.selectedPlans = [];
+  state.trendCharacteristic = "";
+  state.activeLock = null;
   renderEmptyContext();
 }
 
@@ -811,9 +830,9 @@ window.addEventListener("online", () => setStatus($("syncStatus"), "Online", "ok
 window.addEventListener("offline", () => setStatus($("syncStatus"), "Offline", "warn"));
 $("loginForm").addEventListener("submit", login);
 $("contextForm").addEventListener("submit", loadContext);
-$("jobNum").addEventListener("change", loadContext);
-$("partNum").addEventListener("change", loadContext);
-$("resourceId").addEventListener("change", loadContext);
+$("jobNum").addEventListener("input", clearWorkContext);
+$("partNum").addEventListener("input", clearWorkContext);
+$("resourceId").addEventListener("change", clearWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("materialForm").addEventListener("submit", saveMaterialChange);

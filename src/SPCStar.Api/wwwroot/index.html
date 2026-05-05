@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260505-lock-alert-id">
+  <link rel="stylesheet" href="/styles.css?v=20260505-running-mean">
 </head>
 <body>
   <main class="shell">
@@ -146,6 +146,8 @@
             <button type="submit">Submit Measurement</button>
           </form>
           <p id="entryMessage" class="message"></p>
+
+          <div id="meanSummary" class="mean-summary"></div>
         </section>
 
         <section class="panel">
@@ -261,6 +263,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260505-lock-alert-id"></script>
+  <script src="/app.js?v=20260505-running-mean"></script>
 </body>
 </html>

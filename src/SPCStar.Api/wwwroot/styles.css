@@ -230,6 +230,29 @@ textarea {
   border-color: #93c5fd;
   box-shadow: 0 0 0 3px #dbeafe;
 }
+.mean-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.mean-item {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.mean-item span,
+.mean-item small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.mean-item strong {
+  display: block;
+  font-size: 22px;
+  margin: 2px 0;
+}
 .variable-title {
   display: flex;
   align-items: baseline;

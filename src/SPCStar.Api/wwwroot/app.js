@@ -132,6 +132,7 @@ function renderContext() {
   state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderVariables();
+  renderMeanSummary();
   renderTrendChoices();
   loadTrend();
 }
@@ -187,6 +188,24 @@ function renderVariables() {
         <input class="measurement-input" data-plan-index="${index}" type="number" step="0.0001" inputmode="decimal" placeholder="0.0000">
       </label>`;
     list.appendChild(card);
+  });
+}
+
+function renderMeanSummary() {
+  const summary = $("meanSummary");
+  summary.innerHTML = "";
+  state.selectedPlans.forEach((plan, index) => {
+    const points = state.contexts[index]?.recentMeasurements || [];
+    const mean = points.length
+      ? points.reduce((total, point) => total + Number(point.value), 0) / points.length
+      : null;
+    const item = document.createElement("div");
+    item.className = "mean-item";
+    item.innerHTML = `
+      <span>${plan.characteristicName}</span>
+      <strong>${formatNumber(mean)}</strong>
+      <small>${points.length} pt${points.length === 1 ? "" : "s"}</small>`;
+    summary.appendChild(item);
   });
 }
 

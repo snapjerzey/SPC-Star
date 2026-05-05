@@ -58,6 +58,36 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_CreatesJobForOperatorEnteredJobNumber()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.Jobs.Clear();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(10m) with { JobNum = "J200" });
+
+        Assert.True(result.Succeeded);
+        var job = Assert.Single(repository.Jobs);
+        Assert.Equal("J200", job.JobNum);
+        Assert.Equal("P100", job.PartNum);
+    }
+
+    [Fact]
+    public void EnterMeasurement_RejectsJobAlreadyAssignedToDifferentPart()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.Jobs.Clear();
+        repository.Jobs.Add(new Job { JobNum = "J200", PartNum = "P999" });
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(10m) with { JobNum = "J200" });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("already assigned", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(repository.Measurements);
+    }
+
+    [Fact]
     public void Override_RejectsOperator()
     {
         var repository = RepositoryWithSecurityAndLimits();

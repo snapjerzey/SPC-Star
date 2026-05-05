@@ -795,8 +795,8 @@ function newClientRecordId() {
 function loadCsvTemplate() {
   $("csvImportText").value = [
     "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
-    "P200,Example part,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,1,Time,30,Minutes,WesternElectric,true",
-    "P200,Example part,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,1,Time,30,Minutes,WesternElectric,true"
+    "P200,Example part,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,5,Quantity,10000,Pieces,WesternElectric,true",
+    "P200,Example part,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,5,Quantity,10000,Pieces,WesternElectric,true"
   ].join("\n");
 }
 

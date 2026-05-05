@@ -45,6 +45,12 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Fail("Inspection entry is locked for this job/resource/characteristic due to an active drift alert.");
         }
 
+        var jobResult = UpsertJob(entry);
+        if (!jobResult.Succeeded)
+        {
+            return ServiceResult<InspectionMeasurement>.Fail(jobResult.Errors);
+        }
+
         var measurement = new InspectionMeasurement
         {
             ClientRecordId = CleanOptional(entry.ClientRecordId),
@@ -65,6 +71,25 @@ public sealed class InspectionMeasurementService(
         repository.Measurements.Add(measurement);
         CreateAlertsForViolations(measurement);
         return ServiceResult<InspectionMeasurement>.Ok(measurement);
+    }
+
+    private ServiceResult UpsertJob(InspectionMeasurementEntry entry)
+    {
+        var jobNum = entry.JobNum.Trim();
+        var partNum = entry.PartNum.Trim();
+        var existing = repository.Jobs.FirstOrDefault(job => job.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            repository.Jobs.Add(new Job { JobNum = jobNum, PartNum = partNum });
+            return ServiceResult.Ok();
+        }
+
+        if (!existing.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase))
+        {
+            return ServiceResult.Fail($"Job {jobNum} is already assigned to part {existing.PartNum}.");
+        }
+
+        return ServiceResult.Ok();
     }
 
     private InspectionMeasurement? FindDuplicate(string? deviceId, string? clientRecordId)

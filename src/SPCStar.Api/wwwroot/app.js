@@ -125,18 +125,27 @@ function updatePartFromJob() {
 async function loadContext(event) {
   event?.preventDefault();
   const { jobNum, resourceId, set } = selectedValues();
-  if (!set || !jobNum || !resourceId) {
+  const partNum = $("partNum").value.trim();
+  if (!jobNum || !resourceId || !partNum) {
     state.selectedPlans = [];
     state.contexts = [];
     renderEmptyContext();
     return;
   }
+
+  if (!set) {
+    state.selectedPlans = [];
+    state.contexts = [];
+    renderEmptyContext(`Part ${partNum} is not set up in SPC Star. Ask Admin or GOD to add the part before inspecting.`);
+    return;
+  }
+
   state.selectedPlans = set.plans;
   state.contexts = await Promise.all(set.plans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
   renderContext();
 }
 
-function renderEmptyContext() {
+function renderEmptyContext(message = "") {
   $("contextTitle").textContent = "Select work to begin";
   $("contextSubtitle").textContent = "Enter a job number, machine, and part number, then start inspecting.";
   renderLock(null);
@@ -147,7 +156,8 @@ function renderEmptyContext() {
   $("variableList").innerHTML = "";
   $("meanSummary").innerHTML = "";
   $("trendCharacteristic").innerHTML = "";
-  $("entryMessage").textContent = "";
+  $("entryMessage").textContent = message;
+  $("entryMessage").className = message ? "message error" : "message";
   $("materialMessage").textContent = "";
   drawTrend([]);
 }

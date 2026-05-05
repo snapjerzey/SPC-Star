@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260505-operator-workflow">
+  <link rel="stylesheet" href="/styles.css?v=20260505-job-machine-part">
 </head>
 <body>
   <main class="shell">
@@ -52,17 +52,18 @@
         </div>
         <form id="contextForm" class="stacked-form">
           <label>
-            Scan Job
+            Job Number
             <input id="jobNum" list="jobOptions" autocomplete="off" inputmode="text">
             <datalist id="jobOptions"></datalist>
           </label>
           <label>
-            Resource
+            Machine
             <select id="resourceId"></select>
           </label>
           <label>
             Part Number
-            <select id="partNum"></select>
+            <input id="partNum" list="partOptions" autocomplete="off" inputmode="text">
+            <datalist id="partOptions"></datalist>
           </label>
           <div class="readonly-summary">
             <span>Inspection</span>
@@ -142,7 +143,7 @@
           <div class="panel-heading horizontal">
             <div>
               <h2 id="contextTitle">No context loaded</h2>
-              <p id="contextSubtitle">Scan a job, choose a resource and part, then start inspecting.</p>
+              <p id="contextSubtitle">Enter a job number, machine, and part number, then start inspecting.</p>
             </div>
             <span id="dueStatus" class="status-pill neutral">Not checked</span>
           </div>
@@ -269,6 +270,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260505-operator-workflow"></script>
+  <script src="/app.js?v=20260505-job-machine-part"></script>
 </body>
 </html>

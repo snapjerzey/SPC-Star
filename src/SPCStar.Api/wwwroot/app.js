@@ -49,8 +49,8 @@ function inspectionSets() {
 }
 
 function selectedInspectionSet() {
-  const partNum = $("partNum").value;
-  return inspectionSets().find((set) => set.partNum === partNum) || null;
+  const partNum = $("partNum").value.trim();
+  return inspectionSets().find((set) => set.partNum.toLowerCase() === partNum.toLowerCase()) || null;
 }
 
 function selectedValues() {
@@ -87,7 +87,8 @@ async function loadSnapshot() {
   fillDatalist($("jobOptions"), state.snapshot.jobs, (job) => job.jobNum);
   $("jobNum").value = state.snapshot.jobs[0]?.jobNum || "";
   fillSelect($("resourceId"), state.snapshot.resources, (resource) => resource.resourceId, (resource) => resource.resourceId);
-  fillSelect($("partNum"), state.snapshot.parts, (part) => part.partNum, (part) => part.partNum);
+  fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
+  $("partNum").value = state.snapshot.parts[0]?.partNum || "";
   updatePartFromJob();
   renderSelectedInspection();
   if (selectedInspectionSet() && $("jobNum").value && state.snapshot.resources.length) {
@@ -116,7 +117,7 @@ function fillDatalist(list, rows, valueOf) {
 
 function updatePartFromJob() {
   const job = state.snapshot.jobs.find((item) => item.jobNum.toLowerCase() === $("jobNum").value.trim().toLowerCase());
-  if (job && state.snapshot.parts.some((part) => part.partNum === job.partNum)) {
+  if (job && state.snapshot.parts.some((part) => part.partNum.toLowerCase() === job.partNum.toLowerCase())) {
     $("partNum").value = job.partNum;
   }
 }
@@ -146,7 +147,7 @@ async function loadContext(event) {
 
 function renderEmptyContext() {
   $("contextTitle").textContent = "No inspection loaded";
-  $("contextSubtitle").textContent = "Scan a job, choose a resource and part, then start inspecting.";
+  $("contextSubtitle").textContent = "Enter a job number, machine, and part number, then start inspecting.";
   setStatus($("dueStatus"), "Not checked", "neutral");
   renderLock(null);
   $("variableList").innerHTML = "";

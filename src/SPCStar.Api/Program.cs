@@ -9,7 +9,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-builder.Services.AddSingleton<ISpcRepository, InMemorySpcRepository>();
+var storagePath = Environment.GetEnvironmentVariable("SPCSTAR_DATA_PATH")
+    ?? builder.Configuration["SPCStar:DataPath"]
+    ?? Path.Combine(FindProjectRoot(builder.Environment.ContentRootPath), ".appdata", "spcstar-data.json");
+var repository = new FileBackedSpcRepository(storagePath);
+builder.Services.AddSingleton<ISpcRepository>(repository);
+builder.Services.AddSingleton<IRepositoryPersistence>(repository);
 builder.Services.AddSingleton<WesternElectricRuleService>();
 builder.Services.AddSingleton<PermissionService>();
 builder.Services.AddSingleton<CredentialService>();
@@ -30,6 +35,7 @@ builder.Services.AddSingleton<WorkContextService>();
 var app = builder.Build();
 
 SeedData.SeedAll(app.Services.GetRequiredService<ISpcRepository>());
+app.Services.GetRequiredService<IRepositoryPersistence>().SaveChanges();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -52,9 +58,14 @@ app.MapGet("/auth/me", (string userName, AuthSessionService service) =>
         : Results.NotFound(new { errors = result.Errors });
 });
 
-app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService service) =>
+app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService service, IRepositoryPersistence persistence) =>
 {
     var result = service.ImportCsv(request.Csv);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
     return result.Succeeded
         ? Results.Ok(new { imported = true })
         : Results.BadRequest(new { imported = false, errors = result.Errors });
@@ -70,17 +81,27 @@ app.MapGet("/setup/roles", (SetupManagementService service) =>
     return Results.Ok(service.GetRoles());
 });
 
-app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService service) =>
+app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
     var result = service.UpsertUser(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
     return result.Succeeded
         ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapPost("/setup/inspection-plans", (UpsertInspectionSetupRequest request, SetupManagementService service) =>
+app.MapPost("/setup/inspection-plans", (UpsertInspectionSetupRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
     var result = service.UpsertInspectionSetup(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
     return result.Succeeded
         ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
@@ -101,17 +122,27 @@ app.MapGet("/sync/setup-snapshot", (SetupQueryService service) =>
     return Results.Ok(service.GetSetupSnapshot());
 });
 
-app.MapPost("/inspections/measurements", (InspectionMeasurementEntry request, InspectionMeasurementService service) =>
+app.MapPost("/inspections/measurements", (InspectionMeasurementEntry request, InspectionMeasurementService service, IRepositoryPersistence persistence) =>
 {
     var result = service.EnterMeasurement(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
     return result.Succeeded
         ? Results.Created($"/inspections/measurements/{result.Value!.Id}", result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapPost("/material-changes", (MaterialChangeLogEntry request, MaterialChangeLogService service) =>
+app.MapPost("/material-changes", (MaterialChangeLogEntry request, MaterialChangeLogService service, IRepositoryPersistence persistence) =>
 {
     var result = service.Record(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
     return result.Succeeded
         ? Results.Created($"/material-changes/{result.Value!.Id}", result.Value)
         : Results.BadRequest(new { errors = result.Errors });
@@ -120,7 +151,8 @@ app.MapPost("/material-changes", (MaterialChangeLogEntry request, MaterialChange
 app.MapPost("/alerts/{alertId:guid}/override", (
     Guid alertId,
     AlertOverrideApiRequest request,
-    AlertOverrideService service) =>
+    AlertOverrideService service,
+    IRepositoryPersistence persistence) =>
 {
     var result = service.Override(new AlertOverrideRequest(
         alertId,
@@ -130,6 +162,10 @@ app.MapPost("/alerts/{alertId:guid}/override", (
         request.SolutionText,
         request.WhyStandardProcessWasBypassed,
         request.UnlockedAt ?? DateTimeOffset.UtcNow));
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
 
     return result.Succeeded
         ? Results.Ok(result.Value)
@@ -233,9 +269,14 @@ app.MapPost("/exports/material-changes.csv", (MaterialHistoryExportRequest reque
     return Results.Text(service.ExportMaterialChangeHistoryCsv(request), "text/csv");
 });
 
-app.MapPost("/sync/offline-changes", (OfflineSyncRequest request, OfflineSyncService service) =>
+app.MapPost("/sync/offline-changes", (OfflineSyncRequest request, OfflineSyncService service, IRepositoryPersistence persistence) =>
 {
     var result = service.Sync(request);
+    if (result.Accepted.Count > 0)
+    {
+        persistence.SaveChanges();
+    }
+
     return result.HasErrors
         ? Results.BadRequest(result)
         : Results.Ok(result);
@@ -252,6 +293,23 @@ static string[] SplitCsv(string value)
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
+}
+
+static string FindProjectRoot(string startPath)
+{
+    var directory = new DirectoryInfo(startPath);
+    while (directory is not null)
+    {
+        if (File.Exists(Path.Combine(directory.FullName, "SPCStar.sln")) ||
+            Directory.Exists(Path.Combine(directory.FullName, ".git")))
+        {
+            return directory.FullName;
+        }
+
+        directory = directory.Parent;
+    }
+
+    return Directory.GetCurrentDirectory();
 }
 
 app.Run();

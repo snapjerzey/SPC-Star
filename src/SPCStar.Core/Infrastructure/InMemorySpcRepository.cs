@@ -2,7 +2,7 @@ using SPCStar.Core.Domain;
 
 namespace SPCStar.Core.Infrastructure;
 
-public sealed class InMemorySpcRepository : ISpcRepository
+public class InMemorySpcRepository : ISpcRepository
 {
     public List<User> Users { get; } = [];
     public List<Role> Roles { get; } = [];

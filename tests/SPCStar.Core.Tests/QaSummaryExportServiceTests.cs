@@ -50,6 +50,22 @@ public sealed class QaSummaryExportServiceTests
         Assert.Equal("Pass", row.Status);
     }
 
+    [Fact]
+    public void BuildJobVariableMeans_ReturnsMultipleJobs()
+    {
+        var repository = RepositoryWithMeasurements();
+        repository.Jobs.Add(new Job { JobNum = "J200", PartNum = "P100" });
+        repository.Measurements.Add(Measurement(5.2m, 3, "J200"));
+        var service = new QaSummaryExportService(repository);
+
+        var result = service.BuildJobVariableMeans(["J100", "J200"]);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Contains(result.Value, row => row.JobNum == "J100" && row.Mean == 5.0m);
+        Assert.Contains(result.Value, row => row.JobNum == "J200" && row.Mean == 5.2m);
+    }
+
     private static InMemorySpcRepository RepositoryWithMeasurements()
     {
         var repository = new InMemorySpcRepository();
@@ -79,11 +95,11 @@ public sealed class QaSummaryExportServiceTests
         return repository;
     }
 
-    private static InspectionMeasurement Measurement(decimal value, int minutes)
+    private static InspectionMeasurement Measurement(decimal value, int minutes, string jobNum = "J100")
     {
         return new InspectionMeasurement
         {
-            JobNum = "J100",
+            JobNum = jobNum,
             PartNum = "P100",
             ProcessCode = "MOLD",
             OperationSeq = 10,

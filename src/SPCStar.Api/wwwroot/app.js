@@ -90,7 +90,6 @@ async function loadSnapshot() {
   fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
   $("partNum").value = state.snapshot.parts[0]?.partNum || "";
   updatePartFromJob();
-  renderSelectedInspection();
   if (canManageSetup()) {
     renderPartReviewControls();
     renderPartReview();
@@ -127,17 +126,9 @@ function updatePartFromJob() {
   }
 }
 
-function renderSelectedInspection() {
-  const set = selectedInspectionSet();
-  $("currentInspection").textContent = set
-    ? `${set.processCode} ${set.operationSeq} / ${set.plans.length} measurement${set.plans.length === 1 ? "" : "s"}`
-    : "No inspection configured";
-}
-
 async function loadContext(event) {
   event?.preventDefault();
   updatePartFromJob();
-  renderSelectedInspection();
   const { jobNum, resourceId, set } = selectedValues();
   if (!set || !jobNum || !resourceId) {
     state.selectedPlans = [];
@@ -153,7 +144,6 @@ async function loadContext(event) {
 function renderEmptyContext() {
   $("contextTitle").textContent = "No inspection loaded";
   $("contextSubtitle").textContent = "Enter a job number, machine, and part number, then start inspecting.";
-  setStatus($("dueStatus"), "Not checked", "neutral");
   renderLock(null);
   $("variableList").innerHTML = "";
   $("meanSummary").innerHTML = "";
@@ -176,21 +166,13 @@ async function loadVariableContext(jobNum, resourceId, plan) {
 function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
   $("contextTitle").textContent = `${jobNum} ${resourceId}`;
-  $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.plans.length} variables`;
-  renderOverallDueStatus();
+  $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq}`;
   state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderVariables();
   renderMeanSummary();
   renderTrendChoices();
   loadTrend();
-}
-
-function renderOverallDueStatus() {
-  const statuses = state.contexts.map((context) => context.frequencyStatus.status);
-  const status = statuses.includes("Overdue") ? "Overdue" : statuses.includes("DueNow") ? "DueNow" : "NotDue";
-  const kind = status === "Overdue" ? "danger" : status === "DueNow" ? "warn" : "ok";
-  setStatus($("dueStatus"), status, kind);
 }
 
 function renderLock(activeLock) {
@@ -223,6 +205,10 @@ function renderVariables() {
           <strong>${plan.characteristicName}</strong>
           <span>${plan.unitOfMeasure}</span>
         </div>
+        <div class="sample-meta">
+          <span>Sample size ${plan.sampleSize}</span>
+          <span>${formatFrequency(plan)}</span>
+        </div>
         <div class="limit-grid">
           <div><span>LSL</span><strong>${formatNumber(context.lowerSpecLimit)}</strong></div>
           <div><span>Target</span><strong>${formatNumber(plan.nominal)}</strong></div>
@@ -232,10 +218,13 @@ function renderVariables() {
           <div><span>UCL</span><strong>${formatNumber(context.upperControlLimit)}</strong></div>
         </div>
       </div>
-      <label>
-        Measurement
-        <input class="measurement-input" data-plan-index="${index}" type="number" step="0.0001" inputmode="decimal" placeholder="0.0000">
-      </label>`;
+      <div class="sample-inputs">
+        ${Array.from({ length: plan.sampleSize }, (_, sampleIndex) => `
+          <label>
+            Sample ${sampleIndex + 1}
+            <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" type="number" step="0.0001" inputmode="decimal" placeholder="0.0000">
+          </label>`).join("")}
+      </div>`;
     list.appendChild(card);
   });
 }
@@ -256,6 +245,28 @@ function renderMeanSummary() {
       <small>${points.length} pt${points.length === 1 ? "" : "s"}</small>`;
     summary.appendChild(item);
   });
+}
+
+function formatFrequency(plan) {
+  const unit = {
+    Minutes: "minutes",
+    Hours: "hours",
+    Pieces: "parts",
+    StartOfJob: "start of job",
+    MaterialChange: "material change",
+    ToolChange: "tool change",
+    Restart: "restart"
+  }[plan.frequencyUnit] || plan.frequencyUnit;
+
+  if (plan.frequencyType === "Quantity") {
+    return `Every ${plan.frequencyValue} ${unit}`;
+  }
+
+  if (plan.frequencyType === "Time") {
+    return `Every ${plan.frequencyValue} ${unit}`;
+  }
+
+  return `At ${unit}`;
 }
 
 async function submitMeasurement(event) {
@@ -587,16 +598,16 @@ function renderPartReview() {
 
 async function loadJobSummary(event) {
   event?.preventDefault();
-  const jobNum = $("summaryJobNum").value.trim();
-  if (!jobNum) {
-    $("jobSummaryMessage").textContent = "Enter a job number.";
+  const jobNums = parseJobNums();
+  if (!jobNums.length) {
+    $("jobSummaryMessage").textContent = "Enter at least one job number.";
     $("jobSummaryMessage").className = "message error";
     return;
   }
 
   try {
     const requiredOnly = $("summaryRequiredOnly").value;
-    const rows = await api(`/qa/jobs/${encodeURIComponent(jobNum)}/variable-means?requiredOnly=${requiredOnly}`);
+    const rows = await api(`/qa/job-variable-means?jobNums=${encodeURIComponent(jobNums.join(","))}&requiredOnly=${requiredOnly}`);
     renderJobSummary(rows);
     $("jobSummaryMessage").textContent = `${rows.length} variable${rows.length === 1 ? "" : "s"} loaded.`;
     $("jobSummaryMessage").className = "message ok";
@@ -617,30 +628,37 @@ function renderJobSummary(rows) {
   container.className = "data-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Variable</span><span>Mean</span><span>Count</span><span>Spec</span><span>Status</span>
+      <span>Job</span><span>Variable</span><span>Mean</span><span>Count</span><span>Status</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
     item.className = "data-row";
     item.innerHTML = `
+      <span>${row.jobNum}</span>
       <span>${row.characteristicName} (${row.unitOfMeasure})</span>
       <span>${formatNumber(row.mean)}</span>
       <span>${row.count}</span>
-      <span>${formatNumber(row.lsl)} / ${formatNumber(row.usl)}</span>
       <span>${row.status}${row.isRequiredForCoa ? " / COA" : ""}</span>`;
     container.appendChild(item);
   });
 }
 
 function openJobSummaryCsv() {
-  const jobNum = $("summaryJobNum").value.trim();
-  if (!jobNum) {
-    $("jobSummaryMessage").textContent = "Enter a job number.";
+  const jobNums = parseJobNums();
+  if (!jobNums.length) {
+    $("jobSummaryMessage").textContent = "Enter at least one job number.";
     $("jobSummaryMessage").className = "message error";
     return;
   }
   const requiredOnly = $("summaryRequiredOnly").value;
-  window.open(`/qa/jobs/${encodeURIComponent(jobNum)}/variable-means.csv?requiredOnly=${requiredOnly}`, "_blank");
+  window.open(`/qa/job-variable-means.csv?jobNums=${encodeURIComponent(jobNums.join(","))}&requiredOnly=${requiredOnly}`, "_blank");
+}
+
+function parseJobNums() {
+  return $("summaryJobNum").value
+    .split(",")
+    .map((jobNum) => jobNum.trim())
+    .filter(Boolean);
 }
 
 function renderUsers() {

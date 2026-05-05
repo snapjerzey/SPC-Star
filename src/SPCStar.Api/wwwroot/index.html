@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260505-job-data-review">
+  <link rel="stylesheet" href="/styles.css?v=20260505-sample-job-data">
 </head>
 <body>
   <main class="shell">
@@ -65,10 +65,6 @@
             <input id="partNum" list="partOptions" autocomplete="off" inputmode="text">
             <datalist id="partOptions"></datalist>
           </label>
-          <div class="readonly-summary">
-            <span>Inspection</span>
-            <strong id="currentInspection">Not loaded</strong>
-          </div>
           <button type="submit">Start Inspecting</button>
         </form>
 
@@ -139,7 +135,6 @@
               <h2 id="contextTitle">No context loaded</h2>
               <p id="contextSubtitle">Enter a job number, machine, and part number, then start inspecting.</p>
             </div>
-            <span id="dueStatus" class="status-pill neutral">Not checked</span>
           </div>
 
           <form id="measurementForm" class="measurement-form">
@@ -279,8 +274,8 @@
         </div>
         <form id="jobSummaryForm" class="job-summary-form">
           <label>
-            Job Number
-            <input id="summaryJobNum" list="jobOptions" autocomplete="off" inputmode="text">
+            Job Numbers
+            <input id="summaryJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="J100, J101">
           </label>
           <label>
             Variables
@@ -297,6 +292,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260505-job-data-review"></script>
+  <script src="/app.js?v=20260505-sample-job-data"></script>
 </body>
 </html>

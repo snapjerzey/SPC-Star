@@ -86,55 +86,35 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
 
     public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildJobVariableMeans(string jobNum, bool requiredOnly = true)
     {
-        if (string.IsNullOrWhiteSpace(jobNum))
+        return BuildJobVariableMeans([jobNum], requiredOnly);
+    }
+
+    public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildJobVariableMeans(IReadOnlyCollection<string> jobNums, bool requiredOnly = true)
+    {
+        var requestedJobs = jobNums
+            .Where(jobNum => !string.IsNullOrWhiteSpace(jobNum))
+            .Select(jobNum => jobNum.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (requestedJobs.Length == 0)
         {
             return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Fail("JobNum is required.");
         }
 
-        var job = repository.Jobs.FirstOrDefault(item => item.JobNum.Equals(jobNum.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (job is null)
+        var jobs = repository.Jobs
+            .Where(item => requestedJobs.Contains(item.JobNum, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(item => item.JobNum)
+            .ToArray();
+        var missingJobs = requestedJobs
+            .Where(jobNum => jobs.All(job => !job.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        if (missingJobs.Length > 0)
         {
-            return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Fail("Job was not found.");
+            return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Fail($"Job was not found: {string.Join(", ", missingJobs)}.");
         }
 
-        var plans =
-            from part in repository.Parts
-            join operation in repository.Operations on part.Id equals operation.PartId
-            join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
-            join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
-            where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase) &&
-                (!requiredOnly || characteristic.IsRequiredForCoa)
-            orderby operation.OperationSeq, characteristic.Name
-            select new { part.PartNum, characteristic.Name, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, spec.Nominal, spec.Lsl, spec.Usl };
-
-        var rows = plans
-            .Select(plan =>
-            {
-                var values = repository.Measurements
-                    .Where(measurement =>
-                        measurement.JobNum.Equals(job.JobNum, StringComparison.OrdinalIgnoreCase) &&
-                        measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
-                        measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
-                    .Select(measurement => measurement.Value)
-                    .ToArray();
-                var mean = values.Length == 0 ? (decimal?)null : values.Average();
-                var passed = values.Length > 0 && values.All(value => value >= plan.Lsl && value <= plan.Usl);
-
-                return new JobVariableMeanRow(
-                    job.JobNum,
-                    plan.PartNum,
-                    plan.Name,
-                    plan.UnitOfMeasure,
-                    plan.IsRequiredForCoa,
-                    plan.Nominal,
-                    plan.Lsl,
-                    plan.Usl,
-                    mean,
-                    values.Length == 0 ? null : values.Min(),
-                    values.Length == 0 ? null : values.Max(),
-                    values.Length,
-                    values.Length == 0 ? "NoData" : passed ? PassFailStatus.Pass.ToString() : PassFailStatus.Fail.ToString());
-            })
+        var rows = jobs
+            .SelectMany(job => BuildSingleJobVariableMeans(job, requiredOnly))
             .ToArray();
 
         return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Ok(rows);
@@ -142,7 +122,12 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
 
     public ServiceResult<string> ExportJobVariableMeansCsv(string jobNum, bool requiredOnly = true)
     {
-        var summary = BuildJobVariableMeans(jobNum, requiredOnly);
+        return ExportJobVariableMeansCsv([jobNum], requiredOnly);
+    }
+
+    public ServiceResult<string> ExportJobVariableMeansCsv(IReadOnlyCollection<string> jobNums, bool requiredOnly = true)
+    {
+        var summary = BuildJobVariableMeans(jobNums, requiredOnly);
         if (!summary.Succeeded || summary.Value is null)
         {
             return ServiceResult<string>.Fail(summary.Errors);
@@ -182,6 +167,47 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         });
 
         return ServiceResult<string>.Ok(CsvSupport.WriteRows(headers, rows));
+    }
+
+    private IEnumerable<JobVariableMeanRow> BuildSingleJobVariableMeans(Job job, bool requiredOnly)
+    {
+        var plans =
+            from part in repository.Parts
+            join operation in repository.Operations on part.Id equals operation.PartId
+            join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
+            join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
+            where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                (!requiredOnly || characteristic.IsRequiredForCoa)
+            orderby operation.OperationSeq, characteristic.Name
+            select new { part.PartNum, characteristic.Name, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, spec.Nominal, spec.Lsl, spec.Usl };
+
+        return plans.Select(plan =>
+        {
+            var values = repository.Measurements
+                .Where(measurement =>
+                    measurement.JobNum.Equals(job.JobNum, StringComparison.OrdinalIgnoreCase) &&
+                    measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                    measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
+                .Select(measurement => measurement.Value)
+                .ToArray();
+            var mean = values.Length == 0 ? (decimal?)null : values.Average();
+            var passed = values.Length > 0 && values.All(value => value >= plan.Lsl && value <= plan.Usl);
+
+            return new JobVariableMeanRow(
+                job.JobNum,
+                plan.PartNum,
+                plan.Name,
+                plan.UnitOfMeasure,
+                plan.IsRequiredForCoa,
+                plan.Nominal,
+                plan.Lsl,
+                plan.Usl,
+                mean,
+                values.Length == 0 ? null : values.Min(),
+                values.Length == 0 ? null : values.Max(),
+                values.Length,
+                values.Length == 0 ? "NoData" : passed ? PassFailStatus.Pass.ToString() : PassFailStatus.Fail.ToString());
+        });
     }
 
     public ServiceResult<string> ExportCsv(QaSummaryExportRequest request)

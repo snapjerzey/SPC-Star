@@ -197,6 +197,22 @@ app.MapGet("/qa/jobs/{jobNum}/variable-means.csv", (string jobNum, bool? require
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapGet("/qa/job-variable-means", (string jobNums, bool? requiredOnly, QaSummaryExportService service) =>
+{
+    var result = service.BuildJobVariableMeans(SplitCsv(jobNums), requiredOnly ?? true);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
+app.MapGet("/qa/job-variable-means.csv", (string jobNums, bool? requiredOnly, QaSummaryExportService service) =>
+{
+    var result = service.ExportJobVariableMeansCsv(SplitCsv(jobNums), requiredOnly ?? true);
+    return result.Succeeded
+        ? Results.Text(result.Value!, "text/csv")
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/exports/inspection-data.csv", (InspectionHistoryExportRequest request, HistoryExportService service) =>
 {
     return Results.Text(service.ExportInspectionCsv(request), "text/csv");
@@ -229,6 +245,14 @@ app.MapGet("/alerts/active", (ISpcRepository repository) =>
 {
     return Results.Ok(repository.Alerts.Where(alert => alert.Status == AlertStatus.Active));
 });
+
+static string[] SplitCsv(string value)
+{
+    return value
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+}
 
 app.Run();
 

@@ -24,7 +24,6 @@
     <section id="loginPanel" class="panel compact">
       <div class="panel-heading">
         <h2>Sign In</h2>
-        <p>Use a seeded demo user for now.</p>
       </div>
       <form id="loginForm" class="form-grid">
         <label>
@@ -47,7 +46,7 @@
     <section id="workPanel" class="workspace hidden">
       <aside class="panel">
         <div class="panel-heading">
-          <h2>Work Context</h2>
+          <h2>Work</h2>
           <p id="setupVersion">Setup not loaded</p>
         </div>
         <form id="contextForm" class="stacked-form">
@@ -65,6 +64,41 @@
           </label>
           <button type="submit">Load</button>
         </form>
+
+        <hr>
+
+        <div class="panel-heading tight">
+          <h2>Material</h2>
+        </div>
+        <form id="materialForm" class="stacked-form">
+          <label>
+            Material part
+            <input id="materialPartNum" autocomplete="off">
+          </label>
+          <label>
+            Old lot
+            <input id="oldLotNum" autocomplete="off">
+          </label>
+          <label>
+            New lot
+            <input id="newLotNum" autocomplete="off">
+          </label>
+          <label>
+            Quantity
+            <input id="quantityLoaded" type="number" step="0.0001" inputmode="decimal">
+          </label>
+          <label>
+            Reason
+            <select id="materialReason">
+              <option value="Material change">Material change</option>
+              <option value="Lot change">Lot change</option>
+              <option value="Color change">Color change</option>
+              <option value="Resin change">Resin change</option>
+            </select>
+          </label>
+          <button type="submit" class="secondary">Save Lot Change</button>
+        </form>
+        <p id="materialMessage" class="message"></p>
       </aside>
 
       <section class="main-column">
@@ -87,10 +121,11 @@
 
         <section class="panel">
           <div class="panel-heading horizontal">
-            <h2>Recent Measurements</h2>
-            <button id="refreshButton" type="button" class="secondary">Refresh</button>
+            <h2>Trend</h2>
+            <select id="trendCharacteristic" class="compact-select"></select>
           </div>
-          <div id="measurementList" class="measurement-list empty">No measurements yet.</div>
+          <canvas id="trendCanvas" class="trend-canvas" width="760" height="220"></canvas>
+          <p id="trendMessage" class="message">No trend data yet.</p>
         </section>
       </section>
     </section>
@@ -100,7 +135,6 @@
         <section class="panel">
           <div class="panel-heading">
             <h2>Users</h2>
-            <p>Create sign-ins and assign access levels.</p>
           </div>
           <form id="userSetupForm" class="stacked-form">
             <label>
@@ -124,7 +158,6 @@
         <section class="panel">
           <div class="panel-heading">
             <h2>Inspection Setup</h2>
-            <p>Define a part, operation, and one required measurement.</p>
           </div>
           <form id="inspectionSetupForm" class="setup-form">
             <label>Part number<input id="setupPartNum" required></label>
@@ -185,7 +218,6 @@
         <div class="panel-heading horizontal">
           <div>
             <h2>CSV Import</h2>
-            <p>Bulk load parts, processes, operations, and measurements.</p>
           </div>
           <button id="csvTemplateButton" type="button" class="secondary">Template</button>
         </div>

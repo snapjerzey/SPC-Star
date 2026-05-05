@@ -3,6 +3,7 @@ const state = {
   snapshot: null,
   contexts: [],
   selectedPlans: [],
+  trendCharacteristic: "",
   users: [],
   roles: []
 };
@@ -129,7 +130,8 @@ function renderContext() {
   renderOverallDueStatus();
   renderLock(state.contexts.find((context) => context.activeLock)?.activeLock);
   renderVariables();
-  renderMeasurements();
+  renderTrendChoices();
+  loadTrend();
 }
 
 function renderOverallDueStatus() {
@@ -178,31 +180,6 @@ function renderVariables() {
       </label>`;
     list.appendChild(card);
   });
-}
-
-function renderMeasurements() {
-  const list = $("measurementList");
-  const rows = state.contexts.flatMap((context) =>
-    context.recentMeasurements.map((point) => ({
-      characteristicName: context.request.characteristicName,
-      ...point
-    })));
-  if (!rows.length) {
-    list.className = "measurement-list empty";
-    list.textContent = "No measurements yet.";
-    return;
-  }
-  list.className = "measurement-list";
-  list.innerHTML = "";
-  rows
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .slice(0, 12)
-    .forEach((point) => {
-      const row = document.createElement("div");
-      row.className = "measurement-row";
-      row.innerHTML = `<span>${formatTime(point.timestamp)} ${point.characteristicName}</span><strong>${formatNumber(point.value)}</strong><span>${point.hasRuleViolation ? "Violation" : "OK"}</span>`;
-      list.appendChild(row);
-    });
 }
 
 async function submitMeasurement(event) {
@@ -258,6 +235,162 @@ function inputHasValue(input) {
 function showEntryMessage(message, kind) {
   $("entryMessage").textContent = message;
   $("entryMessage").className = `message ${kind}`;
+}
+
+function renderTrendChoices() {
+  const select = $("trendCharacteristic");
+  const previous = state.trendCharacteristic || select.value;
+  fillSelect(select, state.selectedPlans, (plan) => plan.characteristicName, (plan) => plan.characteristicName);
+  if (state.selectedPlans.some((plan) => plan.characteristicName === previous)) {
+    select.value = previous;
+  }
+  state.trendCharacteristic = select.value;
+}
+
+async function loadTrend() {
+  const { jobNum, resourceId, set } = selectedValues();
+  if (!set || !state.trendCharacteristic) {
+    drawTrend([]);
+    return;
+  }
+
+  const data = await api("/charts/data", {
+    method: "POST",
+    body: JSON.stringify({
+      chartType: "IndividualsMovingRange",
+      jobNum,
+      partNum: set.partNum,
+      resourceId,
+      characteristicName: state.trendCharacteristic,
+      from: null,
+      to: null
+    })
+  });
+
+  drawTrend(data.points, data);
+}
+
+function drawTrend(points, data = {}) {
+  const canvas = $("trendCanvas");
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+
+  const padding = { left: 42, right: 18, top: 18, bottom: 34 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const values = points.map((point) => Number(point.value));
+  const limitValues = [data.lowerControlLimit, data.upperControlLimit, data.lowerSpecLimit, data.upperSpecLimit]
+    .filter((value) => value !== null && value !== undefined)
+    .map(Number);
+
+  if (!values.length) {
+    $("trendMessage").textContent = "No trend data yet.";
+    drawChartFrame(ctx, padding, plotWidth, plotHeight);
+    return;
+  }
+
+  $("trendMessage").textContent = `${points.length} point${points.length === 1 ? "" : "s"} for ${state.trendCharacteristic}`;
+  const min = Math.min(...values, ...limitValues);
+  const max = Math.max(...values, ...limitValues);
+  const spread = max === min ? 1 : max - min;
+  const low = min - spread * 0.1;
+  const high = max + spread * 0.1;
+  const x = (index) => padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
+  const y = (value) => padding.top + (1 - ((Number(value) - low) / (high - low))) * plotHeight;
+
+  drawChartFrame(ctx, padding, plotWidth, plotHeight);
+  drawLimitLine(ctx, y, data.upperControlLimit, "UCL", "#b54708", width, padding);
+  drawLimitLine(ctx, y, data.lowerControlLimit, "LCL", "#b54708", width, padding);
+  drawLimitLine(ctx, y, data.upperSpecLimit, "USL", "#b42318", width, padding);
+  drawLimitLine(ctx, y, data.lowerSpecLimit, "LSL", "#b42318", width, padding);
+
+  ctx.strokeStyle = "#0f766e";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(x(index), y(point.value));
+    else ctx.lineTo(x(index), y(point.value));
+  });
+  ctx.stroke();
+
+  points.forEach((point, index) => {
+    ctx.beginPath();
+    ctx.fillStyle = point.hasRuleViolation ? "#b42318" : "#0f766e";
+    ctx.arc(x(index), y(point.value), 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.fillStyle = "#667085";
+  ctx.font = "12px Segoe UI, Arial";
+  ctx.fillText(formatNumber(low), 6, padding.top + plotHeight);
+  ctx.fillText(formatNumber(high), 6, padding.top + 8);
+}
+
+function drawChartFrame(ctx, padding, plotWidth, plotHeight) {
+  ctx.strokeStyle = "#d9dee7";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(padding.left, padding.top, plotWidth, plotHeight);
+  ctx.strokeStyle = "#eef2f6";
+  for (let index = 1; index < 4; index++) {
+    const y = padding.top + (plotHeight / 4) * index;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(padding.left + plotWidth, y);
+    ctx.stroke();
+  }
+}
+
+function drawLimitLine(ctx, scaleY, value, label, color, width, padding) {
+  if (value === null || value === undefined) return;
+  const y = scaleY(value);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(padding.left, y);
+  ctx.lineTo(width - padding.right, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = color;
+  ctx.font = "11px Segoe UI, Arial";
+  ctx.fillText(label, width - padding.right - 28, y - 4);
+}
+
+async function saveMaterialChange(event) {
+  event.preventDefault();
+  const { jobNum, resourceId, set } = selectedValues();
+  try {
+    await api("/material-changes", {
+      method: "POST",
+      body: JSON.stringify({
+        jobNum,
+        partNum: set.partNum,
+        materialPartNum: $("materialPartNum").value.trim(),
+        oldLotNum: $("oldLotNum").value.trim(),
+        newLotNum: $("newLotNum").value.trim(),
+        quantityLoaded: optionalNumber("quantityLoaded"),
+        resourceId,
+        operatorUserId: state.user.userName,
+        timestamp: new Date().toISOString(),
+        reason: $("materialReason").value,
+        deviceId: "browser-dev",
+        clientRecordId: crypto.randomUUID(),
+        submittedAt: new Date().toISOString()
+      })
+    });
+    $("oldLotNum").value = $("newLotNum").value;
+    $("newLotNum").value = "";
+    $("quantityLoaded").value = "";
+    $("materialMessage").textContent = "Lot change saved.";
+    $("materialMessage").className = "message ok";
+  } catch (error) {
+    $("materialMessage").textContent = readableError(error);
+    $("materialMessage").className = "message error";
+  }
 }
 
 function canManageSetup() {
@@ -413,7 +546,11 @@ window.addEventListener("offline", () => setStatus($("syncStatus"), "Offline", "
 $("loginForm").addEventListener("submit", login);
 $("contextForm").addEventListener("submit", loadContext);
 $("measurementForm").addEventListener("submit", submitMeasurement);
-$("refreshButton").addEventListener("click", loadContext);
+$("materialForm").addEventListener("submit", saveMaterialChange);
+$("trendCharacteristic").addEventListener("change", () => {
+  state.trendCharacteristic = $("trendCharacteristic").value;
+  loadTrend();
+});
 $("inspectionTab").addEventListener("click", () => showPanel("inspect"));
 $("setupTab").addEventListener("click", () => showPanel("setup"));
 $("userSetupForm").addEventListener("submit", saveUser);

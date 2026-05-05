@@ -217,6 +217,13 @@ textarea {
   gap: 12px;
   align-items: end;
 }
+.job-summary-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 220px) auto auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
 .setup-form button { grid-column: span 2; }
 .setup-list {
   display: grid;
@@ -233,6 +240,27 @@ textarea {
 .setup-row:last-child { border-bottom: 0; }
 .setup-row strong { display: block; }
 .setup-row span { color: var(--muted); font-size: 13px; }
+.data-table {
+  display: grid;
+  gap: 0;
+  overflow-x: auto;
+}
+.data-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr 1.2fr .8fr;
+  gap: 12px;
+  min-width: 760px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+  align-items: center;
+}
+.data-row.header {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.data-row:last-child { border-bottom: 0; }
 
 .variable-list {
   display: grid;
@@ -333,7 +361,7 @@ textarea {
   .topbar, .horizontal { align-items: stretch; flex-direction: column; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
-  .form-grid, .measurement-form, .setup-grid, .setup-form, .override-form { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .setup-grid, .setup-form, .override-form, .job-summary-form { grid-template-columns: 1fr; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-form button { grid-column: span 1; }
   .variable-card { grid-template-columns: 1fr; }

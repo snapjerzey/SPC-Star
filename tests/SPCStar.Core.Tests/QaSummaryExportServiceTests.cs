@@ -33,6 +33,23 @@ public sealed class QaSummaryExportServiceTests
         Assert.Contains("Pass", csv);
     }
 
+    [Fact]
+    public void BuildJobVariableMeans_ReturnsRequiredCharacteristicsForJob()
+    {
+        var repository = RepositoryWithMeasurements();
+        var service = new QaSummaryExportService(repository);
+
+        var result = service.BuildJobVariableMeans("J100");
+
+        Assert.True(result.Succeeded);
+        var row = Assert.Single(result.Value!);
+        Assert.Equal("Diameter", row.CharacteristicName);
+        Assert.True(row.IsRequiredForCoa);
+        Assert.Equal(3, row.Count);
+        Assert.Equal(5.0m, row.Mean);
+        Assert.Equal("Pass", row.Status);
+    }
+
     private static InMemorySpcRepository RepositoryWithMeasurements()
     {
         var repository = new InMemorySpcRepository();
@@ -53,6 +70,7 @@ public sealed class QaSummaryExportServiceTests
         repository.Operations.Add(operation);
         repository.Characteristics.Add(characteristic);
         repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = 5m, Lsl = 4.5m, Usl = 5.5m });
+        repository.Jobs.Add(new Job { JobNum = "J100", PartNum = "P100" });
         repository.Measurements.AddRange([
             Measurement(4.9m, 0),
             Measurement(5.0m, 1),

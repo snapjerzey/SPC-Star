@@ -91,6 +91,11 @@ async function loadSnapshot() {
   $("partNum").value = state.snapshot.parts[0]?.partNum || "";
   updatePartFromJob();
   renderSelectedInspection();
+  if (canManageSetup()) {
+    renderPartReviewControls();
+    renderPartReview();
+    $("summaryJobNum").value = $("summaryJobNum").value || state.snapshot.jobs[0]?.jobNum || "";
+  }
   if (selectedInspectionSet() && $("jobNum").value && state.snapshot.resources.length) {
     await loadContext();
   }
@@ -199,7 +204,7 @@ function renderLock(activeLock) {
     return;
   }
   banner.classList.remove("hidden");
-  banner.textContent = `LOCKED: ${activeLock.ruleTriggered} at ${formatTime(activeLock.lockedAt)}`;
+  banner.textContent = `LOCKED: ${ruleLabel(activeLock.ruleTriggered)} at ${formatTime(activeLock.lockedAt)}`;
   panel.classList.remove("hidden");
   $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
   $("godReasonLabel").classList.toggle("hidden", !state.user?.roles?.includes("GOD"));
@@ -541,6 +546,103 @@ async function loadSetupAdmin() {
   renderUsers();
 }
 
+function renderPartReviewControls() {
+  const parts = [{ partNum: "", description: "All parts" }, ...state.snapshot.parts];
+  fillSelect($("partReviewFilter"), parts, (part) => part.partNum, (part) => part.partNum || part.description);
+}
+
+function renderPartReview() {
+  const container = $("partReviewList");
+  const selectedPart = $("partReviewFilter").value;
+  const plans = state.snapshot.inspectionPlans
+    .filter((plan) => !selectedPart || plan.partNum === selectedPart)
+    .sort((a, b) =>
+      a.partNum.localeCompare(b.partNum) ||
+      a.operationSeq - b.operationSeq ||
+      a.characteristicName.localeCompare(b.characteristicName));
+
+  if (!plans.length) {
+    container.className = "data-table empty";
+    container.textContent = "No variables configured.";
+    return;
+  }
+
+  container.className = "data-table";
+  container.innerHTML = `
+    <div class="data-row header">
+      <span>Part</span><span>Operation</span><span>Variable</span><span>Spec</span><span>COA</span>
+    </div>`;
+  plans.forEach((plan) => {
+    const row = document.createElement("div");
+    row.className = "data-row";
+    row.innerHTML = `
+      <span>${plan.partNum}</span>
+      <span>${plan.processCode} ${plan.operationSeq}</span>
+      <span>${plan.characteristicName} (${plan.unitOfMeasure})</span>
+      <span>${formatNumber(plan.lsl)} / ${formatNumber(plan.nominal)} / ${formatNumber(plan.usl)}</span>
+      <span>${plan.isRequiredForCoa ? "Required" : "No"}</span>`;
+    container.appendChild(row);
+  });
+}
+
+async function loadJobSummary(event) {
+  event?.preventDefault();
+  const jobNum = $("summaryJobNum").value.trim();
+  if (!jobNum) {
+    $("jobSummaryMessage").textContent = "Enter a job number.";
+    $("jobSummaryMessage").className = "message error";
+    return;
+  }
+
+  try {
+    const requiredOnly = $("summaryRequiredOnly").value;
+    const rows = await api(`/qa/jobs/${encodeURIComponent(jobNum)}/variable-means?requiredOnly=${requiredOnly}`);
+    renderJobSummary(rows);
+    $("jobSummaryMessage").textContent = `${rows.length} variable${rows.length === 1 ? "" : "s"} loaded.`;
+    $("jobSummaryMessage").className = "message ok";
+  } catch (error) {
+    $("jobSummaryMessage").textContent = readableError(error);
+    $("jobSummaryMessage").className = "message error";
+  }
+}
+
+function renderJobSummary(rows) {
+  const container = $("jobSummaryList");
+  if (!rows.length) {
+    container.className = "data-table empty";
+    container.textContent = "No variables found.";
+    return;
+  }
+
+  container.className = "data-table";
+  container.innerHTML = `
+    <div class="data-row header">
+      <span>Variable</span><span>Mean</span><span>Count</span><span>Spec</span><span>Status</span>
+    </div>`;
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "data-row";
+    item.innerHTML = `
+      <span>${row.characteristicName} (${row.unitOfMeasure})</span>
+      <span>${formatNumber(row.mean)}</span>
+      <span>${row.count}</span>
+      <span>${formatNumber(row.lsl)} / ${formatNumber(row.usl)}</span>
+      <span>${row.status}${row.isRequiredForCoa ? " / COA" : ""}</span>`;
+    container.appendChild(item);
+  });
+}
+
+function openJobSummaryCsv() {
+  const jobNum = $("summaryJobNum").value.trim();
+  if (!jobNum) {
+    $("jobSummaryMessage").textContent = "Enter a job number.";
+    $("jobSummaryMessage").className = "message error";
+    return;
+  }
+  const requiredOnly = $("summaryRequiredOnly").value;
+  window.open(`/qa/jobs/${encodeURIComponent(jobNum)}/variable-means.csv?requiredOnly=${requiredOnly}`, "_blank");
+}
+
 function renderUsers() {
   const list = $("userList");
   if (!state.users.length) {
@@ -678,6 +780,15 @@ function formatTime(value) {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function ruleLabel(rule) {
+  return {
+    OnePointBeyondControlLimit: "One point beyond control limit",
+    TwoOfThreeNearControlLimit: "Two of three near control limit",
+    FourOfFiveApproachingLimit: "Four of five approaching limit",
+    EightConsecutiveOneSideOfCenterline: "Eight consecutive one side of centerline"
+  }[rule] || rule;
+}
+
 window.addEventListener("online", () => setStatus($("syncStatus"), "Online", "ok"));
 window.addEventListener("offline", () => setStatus($("syncStatus"), "Offline", "warn"));
 $("loginForm").addEventListener("submit", login);
@@ -702,6 +813,9 @@ $("userSetupForm").addEventListener("submit", saveUser);
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
+$("partReviewFilter").addEventListener("change", renderPartReview);
+$("jobSummaryForm").addEventListener("submit", loadJobSummary);
+$("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
 setStatus($("syncStatus"), navigator.onLine ? "Online" : "Offline", navigator.onLine ? "ok" : "warn");
 
 if ("serviceWorker" in navigator) {

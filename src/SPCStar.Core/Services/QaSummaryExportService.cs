@@ -23,6 +23,21 @@ public sealed record QaSummaryRow(
     decimal? Usl,
     PassFailStatus PassFailStatus);
 
+public sealed record JobVariableMeanRow(
+    string JobNum,
+    string PartNum,
+    string CharacteristicName,
+    string UnitOfMeasure,
+    bool IsRequiredForCoa,
+    decimal Nominal,
+    decimal Lsl,
+    decimal Usl,
+    decimal? Mean,
+    decimal? Min,
+    decimal? Max,
+    int Count,
+    string Status);
+
 public sealed class QaSummaryExportService(ISpcRepository repository)
 {
     private static readonly string[] Headers =
@@ -67,6 +82,106 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             .ToArray();
 
         return ServiceResult<IReadOnlyList<QaSummaryRow>>.Ok(rows);
+    }
+
+    public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildJobVariableMeans(string jobNum, bool requiredOnly = true)
+    {
+        if (string.IsNullOrWhiteSpace(jobNum))
+        {
+            return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Fail("JobNum is required.");
+        }
+
+        var job = repository.Jobs.FirstOrDefault(item => item.JobNum.Equals(jobNum.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (job is null)
+        {
+            return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Fail("Job was not found.");
+        }
+
+        var plans =
+            from part in repository.Parts
+            join operation in repository.Operations on part.Id equals operation.PartId
+            join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
+            join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
+            where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                (!requiredOnly || characteristic.IsRequiredForCoa)
+            orderby operation.OperationSeq, characteristic.Name
+            select new { part.PartNum, characteristic.Name, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, spec.Nominal, spec.Lsl, spec.Usl };
+
+        var rows = plans
+            .Select(plan =>
+            {
+                var values = repository.Measurements
+                    .Where(measurement =>
+                        measurement.JobNum.Equals(job.JobNum, StringComparison.OrdinalIgnoreCase) &&
+                        measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                        measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
+                    .Select(measurement => measurement.Value)
+                    .ToArray();
+                var mean = values.Length == 0 ? (decimal?)null : values.Average();
+                var passed = values.Length > 0 && values.All(value => value >= plan.Lsl && value <= plan.Usl);
+
+                return new JobVariableMeanRow(
+                    job.JobNum,
+                    plan.PartNum,
+                    plan.Name,
+                    plan.UnitOfMeasure,
+                    plan.IsRequiredForCoa,
+                    plan.Nominal,
+                    plan.Lsl,
+                    plan.Usl,
+                    mean,
+                    values.Length == 0 ? null : values.Min(),
+                    values.Length == 0 ? null : values.Max(),
+                    values.Length,
+                    values.Length == 0 ? "NoData" : passed ? PassFailStatus.Pass.ToString() : PassFailStatus.Fail.ToString());
+            })
+            .ToArray();
+
+        return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Ok(rows);
+    }
+
+    public ServiceResult<string> ExportJobVariableMeansCsv(string jobNum, bool requiredOnly = true)
+    {
+        var summary = BuildJobVariableMeans(jobNum, requiredOnly);
+        if (!summary.Succeeded || summary.Value is null)
+        {
+            return ServiceResult<string>.Fail(summary.Errors);
+        }
+
+        var headers = new[]
+        {
+            "JobNum",
+            "PartNum",
+            "CharacteristicName",
+            "UnitOfMeasure",
+            "IsRequiredForCOA",
+            "Nominal",
+            "LSL",
+            "USL",
+            "Mean",
+            "Min",
+            "Max",
+            "Count",
+            "Status"
+        };
+        var rows = summary.Value.Select(row => new Dictionary<string, string>
+        {
+            ["JobNum"] = row.JobNum,
+            ["PartNum"] = row.PartNum,
+            ["CharacteristicName"] = row.CharacteristicName,
+            ["UnitOfMeasure"] = row.UnitOfMeasure,
+            ["IsRequiredForCOA"] = row.IsRequiredForCoa.ToString(),
+            ["Nominal"] = row.Nominal.ToString("0.#####"),
+            ["LSL"] = row.Lsl.ToString("0.#####"),
+            ["USL"] = row.Usl.ToString("0.#####"),
+            ["Mean"] = row.Mean?.ToString("0.#####") ?? string.Empty,
+            ["Min"] = row.Min?.ToString("0.#####") ?? string.Empty,
+            ["Max"] = row.Max?.ToString("0.#####") ?? string.Empty,
+            ["Count"] = row.Count.ToString(),
+            ["Status"] = row.Status
+        });
+
+        return ServiceResult<string>.Ok(CsvSupport.WriteRows(headers, rows));
     }
 
     public ServiceResult<string> ExportCsv(QaSummaryExportRequest request)

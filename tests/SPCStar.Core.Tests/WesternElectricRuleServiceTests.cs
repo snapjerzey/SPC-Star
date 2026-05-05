@@ -39,6 +39,17 @@ public sealed class WesternElectricRuleServiceTests
         Assert.Contains(result, violation => violation.RuleTriggered == RuleTriggered.EightConsecutiveOneSideOfCenterline);
     }
 
+    [Fact]
+    public void Detect_FindsFourOfFiveApproachingLimit()
+    {
+        var service = new WesternElectricRuleService();
+        var points = Points([10m, 11.2m, 11.4m, 11.1m, 10.9m, 11.3m]);
+
+        var result = service.Detect(points, centerLine: 10m, lcl: 7m, ucl: 13m);
+
+        Assert.Contains(result, violation => violation.RuleTriggered == RuleTriggered.FourOfFiveApproachingLimit);
+    }
+
     private static IReadOnlyList<WesternElectricPoint> Points(IReadOnlyList<decimal> values)
     {
         return values.Select((value, index) => new WesternElectricPoint(

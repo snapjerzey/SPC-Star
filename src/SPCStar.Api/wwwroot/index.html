@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260505-material-event">
+  <link rel="stylesheet" href="/styles.css?v=20260505-job-data-review">
 </head>
 <body>
   <main class="shell">
@@ -262,8 +262,41 @@
         </form>
         <p id="csvImportMessage" class="message"></p>
       </section>
+
+      <section class="panel">
+        <div class="panel-heading horizontal">
+          <div>
+            <h2>Parts & Variables</h2>
+          </div>
+          <select id="partReviewFilter" class="compact-select"></select>
+        </div>
+        <div id="partReviewList" class="data-table empty">No setup loaded.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Job Data</h2>
+        </div>
+        <form id="jobSummaryForm" class="job-summary-form">
+          <label>
+            Job Number
+            <input id="summaryJobNum" list="jobOptions" autocomplete="off" inputmode="text">
+          </label>
+          <label>
+            Variables
+            <select id="summaryRequiredOnly">
+              <option value="true">Required for COA</option>
+              <option value="false">All variables</option>
+            </select>
+          </label>
+          <button type="submit">Pull Job Data</button>
+          <button id="jobSummaryCsvButton" type="button" class="secondary">CSV</button>
+        </form>
+        <p id="jobSummaryMessage" class="message"></p>
+        <div id="jobSummaryList" class="data-table empty">No job data loaded.</div>
+      </section>
     </section>
   </main>
-  <script src="/app.js?v=20260505-material-event"></script>
+  <script src="/app.js?v=20260505-job-data-review"></script>
 </body>
 </html>

@@ -24,7 +24,7 @@ body {
   font-family: "Segoe UI", Arial, sans-serif;
 }
 
-button, input, select {
+button, input, select, textarea {
   font: inherit;
 }
 
@@ -44,6 +44,18 @@ button.secondary {
   background: #eef2f6;
   color: var(--text);
 }
+.tab-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.tab {
+  min-height: 38px;
+  background: #eef2f6;
+  color: var(--text);
+}
+.tab.active { background: var(--primary); color: white; }
 
 .shell {
   width: min(1180px, 100%);
@@ -136,7 +148,7 @@ label {
   font-size: 13px;
   font-weight: 700;
 }
-input, select {
+input, select, textarea {
   width: 100%;
   min-height: 44px;
   border: 1px solid var(--line);
@@ -145,6 +157,41 @@ input, select {
   color: var(--text);
   padding: 8px 10px;
 }
+textarea {
+  min-height: 150px;
+  resize: vertical;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.setup-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.setup-form button { grid-column: span 2; }
+.setup-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.setup-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+}
+.setup-row:last-child { border-bottom: 0; }
+.setup-row strong { display: block; }
+.setup-row span { color: var(--muted); font-size: 13px; }
 
 .variable-list {
   display: grid;
@@ -221,7 +268,8 @@ input, select {
   .topbar, .horizontal { align-items: stretch; flex-direction: column; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
-  .form-grid, .measurement-form { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .setup-grid, .setup-form { grid-template-columns: 1fr; }
+  .setup-form button { grid-column: span 1; }
   .variable-card { grid-template-columns: 1fr; }
   .limit-grid { grid-template-columns: repeat(3, 1fr); }
 }

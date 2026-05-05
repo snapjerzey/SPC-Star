@@ -79,6 +79,15 @@ public sealed class SetupImportService(ISpcRepository repository)
                 errors.Add($"Row {rowNumber}: Invalid spec limits. LSL must be less than USL.");
             }
 
+            if (!OptionalDecimal(row, "LCL", out var lcl) || !OptionalDecimal(row, "UCL", out var ucl))
+            {
+                errors.Add($"Row {rowNumber}: LCL and UCL must be numeric when provided.");
+            }
+            else if (lcl.HasValue && ucl.HasValue && lcl.Value >= ucl.Value)
+            {
+                errors.Add($"Row {rowNumber}: Invalid control limits. LCL must be less than UCL.");
+            }
+
             if (!Enum.TryParse<CharacteristicType>(row.GetValueOrDefault("CharacteristicType"), true, out _))
             {
                 errors.Add($"Row {rowNumber}: Invalid CharacteristicType.");
@@ -227,6 +236,8 @@ public sealed class SetupImportService(ISpcRepository repository)
             plan.AlertRuleSet = row["AlertRuleSet"];
             plan.Frequency = BuildFrequency(row);
         }
+
+        UpsertControlLimit(row, part, process, operationSeq);
     }
 
     private static InspectionPlan BuildPlan(Guid characteristicId, Dictionary<string, string> row)
@@ -248,5 +259,53 @@ public sealed class SetupImportService(ISpcRepository repository)
             Value = int.Parse(row["FrequencyValue"]),
             Unit = Enum.Parse<FrequencyUnit>(row["FrequencyUnit"], true)
         };
+    }
+
+    private void UpsertControlLimit(Dictionary<string, string> row, Part part, ManufacturingProcess process, int operationSeq)
+    {
+        var nominal = decimal.Parse(row["Nominal"]);
+        var lcl = OptionalDecimal(row, "LCL", out var parsedLcl) && parsedLcl.HasValue ? parsedLcl.Value : decimal.Parse(row["LSL"]);
+        var ucl = OptionalDecimal(row, "UCL", out var parsedUcl) && parsedUcl.HasValue ? parsedUcl.Value : decimal.Parse(row["USL"]);
+        var limit = repository.ControlLimits.FirstOrDefault(item =>
+            item.PartNum.Equals(part.PartNum, StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(process.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == operationSeq &&
+            item.CharacteristicName.Equals(row["CharacteristicName"], StringComparison.OrdinalIgnoreCase));
+
+        if (limit is null)
+        {
+            repository.ControlLimits.Add(new ControlLimitSet
+            {
+                PartNum = part.PartNum,
+                ProcessCode = process.ProcessCode,
+                OperationSeq = operationSeq,
+                CharacteristicName = row["CharacteristicName"],
+                CenterLine = nominal,
+                Lcl = lcl,
+                Ucl = ucl
+            });
+            return;
+        }
+
+        limit.CenterLine = nominal;
+        limit.Lcl = lcl;
+        limit.Ucl = ucl;
+    }
+
+    private static bool OptionalDecimal(Dictionary<string, string> row, string field, out decimal? value)
+    {
+        value = null;
+        if (!row.TryGetValue(field, out var text) || string.IsNullOrWhiteSpace(text))
+        {
+            return true;
+        }
+
+        if (!decimal.TryParse(text, out var parsed))
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
     }
 }

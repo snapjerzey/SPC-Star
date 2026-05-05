@@ -29,15 +29,20 @@
       <form id="loginForm" class="form-grid">
         <label>
           User
-          <input id="userName" autocomplete="username" value="operator1">
+          <input id="userName" autocomplete="username" value="admin1">
         </label>
         <label>
           Password
-          <input id="password" type="password" autocomplete="current-password" value="operator1">
+          <input id="password" type="password" autocomplete="current-password" value="admin1">
         </label>
         <button type="submit">Sign in</button>
       </form>
     </section>
+
+    <div id="navTabs" class="tab-row hidden">
+      <button id="inspectionTab" type="button" class="tab active">Inspect</button>
+      <button id="setupTab" type="button" class="tab">Setup</button>
+    </div>
 
     <section id="workPanel" class="workspace hidden">
       <aside class="panel">
@@ -87,6 +92,111 @@
           </div>
           <div id="measurementList" class="measurement-list empty">No measurements yet.</div>
         </section>
+      </section>
+    </section>
+
+    <section id="setupPanel" class="hidden">
+      <section class="setup-grid">
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Users</h2>
+            <p>Create sign-ins and assign access levels.</p>
+          </div>
+          <form id="userSetupForm" class="stacked-form">
+            <label>
+              User name
+              <input id="setupUserName" autocomplete="off">
+            </label>
+            <label>
+              Password
+              <input id="setupPassword" type="password" autocomplete="new-password">
+            </label>
+            <label>
+              Access level
+              <select id="setupRole"></select>
+            </label>
+            <button type="submit">Save User</button>
+          </form>
+          <p id="userSetupMessage" class="message"></p>
+          <div id="userList" class="setup-list empty">No users loaded.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Inspection Setup</h2>
+            <p>Define a part, operation, and one required measurement.</p>
+          </div>
+          <form id="inspectionSetupForm" class="setup-form">
+            <label>Part number<input id="setupPartNum" required></label>
+            <label>Part description<input id="setupPartDescription" required></label>
+            <label>Process code<input id="setupProcessCode" required></label>
+            <label>Process description<input id="setupProcessDescription" required></label>
+            <label>Operation<input id="setupOperationSeq" type="number" min="1" value="10" required></label>
+            <label>Measurement name<input id="setupCharacteristicName" required></label>
+            <label>
+              Type
+              <select id="setupCharacteristicType">
+                <option value="Variable">Variable</option>
+                <option value="Attribute">Attribute</option>
+              </select>
+            </label>
+            <label>Unit<input id="setupUnitOfMeasure" required></label>
+            <label>Nominal<input id="setupNominal" type="number" step="0.0001" required></label>
+            <label>LSL<input id="setupLsl" type="number" step="0.0001" required></label>
+            <label>USL<input id="setupUsl" type="number" step="0.0001" required></label>
+            <label>LCL<input id="setupLcl" type="number" step="0.0001"></label>
+            <label>UCL<input id="setupUcl" type="number" step="0.0001"></label>
+            <label>Sample size<input id="setupSampleSize" type="number" min="1" value="1" required></label>
+            <label>
+              Frequency type
+              <select id="setupFrequencyType">
+                <option value="Time">Time</option>
+                <option value="Quantity">Quantity</option>
+                <option value="Event">Event</option>
+              </select>
+            </label>
+            <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" value="30" required></label>
+            <label>
+              Frequency unit
+              <select id="setupFrequencyUnit">
+                <option value="Minutes">Minutes</option>
+                <option value="Hours">Hours</option>
+                <option value="Pieces">Pieces</option>
+                <option value="StartOfJob">Start of job</option>
+                <option value="MaterialChange">Material change</option>
+                <option value="ToolChange">Tool change</option>
+                <option value="Restart">Restart</option>
+              </select>
+            </label>
+            <label>
+              COA required
+              <select id="setupIsRequiredForCoa">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+            <button type="submit">Save Measurement</button>
+          </form>
+          <p id="inspectionSetupMessage" class="message"></p>
+        </section>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading horizontal">
+          <div>
+            <h2>CSV Import</h2>
+            <p>Bulk load parts, processes, operations, and measurements.</p>
+          </div>
+          <button id="csvTemplateButton" type="button" class="secondary">Template</button>
+        </div>
+        <form id="csvImportForm" class="stacked-form">
+          <label>
+            CSV data
+            <textarea id="csvImportText" rows="7" spellcheck="false"></textarea>
+          </label>
+          <button type="submit">Import CSV</button>
+        </form>
+        <p id="csvImportMessage" class="message"></p>
       </section>
     </section>
   </main>

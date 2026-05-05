@@ -2,7 +2,9 @@ const state = {
   user: null,
   snapshot: null,
   contexts: [],
-  selectedPlans: []
+  selectedPlans: [],
+  users: [],
+  roles: []
 };
 
 const $ = (id) => document.getElementById(id);
@@ -64,6 +66,10 @@ async function login(event) {
   setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")})`, "ok");
   $("loginPanel").classList.add("hidden");
   $("workPanel").classList.remove("hidden");
+  if (canManageSetup()) {
+    $("navTabs").classList.remove("hidden");
+    await loadSetupAdmin();
+  }
   await loadSnapshot();
 }
 
@@ -72,12 +78,15 @@ async function loadSnapshot() {
   $("setupVersion").textContent = `Setup ${state.snapshot.setupVersion}`;
   fillSelect($("jobNum"), state.snapshot.jobs, (job) => job.jobNum, (job) => job.jobNum);
   fillSelect($("resourceId"), state.snapshot.resources, (resource) => resource.resourceId, (resource) => resource.resourceId);
+  const sets = inspectionSets();
   fillSelect(
     $("inspectionSet"),
-    inspectionSets(),
+    sets,
     (_, index) => String(index),
     (set) => `${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.plans.length} variables`);
-  await loadContext();
+  if (sets.length && state.snapshot.jobs.length && state.snapshot.resources.length) {
+    await loadContext();
+  }
 }
 
 function fillSelect(select, rows, valueOf, labelOf) {
@@ -93,6 +102,9 @@ function fillSelect(select, rows, valueOf, labelOf) {
 async function loadContext(event) {
   event?.preventDefault();
   const { jobNum, resourceId, set } = selectedValues();
+  if (!set || !jobNum || !resourceId) {
+    return;
+  }
   state.selectedPlans = set.plans;
   state.contexts = await Promise.all(set.plans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
   renderContext();
@@ -248,6 +260,137 @@ function showEntryMessage(message, kind) {
   $("entryMessage").className = `message ${kind}`;
 }
 
+function canManageSetup() {
+  return state.user?.permissions?.some((permission) =>
+    permission === "CanManageInspectionPlans" ||
+    permission === "CanImportSetupData" ||
+    permission === "CanManageUsers") === true;
+}
+
+function showPanel(panelName) {
+  const showSetup = panelName === "setup";
+  $("workPanel").classList.toggle("hidden", showSetup);
+  $("setupPanel").classList.toggle("hidden", !showSetup);
+  $("inspectionTab").classList.toggle("active", !showSetup);
+  $("setupTab").classList.toggle("active", showSetup);
+}
+
+async function loadSetupAdmin() {
+  state.roles = await api("/setup/roles");
+  state.users = await api("/setup/users");
+  fillSelect($("setupRole"), state.roles, (role) => role, (role) => role);
+  renderUsers();
+}
+
+function renderUsers() {
+  const list = $("userList");
+  if (!state.users.length) {
+    list.className = "setup-list empty";
+    list.textContent = "No users loaded.";
+    return;
+  }
+
+  list.className = "setup-list";
+  list.innerHTML = "";
+  state.users.forEach((user) => {
+    const row = document.createElement("div");
+    row.className = "setup-row";
+    row.innerHTML = `<div><strong>${user.userName}</strong><span>${user.roles.join(", ")}</span></div><button type="button" class="secondary">Edit</button>`;
+    row.querySelector("button").addEventListener("click", () => {
+      $("setupUserName").value = user.userName;
+      $("setupPassword").value = "";
+      $("setupRole").value = user.roles[0] || state.roles[0] || "";
+    });
+    list.appendChild(row);
+  });
+}
+
+async function saveUser(event) {
+  event.preventDefault();
+  try {
+    await api("/setup/users", {
+      method: "POST",
+      body: JSON.stringify({
+        userName: $("setupUserName").value.trim(),
+        password: $("setupPassword").value,
+        roles: [$("setupRole").value]
+      })
+    });
+    $("setupPassword").value = "";
+    $("userSetupMessage").textContent = "User saved.";
+    $("userSetupMessage").className = "message ok";
+    await loadSetupAdmin();
+  } catch (error) {
+    $("userSetupMessage").textContent = readableError(error);
+    $("userSetupMessage").className = "message error";
+  }
+}
+
+async function saveInspectionSetup(event) {
+  event.preventDefault();
+  try {
+    await api("/setup/inspection-plans", {
+      method: "POST",
+      body: JSON.stringify({
+        partNum: $("setupPartNum").value.trim(),
+        partDescription: $("setupPartDescription").value.trim(),
+        processCode: $("setupProcessCode").value.trim(),
+        processDescription: $("setupProcessDescription").value.trim(),
+        operationSeq: Number($("setupOperationSeq").value),
+        characteristicName: $("setupCharacteristicName").value.trim(),
+        characteristicType: $("setupCharacteristicType").value,
+        nominal: Number($("setupNominal").value),
+        lsl: Number($("setupLsl").value),
+        usl: Number($("setupUsl").value),
+        lcl: optionalNumber("setupLcl"),
+        ucl: optionalNumber("setupUcl"),
+        unitOfMeasure: $("setupUnitOfMeasure").value.trim(),
+        sampleSize: Number($("setupSampleSize").value),
+        frequencyType: $("setupFrequencyType").value,
+        frequencyValue: Number($("setupFrequencyValue").value),
+        frequencyUnit: $("setupFrequencyUnit").value,
+        alertRuleSet: "WesternElectric",
+        isRequiredForCoa: $("setupIsRequiredForCoa").value === "true"
+      })
+    });
+    $("inspectionSetupMessage").textContent = "Measurement setup saved.";
+    $("inspectionSetupMessage").className = "message ok";
+    await loadSnapshot();
+  } catch (error) {
+    $("inspectionSetupMessage").textContent = readableError(error);
+    $("inspectionSetupMessage").className = "message error";
+  }
+}
+
+async function importCsv(event) {
+  event.preventDefault();
+  try {
+    await api("/setup/import-csv", {
+      method: "POST",
+      body: JSON.stringify({ csv: $("csvImportText").value })
+    });
+    $("csvImportMessage").textContent = "CSV imported.";
+    $("csvImportMessage").className = "message ok";
+    await loadSnapshot();
+  } catch (error) {
+    $("csvImportMessage").textContent = readableError(error);
+    $("csvImportMessage").className = "message error";
+  }
+}
+
+function optionalNumber(id) {
+  const value = $(id).value.trim();
+  return value ? Number(value) : null;
+}
+
+function loadCsvTemplate() {
+  $("csvImportText").value = [
+    "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
+    "P200,Example part,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,1,Time,30,Minutes,WesternElectric,true",
+    "P200,Example part,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,1,Time,30,Minutes,WesternElectric,true"
+  ].join("\n");
+}
+
 function readableError(error) {
   try {
     const parsed = JSON.parse(error.message);
@@ -271,6 +414,12 @@ $("loginForm").addEventListener("submit", login);
 $("contextForm").addEventListener("submit", loadContext);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("refreshButton").addEventListener("click", loadContext);
+$("inspectionTab").addEventListener("click", () => showPanel("inspect"));
+$("setupTab").addEventListener("click", () => showPanel("setup"));
+$("userSetupForm").addEventListener("submit", saveUser);
+$("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
+$("csvImportForm").addEventListener("submit", importCsv);
+$("csvTemplateButton").addEventListener("click", loadCsvTemplate);
 setStatus($("syncStatus"), navigator.onLine ? "Online" : "Offline", navigator.onLine ? "ok" : "warn");
 
 if ("serviceWorker" in navigator) {

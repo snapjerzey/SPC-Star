@@ -22,6 +22,7 @@ builder.Services.AddSingleton<InspectionFrequencyService>();
 builder.Services.AddSingleton<ChartDataService>();
 builder.Services.AddSingleton<HistoryExportService>();
 builder.Services.AddSingleton<SetupQueryService>();
+builder.Services.AddSingleton<SetupManagementService>();
 builder.Services.AddSingleton<OfflineSyncService>();
 builder.Services.AddSingleton<AuthSessionService>();
 builder.Services.AddSingleton<WorkContextService>();
@@ -57,6 +58,32 @@ app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService s
     return result.Succeeded
         ? Results.Ok(new { imported = true })
         : Results.BadRequest(new { imported = false, errors = result.Errors });
+});
+
+app.MapGet("/setup/users", (SetupManagementService service) =>
+{
+    return Results.Ok(service.GetUsers());
+});
+
+app.MapGet("/setup/roles", (SetupManagementService service) =>
+{
+    return Results.Ok(service.GetRoles());
+});
+
+app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService service) =>
+{
+    var result = service.UpsertUser(request);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
+app.MapPost("/setup/inspection-plans", (UpsertInspectionSetupRequest request, SetupManagementService service) =>
+{
+    var result = service.UpsertInspectionSetup(request);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
 });
 
 app.MapGet("/setup/parts", (SetupQueryService service) =>

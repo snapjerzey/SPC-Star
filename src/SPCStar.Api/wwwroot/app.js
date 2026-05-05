@@ -408,7 +408,7 @@ async function clearLock(event) {
   }
 
   try {
-    await api(`/alerts/${state.activeLock.id}/override`, {
+    await api(`/alerts/${state.activeLock.alertId}/override`, {
       method: "POST",
       body: JSON.stringify({
         overrideUserName: $("overrideUserName").value.trim(),

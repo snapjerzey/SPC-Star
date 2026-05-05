@@ -215,7 +215,7 @@ async function submitMeasurement(event) {
           timestamp: new Date().toISOString(),
           operatorUserId: state.user.userName,
           deviceId: "browser-dev",
-          clientRecordId: crypto.randomUUID(),
+          clientRecordId: newClientRecordId(),
           submittedAt: new Date().toISOString()
         })
       });
@@ -378,7 +378,7 @@ async function saveMaterialChange(event) {
         timestamp: new Date().toISOString(),
         reason: $("materialReason").value,
         deviceId: "browser-dev",
-        clientRecordId: crypto.randomUUID(),
+        clientRecordId: newClientRecordId(),
         submittedAt: new Date().toISOString()
       })
     });
@@ -514,6 +514,17 @@ async function importCsv(event) {
 function optionalNumber(id) {
   const value = $(id).value.trim();
   return value ? Number(value) : null;
+}
+
+function newClientRecordId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  const random = window.crypto?.getRandomValues
+    ? Array.from(window.crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16).padStart(8, "0")).join("")
+    : Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2);
+  return `${Date.now().toString(16)}-${random}`;
 }
 
 function loadCsvTemplate() {

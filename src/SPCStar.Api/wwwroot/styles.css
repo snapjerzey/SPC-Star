@@ -147,6 +147,15 @@ hr {
   gap: 12px;
 }
 .measurement-form { margin-top: 18px; }
+.override-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.override-form label:nth-child(n+3),
+.override-form button {
+  grid-column: span 2;
+}
 
 label {
   display: grid;
@@ -258,6 +267,10 @@ textarea {
   font-weight: 800;
   padding: 14px 16px;
 }
+.lock-panel {
+  border-color: #fecdca;
+  background: #fffafa;
+}
 
 .trend-canvas {
   width: 100%;
@@ -276,7 +289,8 @@ textarea {
   .topbar, .horizontal { align-items: stretch; flex-direction: column; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
-  .form-grid, .measurement-form, .setup-grid, .setup-form { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .setup-grid, .setup-form, .override-form { grid-template-columns: 1fr; }
+  .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-form button { grid-column: span 1; }
   .variable-card { grid-template-columns: 1fr; }
   .limit-grid { grid-template-columns: repeat(3, 1fr); }

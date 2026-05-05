@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260505-client-id">
+  <link rel="stylesheet" href="/styles.css?v=20260505-lock-clear">
 </head>
 <body>
   <main class="shell">
@@ -103,6 +103,35 @@
 
       <section class="main-column">
         <div id="lockBanner" class="lock-banner hidden"></div>
+        <section id="overridePanel" class="panel lock-panel hidden">
+          <div class="panel-heading">
+            <h2>Clear Lock</h2>
+          </div>
+          <form id="overrideForm" class="override-form">
+            <label>
+              Authorized user
+              <input id="overrideUserName" autocomplete="username">
+            </label>
+            <label>
+              Password
+              <input id="overridePassword" type="password" autocomplete="current-password">
+            </label>
+            <label>
+              Cause
+              <textarea id="causeText" rows="3"></textarea>
+            </label>
+            <label>
+              Action taken
+              <textarea id="solutionText" rows="3"></textarea>
+            </label>
+            <label id="godReasonLabel" class="hidden">
+              Bypass reason
+              <textarea id="bypassReason" rows="3"></textarea>
+            </label>
+            <button type="submit">Clear Lock</button>
+          </form>
+          <p id="overrideMessage" class="message"></p>
+        </section>
         <section class="panel">
           <div class="panel-heading horizontal">
             <div>
@@ -232,6 +261,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260505-client-id"></script>
+  <script src="/app.js?v=20260505-lock-clear"></script>
 </body>
 </html>

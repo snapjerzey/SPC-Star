@@ -84,6 +84,20 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void Override_AllowsAdmin()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var service = OverrideService(repository);
+
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "admin1", "admin1", "Tool wear", "Adjusted process", null, DateTimeOffset.UtcNow));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(AlertStatus.Overridden, alert.Status);
+        Assert.Equal(RoleNames.Admin, result.Value!.OverrideRole);
+    }
+
+    [Fact]
     public void Override_RequiresGodBypassReason()
     {
         var repository = RepositoryWithSecurityAndLimits();

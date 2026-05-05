@@ -24,6 +24,7 @@ public static class SeedData
             RoleNames.Admin,
             PermissionNames.CanManageInspectionPlans,
             PermissionNames.CanImportSetupData,
+            PermissionNames.CanOverrideDriftLock,
             PermissionNames.CanManageUsers);
         var god = Role(
             RoleNames.GOD,

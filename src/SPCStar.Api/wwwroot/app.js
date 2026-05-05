@@ -4,6 +4,7 @@ const state = {
   contexts: [],
   selectedPlans: [],
   trendCharacteristic: "",
+  activeLock: null,
   users: [],
   roles: []
 };
@@ -128,7 +129,8 @@ function renderContext() {
   $("contextTitle").textContent = `${jobNum} ${resourceId}`;
   $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.plans.length} variables`;
   renderOverallDueStatus();
-  renderLock(state.contexts.find((context) => context.activeLock)?.activeLock);
+  state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
+  renderLock(state.activeLock);
   renderVariables();
   renderTrendChoices();
   loadTrend();
@@ -143,13 +145,19 @@ function renderOverallDueStatus() {
 
 function renderLock(activeLock) {
   const banner = $("lockBanner");
+  const panel = $("overridePanel");
   if (!activeLock) {
     banner.classList.add("hidden");
     banner.textContent = "";
+    panel.classList.add("hidden");
+    $("overrideMessage").textContent = "";
     return;
   }
   banner.classList.remove("hidden");
   banner.textContent = `LOCKED: ${activeLock.ruleTriggered} at ${formatTime(activeLock.lockedAt)}`;
+  panel.classList.remove("hidden");
+  $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
+  $("godReasonLabel").classList.toggle("hidden", !state.user?.roles?.includes("GOD"));
 }
 
 function renderVariables() {
@@ -393,6 +401,41 @@ async function saveMaterialChange(event) {
   }
 }
 
+async function clearLock(event) {
+  event.preventDefault();
+  if (!state.activeLock) {
+    return;
+  }
+
+  try {
+    await api(`/alerts/${state.activeLock.id}/override`, {
+      method: "POST",
+      body: JSON.stringify({
+        overrideUserName: $("overrideUserName").value.trim(),
+        overridePassword: $("overridePassword").value,
+        causeText: $("causeText").value.trim(),
+        solutionText: $("solutionText").value.trim(),
+        whyStandardProcessWasBypassed: $("bypassReason").value.trim() || null,
+        unlockedAt: new Date().toISOString()
+      })
+    });
+    $("overridePassword").value = "";
+    $("causeText").value = "";
+    $("solutionText").value = "";
+    $("bypassReason").value = "";
+    $("overrideMessage").textContent = "Lock cleared.";
+    $("overrideMessage").className = "message ok";
+    await loadContext();
+  } catch (error) {
+    $("overrideMessage").textContent = readableError(error);
+    $("overrideMessage").className = "message error";
+  }
+}
+
+function canCurrentUserOverride() {
+  return state.user?.permissions?.includes("CanOverrideDriftLock") === true;
+}
+
 function canManageSetup() {
   return state.user?.permissions?.some((permission) =>
     permission === "CanManageInspectionPlans" ||
@@ -558,6 +601,10 @@ $("loginForm").addEventListener("submit", login);
 $("contextForm").addEventListener("submit", loadContext);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("materialForm").addEventListener("submit", saveMaterialChange);
+$("overrideForm").addEventListener("submit", clearLock);
+$("overrideUserName").addEventListener("input", () => {
+  $("godReasonLabel").classList.toggle("hidden", $("overrideUserName").value.trim().toLowerCase() !== "god1");
+});
 $("trendCharacteristic").addEventListener("change", () => {
   state.trendCharacteristic = $("trendCharacteristic").value;
   loadTrend();

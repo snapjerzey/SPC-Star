@@ -71,6 +71,7 @@ async function login(event) {
     body: JSON.stringify({ userName, password })
   });
   setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")})`, "ok");
+  document.body.classList.remove("login-active");
   $("logoutButton").classList.remove("hidden");
   $("loginPanel").classList.add("hidden");
   $("workPanel").classList.remove("hidden");
@@ -559,6 +560,7 @@ function logout() {
   state.activeLock = null;
   state.users = [];
   state.roles = [];
+  document.body.classList.add("login-active");
   setStatus($("userBadge"), "Not signed in");
   $("logoutButton").classList.add("hidden");
   $("navTabs").classList.add("hidden");

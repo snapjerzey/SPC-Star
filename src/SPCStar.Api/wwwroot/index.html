@@ -6,9 +6,9 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260505-typed-part-guard">
+  <link rel="stylesheet" href="/styles.css?v=20260505-login-refresh">
 </head>
-<body>
+<body class="login-active">
   <main class="shell">
     <section class="topbar">
       <div>
@@ -22,11 +22,21 @@
       </div>
     </section>
 
-    <section id="loginPanel" class="panel compact">
-      <div class="panel-heading">
-        <h2>Sign In</h2>
+    <section id="loginPanel" class="login-screen">
+      <div class="login-brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+          <strong>S</strong>
+        </div>
+        <p class="eyebrow">SPC Star</p>
+        <h1>SPC Star</h1>
+        <p>Inspection Console</p>
       </div>
-      <form id="loginForm" class="form-grid">
+
+      <form id="loginForm" class="panel login-card">
+        <div class="panel-heading">
+          <h2>Sign In</h2>
+        </div>
         <label>
           User
           <input id="userName" autocomplete="username" value="admin1">
@@ -294,6 +304,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260505-typed-part-guard"></script>
+  <script src="/app.js?v=20260505-login-refresh"></script>
 </body>
 </html>

@@ -74,7 +74,6 @@ public sealed class MaterialChangeLogService(ISpcRepository repository)
         Required(entry.JobNum, nameof(entry.JobNum), errors);
         Required(entry.PartNum, nameof(entry.PartNum), errors);
         Required(entry.MaterialPartNum, nameof(entry.MaterialPartNum), errors);
-        Required(entry.OldLotNum, nameof(entry.OldLotNum), errors);
         Required(entry.NewLotNum, nameof(entry.NewLotNum), errors);
         Required(entry.ResourceId, nameof(entry.ResourceId), errors);
         Required(entry.OperatorUserId, nameof(entry.OperatorUserId), errors);

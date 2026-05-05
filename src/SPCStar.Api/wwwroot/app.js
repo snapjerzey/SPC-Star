@@ -441,7 +441,7 @@ async function saveMaterialChange(event) {
         jobNum,
         partNum: set.partNum,
         materialPartNum: $("materialPartNum").value.trim(),
-        oldLotNum: $("oldLotNum").value.trim(),
+        oldLotNum: "",
         newLotNum: $("newLotNum").value.trim(),
         quantityLoaded: optionalNumber("quantityLoaded"),
         resourceId,
@@ -453,10 +453,9 @@ async function saveMaterialChange(event) {
         submittedAt: new Date().toISOString()
       })
     });
-    $("oldLotNum").value = $("newLotNum").value;
     $("newLotNum").value = "";
     $("quantityLoaded").value = "";
-    $("materialMessage").textContent = "Lot change saved.";
+    $("materialMessage").textContent = "Material event saved.";
     $("materialMessage").className = "message ok";
   } catch (error) {
     $("materialMessage").textContent = readableError(error);

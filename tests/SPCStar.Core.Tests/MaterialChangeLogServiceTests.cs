@@ -51,6 +51,29 @@ public sealed class MaterialChangeLogServiceTests
     }
 
     [Fact]
+    public void Record_AllowsNewLotWithoutPreviousLot()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new MaterialChangeLogService(repository);
+
+        var result = service.Record(new MaterialChangeLogEntry(
+            "J100",
+            "P100",
+            "RESIN-A",
+            "",
+            "LOT2",
+            null,
+            "PRESS1",
+            "operator1",
+            DateTimeOffset.UtcNow,
+            "Material issue at job start"));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("", repository.MaterialChanges.Single().OldLotNum);
+        Assert.Equal("LOT2", repository.MaterialChanges.Single().NewLotNum);
+    }
+
+    [Fact]
     public void Record_ReturnsExistingMaterialChange_WhenOfflineRecordIsRetried()
     {
         var repository = new InMemorySpcRepository();

@@ -406,12 +406,12 @@ function drawTrend(points, data = {}) {
   const y = (value) => padding.top + (1 - ((Number(value) - low) / (high - low))) * plotHeight;
 
   drawChartFrame(ctx, padding, plotWidth, plotHeight);
-  drawLimitLine(ctx, y, data.upperControlLimit, "UCL", "#b54708", width, padding);
-  drawLimitLine(ctx, y, data.lowerControlLimit, "LCL", "#b54708", width, padding);
+  drawLimitLine(ctx, y, data.upperControlLimit, "UCL", "#c76508", width, padding);
+  drawLimitLine(ctx, y, data.lowerControlLimit, "LCL", "#c76508", width, padding);
   drawLimitLine(ctx, y, data.upperSpecLimit, "USL", "#b42318", width, padding);
   drawLimitLine(ctx, y, data.lowerSpecLimit, "LSL", "#b42318", width, padding);
 
-  ctx.strokeStyle = "#0f766e";
+  ctx.strokeStyle = "#0f63b8";
   ctx.lineWidth = 2;
   ctx.beginPath();
   points.forEach((point, index) => {
@@ -422,22 +422,22 @@ function drawTrend(points, data = {}) {
 
   points.forEach((point, index) => {
     ctx.beginPath();
-    ctx.fillStyle = point.hasRuleViolation ? "#b42318" : "#0f766e";
+    ctx.fillStyle = point.hasRuleViolation ? "#b42318" : "#0f63b8";
     ctx.arc(x(index), y(point.value), 4, 0, Math.PI * 2);
     ctx.fill();
   });
 
-  ctx.fillStyle = "#667085";
+  ctx.fillStyle = "#5f6f82";
   ctx.font = "12px Segoe UI, Arial";
   ctx.fillText(formatNumber(low), 6, padding.top + plotHeight);
   ctx.fillText(formatNumber(high), 6, padding.top + 8);
 }
 
 function drawChartFrame(ctx, padding, plotWidth, plotHeight) {
-  ctx.strokeStyle = "#d9dee7";
+  ctx.strokeStyle = "#d7e1ec";
   ctx.lineWidth = 1;
   ctx.strokeRect(padding.left, padding.top, plotWidth, plotHeight);
-  ctx.strokeStyle = "#eef2f6";
+  ctx.strokeStyle = "#edf4fb";
   for (let index = 1; index < 4; index++) {
     const y = padding.top + (plotHeight / 4) * index;
     ctx.beginPath();

@@ -1,14 +1,17 @@
 :root {
-  --bg: #f8fafc;
+  --bg: #f3f7fb;
   --panel: #ffffff;
-  --line: #e2e8f0;
-  --text: #111827;
-  --muted: #667085;
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
+  --line: #d7e1ec;
+  --text: #0f172a;
+  --muted: #5f6f82;
+  --primary: #0f63b8;
+  --primary-dark: #083e7a;
+  --accent: #f59e0b;
+  --accent-dark: #c76508;
+  --navy: #071426;
   --danger: #b42318;
   --danger-bg: #fef3f2;
-  --warn: #b54708;
+  --warn: #b35c00;
   --warn-bg: #fffaeb;
   --ok: #067647;
   --ok-bg: #ecfdf3;
@@ -19,7 +22,8 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
+  background:
+    linear-gradient(180deg, #edf4fb 0%, var(--bg) 280px);
   color: var(--text);
   font-family: "Segoe UI", Arial, sans-serif;
 }
@@ -39,16 +43,16 @@ button {
   min-height: 44px;
   border: 0;
   border-radius: 6px;
-  background: var(--primary);
+  background: linear-gradient(180deg, #1675d1, var(--primary));
   color: white;
   font-weight: 650;
   padding: 0 18px;
   cursor: pointer;
 }
 
-button:hover { background: var(--primary-dark); }
+button:hover { background: linear-gradient(180deg, var(--primary), var(--primary-dark)); }
 button.secondary {
-  background: #f1f5f9;
+  background: #f8fafc;
   color: var(--text);
   border: 1px solid var(--line);
 }
@@ -65,10 +69,13 @@ button.secondary {
 }
 .tab {
   min-height: 38px;
-  background: #f1f5f9;
+  background: #eaf1f8;
   color: var(--text);
 }
-.tab.active { background: var(--primary); color: white; }
+.tab.active {
+  background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+  color: white;
+}
 
 .shell {
   width: min(1180px, 100%);
@@ -94,10 +101,12 @@ body.login-active .topbar {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
 }
 
 .eyebrow {
-  color: var(--primary);
+  color: var(--accent-dark);
   font-size: 12px;
   font-weight: 750;
   letter-spacing: 0;
@@ -122,7 +131,7 @@ hr {
   min-height: 30px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: white;
+  background: #ffffff;
   color: var(--muted);
   font-size: 13px;
   font-weight: 650;
@@ -137,6 +146,7 @@ hr {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 16px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
 }
 .compact { max-width: 560px; }
 
@@ -295,6 +305,13 @@ input, select, textarea {
   color: var(--text);
   padding: 8px 10px;
 }
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, .22);
+  outline: 0;
+}
 .compact-select {
   width: auto;
   min-width: 180px;
@@ -356,7 +373,7 @@ textarea {
   align-items: center;
 }
 .data-row.header {
-  color: var(--muted);
+  color: #35516f;
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
@@ -368,7 +385,8 @@ textarea {
   gap: 12px;
 }
 .variable-card {
-  border: 1px solid var(--line);
+  border: 1px solid #cddbea;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
   border-radius: 6px;
   display: grid;
   grid-template-columns: 1fr minmax(150px, 220px);
@@ -377,8 +395,8 @@ textarea {
   align-items: center;
 }
 .variable-card:focus-within {
-  border-color: #93c5fd;
-  box-shadow: 0 0 0 3px #dbeafe;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, .22);
 }
 .mean-summary {
   display: grid;
@@ -387,9 +405,10 @@ textarea {
   margin-top: 16px;
 }
 .mean-item {
-  border: 1px solid var(--line);
+  border: 1px solid #cddbea;
   border-radius: 6px;
   padding: 10px 12px;
+  background: #f8fbff;
 }
 .mean-item span,
 .mean-item small {
@@ -422,7 +441,7 @@ textarea {
   margin-bottom: 8px;
 }
 .sample-meta span {
-  border: 1px solid var(--line);
+  border: 1px solid #cddbea;
   border-radius: 999px;
   color: var(--muted);
   font-size: 12px;
@@ -453,7 +472,7 @@ textarea {
 
 .lock-banner {
   border: 1px solid #fecdca;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--danger-bg);
   color: var(--danger);
   font-weight: 800;
@@ -469,7 +488,7 @@ textarea {
   height: 220px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: white;
+  background: #ffffff;
 }
 .empty, .message { color: var(--muted); }
 .message.error { color: var(--danger); font-weight: 700; }

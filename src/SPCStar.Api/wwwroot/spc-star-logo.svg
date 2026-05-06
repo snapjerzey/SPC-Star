@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 520" role="img" aria-labelledby="title desc">
+  <title id="title">SPC Star logo</title>
+  <desc id="desc">A blue and gold star with an orbit sweep, control chart points, bar chart columns, and SPC Star text.</desc>
+  <defs>
+    <linearGradient id="blueMetal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b7ecff"/>
+      <stop offset=".22" stop-color="#0284c7"/>
+      <stop offset=".56" stop-color="#0f3b8f"/>
+      <stop offset="1" stop-color="#06172f"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7ad"/>
+      <stop offset=".32" stop-color="#facc15"/>
+      <stop offset=".66" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#991b1b"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".45" stop-color="#cbd5e1"/>
+      <stop offset="1" stop-color="#64748b"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset=".55" stop-color="#facc15"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.13 0 0 0 0 0.55 0 0 0 0 0.9 0 0 0 .65 0" result="blueGlow"/>
+      <feMerge>
+        <feMergeNode in="blueGlow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="12" flood-color="#020617" flood-opacity=".55"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <g opacity=".9">
+      <rect x="160" y="246" width="48" height="82" rx="6" fill="url(#blueMetal)"/>
+      <rect x="222" y="214" width="54" height="114" rx="6" fill="url(#blueMetal)"/>
+      <rect x="548" y="194" width="58" height="134" rx="6" fill="url(#blueMetal)"/>
+      <rect x="622" y="156" width="70" height="172" rx="7" fill="url(#blueMetal)"/>
+      <path d="M122 228 C185 154 258 130 330 152 C394 172 455 138 512 118 C584 92 653 105 718 158" fill="none" stroke="#38bdf8" stroke-width="3" opacity=".65"/>
+      <g fill="#e0f2fe" filter="url(#glow)">
+        <circle cx="190" cy="170" r="7"/>
+        <circle cx="264" cy="136" r="8"/>
+        <circle cx="336" cy="154" r="6"/>
+        <circle cx="512" cy="118" r="8"/>
+        <circle cx="680" cy="138" r="7"/>
+      </g>
+    </g>
+
+    <path d="M410 54 L474 228 L656 226 L508 331 L564 492 L410 392 L256 492 L312 331 L164 226 L346 228 Z"
+          fill="#06172f" stroke="#38bdf8" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M410 84 L456 239 L619 236 L486 325 L536 458 L410 374 L284 458 L334 325 L201 236 L364 239 Z"
+          fill="url(#blueMetal)" stroke="#93c5fd" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M410 132 L442 256 L572 254 L462 320 L500 418 L410 352 L320 418 L358 320 L248 254 L378 256 Z"
+          fill="url(#gold)" stroke="#fff7ad" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M410 132 L410 352 L462 320 Z" fill="#fff7ad" opacity=".72"/>
+    <path d="M410 132 L358 320 L410 352 Z" fill="#f97316" opacity=".7"/>
+    <path d="M248 254 L410 352 L378 256 Z" fill="#7c2d12" opacity=".55"/>
+  </g>
+
+  <path d="M104 352 C264 250 511 248 736 198" fill="none" stroke="#020617" stroke-width="24" stroke-linecap="round" opacity=".85"/>
+  <path d="M102 344 C278 246 502 254 738 190" fill="none" stroke="url(#orbit)" stroke-width="15" stroke-linecap="round"/>
+  <path d="M132 372 C310 418 542 412 700 344" fill="none" stroke="url(#orbit)" stroke-width="7" stroke-linecap="round" opacity=".9"/>
+
+  <g transform="translate(104 404)">
+    <text x="0" y="56" font-family="Segoe UI, Arial, sans-serif" font-size="76" font-weight="900" font-style="italic" letter-spacing="-5" fill="url(#silver)" stroke="#06233f" stroke-width="3">SPC</text>
+    <text x="260" y="56" font-family="Segoe UI, Arial, sans-serif" font-size="76" font-weight="900" font-style="italic" letter-spacing="-3" fill="url(#gold)" stroke="#7c2d12" stroke-width="3">Star</text>
+    <path d="M8 72 C180 94 428 96 620 72" fill="none" stroke="#38bdf8" stroke-width="4" opacity=".85"/>
+  </g>
+</svg>

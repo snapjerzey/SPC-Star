@@ -26,7 +26,9 @@ body {
 
 body.login-active {
   background:
-    linear-gradient(180deg, #f8fafc 0%, #eef4f7 100%);
+    radial-gradient(circle at 22% 24%, rgba(37, 99, 235, .32), transparent 34%),
+    radial-gradient(circle at 76% 22%, rgba(249, 115, 22, .26), transparent 28%),
+    linear-gradient(145deg, #020617 0%, #08111f 48%, #101827 100%);
 }
 
 button, input, select, textarea {
@@ -78,6 +80,8 @@ body.login-active .shell {
   min-height: 100vh;
   display: grid;
   align-content: center;
+  padding-top: 32px;
+  padding-bottom: 32px;
 }
 
 body.login-active .topbar {
@@ -137,30 +141,40 @@ hr {
 .compact { max-width: 560px; }
 
 .login-screen {
-  width: min(900px, 100%);
+  width: min(980px, 100%);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(280px, 380px);
-  gap: 28px;
+  grid-template-columns: minmax(340px, 1fr) minmax(300px, 390px);
+  gap: 34px;
   align-items: center;
 }
 
 .login-brand {
-  min-height: 360px;
+  min-height: 460px;
   display: grid;
   align-content: center;
-  border-left: 4px solid #0f766e;
-  padding: 28px 34px;
+  justify-items: center;
+  padding: 22px;
+  border: 1px solid rgba(148, 163, 184, .16);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, .28), rgba(2, 6, 23, .08));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
 }
 
-.login-brand h1 {
-  font-size: 54px;
-  line-height: 1;
-  margin: 0 0 10px;
+.login-logo {
+  width: min(520px, 100%);
+  max-height: 360px;
+  object-fit: contain;
+  filter: drop-shadow(0 24px 34px rgba(0, 0, 0, .42));
 }
 
-.login-brand p:last-child {
-  font-size: 20px;
+.login-brand p {
+  width: min(520px, 100%);
+  color: #cbd5e1;
+  font-size: 18px;
+  line-height: 1.5;
+  text-align: center;
   margin-bottom: 0;
 }
 
@@ -201,9 +215,10 @@ hr {
 .login-card {
   display: grid;
   gap: 14px;
-  padding: 24px;
-  border-color: #d5dde8;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.10);
+  padding: 26px;
+  border-color: rgba(148, 163, 184, .30);
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
 }
 
 .login-card .panel-heading {
@@ -212,6 +227,11 @@ hr {
 
 .login-card h2 {
   font-size: 24px;
+}
+
+.login-card .panel-heading p {
+  margin-top: 4px;
+  color: #64748b;
 }
 
 .login-card button {
@@ -461,8 +481,8 @@ textarea {
   .topbar, .horizontal { align-items: stretch; flex-direction: column; }
   body.login-active .shell { align-content: stretch; }
   .login-screen { grid-template-columns: 1fr; gap: 14px; }
-  .login-brand { min-height: auto; padding: 18px 8px 10px; border-left: 0; }
-  .login-brand h1 { font-size: 42px; }
+  .login-brand { min-height: auto; padding: 18px 10px; }
+  .login-logo { max-height: 270px; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
   .form-grid, .measurement-form, .setup-grid, .setup-form, .override-form, .job-summary-form { grid-template-columns: 1fr; }

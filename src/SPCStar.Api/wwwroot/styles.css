@@ -172,8 +172,8 @@ hr {
 }
 
 .login-logo {
-  width: min(520px, 100%);
-  max-height: 260px;
+  width: min(560px, 100%);
+  max-height: 300px;
   object-fit: contain;
   filter: drop-shadow(0 24px 34px rgba(0, 0, 0, .42));
 }
@@ -522,7 +522,7 @@ textarea {
   body.login-active .shell { align-content: stretch; }
   .login-screen { gap: 12px; }
   .login-brand { padding: 12px 8px 8px; }
-  .login-logo { max-height: 210px; }
+  .login-logo { max-height: 240px; }
   .login-wordmark { letter-spacing: -3px; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }

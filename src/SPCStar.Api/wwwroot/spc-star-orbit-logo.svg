@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">SPC-Star orbit mark</title>
+  <desc id="desc">A dimensional blue and gold star with orbit sweep, chart bars, and SPC points.</desc>
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#bff1ff"/>
+      <stop offset=".2" stop-color="#36c5ff"/>
+      <stop offset=".48" stop-color="#0757b8"/>
+      <stop offset=".78" stop-color="#06285e"/>
+      <stop offset="1" stop-color="#030b1d"/>
+    </linearGradient>
+    <linearGradient id="blueEdge" x1="0" y1="0" x2="1" y2=".8">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset=".45" stop-color="#0284c7"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="gold" x1=".16" y1=".05" x2=".86" y2=".95">
+      <stop offset="0" stop-color="#fff7ad"/>
+      <stop offset=".28" stop-color="#facc15"/>
+      <stop offset=".58" stop-color="#fb8c00"/>
+      <stop offset=".88" stop-color="#c2410c"/>
+      <stop offset="1" stop-color="#7c1d08"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset=".42" stop-color="#0ea5e9"/>
+      <stop offset=".68" stop-color="#facc15"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#dff8ff"/>
+      <stop offset=".45" stop-color="#21b7ef"/>
+      <stop offset="1" stop-color="#063475"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="18" flood-color="#000000" flood-opacity=".7"/>
+    </filter>
+    <filter id="spark" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <g opacity=".92">
+      <rect x="252" y="480" width="48" height="90" rx="5" fill="url(#bar)"/>
+      <rect x="316" y="436" width="56" height="134" rx="5" fill="url(#bar)"/>
+      <rect x="642" y="392" width="60" height="178" rx="6" fill="url(#bar)"/>
+      <rect x="718" y="320" width="70" height="250" rx="7" fill="url(#bar)"/>
+      <rect x="818" y="484" width="54" height="116" rx="5" fill="#06255a" opacity=".85"/>
+      <path d="M230 446 C318 334 418 296 518 324 C602 348 682 282 786 258" fill="none" stroke="#38bdf8" stroke-width="3" opacity=".72"/>
+      <g fill="#dff8ff" filter="url(#spark)">
+        <circle cx="286" cy="378" r="7"/>
+        <circle cx="362" cy="310" r="8"/>
+        <circle cx="430" cy="286" r="7"/>
+        <circle cx="518" cy="324" r="6"/>
+        <circle cx="680" cy="282" r="9"/>
+      </g>
+    </g>
+
+    <path d="M512 202 L585 404 L798 402 L625 526 L690 724 L512 604 L334 724 L399 526 L226 402 L439 404 Z"
+          fill="#020817" stroke="#38bdf8" stroke-width="10" stroke-linejoin="round"/>
+    <path d="M512 238 L568 414 L752 413 L604 516 L660 686 L512 584 L364 686 L420 516 L272 413 L456 414 Z"
+          fill="url(#blue)" stroke="#93e8ff" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M512 306 L552 450 L704 450 L579 532 L626 654 L512 574 L398 654 L445 532 L320 450 L472 450 Z"
+          fill="url(#gold)" stroke="#fff7ad" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M512 306 L512 574 L579 532 Z" fill="#fff7ad" opacity=".72"/>
+    <path d="M512 306 L445 532 L512 574 Z" fill="#fb8c00" opacity=".62"/>
+    <path d="M320 450 L512 574 L472 450 Z" fill="#7c1d08" opacity=".48"/>
+  </g>
+
+  <path d="M206 568 C384 460 636 448 820 340" fill="none" stroke="#020617" stroke-width="28" stroke-linecap="round" opacity=".88"/>
+  <path d="M204 558 C392 454 632 452 822 330" fill="none" stroke="url(#orbit)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M210 574 C388 612 620 596 812 524" fill="none" stroke="#38bdf8" stroke-width="5" opacity=".75"/>
+  <path d="M252 698 C420 760 650 750 824 678" fill="none" stroke="url(#orbit)" stroke-width="10" stroke-linecap="round"/>
+
+  <g filter="url(#spark)">
+    <path d="M820 286 l12 34 34 12 -34 12 -12 34 -12 -34 -34 -12 34 -12z" fill="#fff7ad"/>
+    <path d="M820 260 l7 44 44 7 -44 7 -7 44 -7 -44 -44 -7 44 -7z" fill="#f97316" opacity=".72"/>
+    <circle cx="620" cy="740" r="7" fill="#facc15"/>
+  </g>
+</svg>

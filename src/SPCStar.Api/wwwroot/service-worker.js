@@ -1,10 +1,11 @@
-const CACHE_NAME = "spc-star-shell-v24";
+const CACHE_NAME = "spc-star-shell-v25";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
   "/styles.css",
   "/app.js",
   "/spc-star-mark.svg",
+  "/spc-star-orbit-logo.svg",
   "/manifest.webmanifest"
 ];
 

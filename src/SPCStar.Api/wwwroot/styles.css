@@ -141,20 +141,19 @@ hr {
 .compact { max-width: 560px; }
 
 .login-screen {
-  width: min(980px, 100%);
+  width: min(680px, 100%);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(340px, 1fr) minmax(300px, 390px);
-  gap: 34px;
-  align-items: center;
+  gap: 18px;
+  justify-items: center;
 }
 
 .login-brand {
-  min-height: 460px;
+  width: 100%;
   display: grid;
   align-content: center;
   justify-items: center;
-  padding: 22px;
+  padding: 18px 18px 10px;
   border: 1px solid rgba(148, 163, 184, .16);
   border-radius: 18px;
   background:
@@ -164,7 +163,7 @@ hr {
 
 .login-logo {
   width: min(520px, 100%);
-  max-height: 360px;
+  max-height: 320px;
   object-fit: contain;
   filter: drop-shadow(0 24px 34px rgba(0, 0, 0, .42));
 }
@@ -213,6 +212,7 @@ hr {
 .brand-mark span:nth-child(4) { left: 16px; top: 34px; background: #64748b; }
 
 .login-card {
+  width: min(390px, 100%);
   display: grid;
   gap: 14px;
   padding: 26px;
@@ -480,9 +480,9 @@ textarea {
   .shell { padding: 14px; }
   .topbar, .horizontal { align-items: stretch; flex-direction: column; }
   body.login-active .shell { align-content: stretch; }
-  .login-screen { grid-template-columns: 1fr; gap: 14px; }
-  .login-brand { min-height: auto; padding: 18px 10px; }
-  .login-logo { max-height: 270px; }
+  .login-screen { gap: 12px; }
+  .login-brand { padding: 12px 8px 8px; }
+  .login-logo { max-height: 250px; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
   .form-grid, .measurement-form, .setup-grid, .setup-form, .override-form, .job-summary-form { grid-template-columns: 1fr; }

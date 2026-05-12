@@ -85,7 +85,7 @@ async function login(event) {
 
 async function loadSnapshot() {
   state.snapshot = await api("/sync/setup-snapshot");
-  $("setupVersion").textContent = `Setup ${state.snapshot.setupVersion}`;
+  $("setupVersion").textContent = "Ready";
   fillDatalist($("jobOptions"), state.snapshot.jobs, (job) => job.jobNum);
   $("jobNum").value = "";
   fillSelect($("resourceId"), [{ resourceId: "", description: "Select machine" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);

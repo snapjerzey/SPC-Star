@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260512-drift-methods">
+  <link rel="stylesheet" href="/styles.css?v=20260512-drift-block">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -231,20 +231,6 @@
                 </label>
                 <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" value="10000" required></label>
                 <label>
-                  Rule set
-                  <select id="setupAlertRuleSet">
-                    <option value="WesternElectric">Western Electric</option>
-                    <option value="NelsonRules">Nelson Rules</option>
-                    <option value="Cusum">CUSUM</option>
-                    <option value="Ewma">EWMA</option>
-                    <option value="MovingAverageTrend">Moving Average Trend</option>
-                    <option value="LinearTrendSlope">Linear Trend / Slope</option>
-                    <option value="Custom">Custom Rule</option>
-                    <option value="SpecLimitOnly">Spec Limit Only</option>
-                    <option value="None">No Automatic Rule</option>
-                  </select>
-                </label>
-                <label>
                   Frequency unit
                   <select id="setupFrequencyUnit">
                     <option value="Pieces">Pieces</option>
@@ -257,6 +243,28 @@
                   </select>
                 </label>
               </div>
+            </div>
+
+            <div class="setup-block drift-setup-block">
+              <div class="panel-heading tight">
+                <h3>Drift Detection</h3>
+                <p>Choose how SPC Star should detect process drift for this part setup.</p>
+              </div>
+              <label class="rule-set-control">
+                Drift detection rule set
+                <select id="setupAlertRuleSet">
+                  <option value="WesternElectric">Western Electric</option>
+                  <option value="NelsonRules">Nelson Rules</option>
+                  <option value="Cusum">CUSUM</option>
+                  <option value="Ewma">EWMA</option>
+                  <option value="MovingAverageTrend">Moving Average Trend</option>
+                  <option value="LinearTrendSlope">Linear Trend / Slope</option>
+                  <option value="Custom">Custom Rule</option>
+                  <option value="SpecLimitOnly">Spec Limit Only</option>
+                  <option value="None">No Automatic Rule</option>
+                </select>
+              </label>
+              <p id="setupRuleDescription" class="rule-description"></p>
             </div>
 
             <div class="setup-block variable-builder">
@@ -425,6 +433,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-drift-methods"></script>
+  <script src="/app.js?v=20260512-drift-block"></script>
 </body>
 </html>

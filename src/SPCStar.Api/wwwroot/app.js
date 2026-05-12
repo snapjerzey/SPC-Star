@@ -878,6 +878,7 @@ function loadSelectedPartSetup() {
   $("setupFrequencyValue").value = String(firstPlan.frequencyValue || 1);
   $("setupFrequencyUnit").value = firstPlan.frequencyUnit;
   $("setupAlertRuleSet").value = firstPlan.alertRuleSet || "WesternElectric";
+  updateRuleDescription();
   $("setupVariableRows").innerHTML = "";
   set.plans.forEach((plan) => addSetupVariableRow(plan));
   $("inspectionSetupMessage").textContent = `${set.partNum} loaded for editing.`;
@@ -894,11 +895,27 @@ function clearInspectionSetupForm() {
   $("setupFrequencyValue").value = "10000";
   $("setupFrequencyUnit").value = "Pieces";
   $("setupAlertRuleSet").value = "WesternElectric";
+  updateRuleDescription();
   updateSetupFrequencyUnits();
   $("setupVariableRows").innerHTML = "";
   addSetupVariableRow();
   $("inspectionSetupMessage").textContent = "";
   $("inspectionSetupMessage").className = "message";
+}
+
+function updateRuleDescription() {
+  const descriptions = {
+    WesternElectric: "Uses classic control-chart signals for points beyond limits, near-limit patterns, and long runs on one side of center.",
+    NelsonRules: "Adds Nelson-style trend detection, including repeated movement in one direction.",
+    Cusum: "Tracks cumulative deviation from center to catch small sustained process shifts.",
+    Ewma: "Uses an exponentially weighted moving average so recent values matter most while preserving history.",
+    MovingAverageTrend: "Compares the latest moving average against center to detect sustained drift.",
+    LinearTrendSlope: "Detects steady upward or downward drift by checking the slope of recent measurements.",
+    Custom: "Uses admin-defined/custom behavior. Current default flags repeated points beyond one sigma on the same side of center.",
+    SpecLimitOnly: "Locks only when a value is outside the lower or upper specification limit.",
+    None: "Records measured values without automatic drift locks. Accept/Reject failures still lock."
+  };
+  $("setupRuleDescription").textContent = descriptions[$("setupAlertRuleSet").value] || "";
 }
 
 function updateSetupFrequencyUnits() {
@@ -1090,6 +1107,7 @@ $("addSetupVariableButton").addEventListener("click", () => addSetupVariableRow(
 $("clearInspectionSetupButton").addEventListener("click", clearInspectionSetupForm);
 $("loadPartSetupButton").addEventListener("click", loadSelectedPartSetup);
 $("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);
+$("setupAlertRuleSet").addEventListener("change", updateRuleDescription);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
 $("partReviewFilter").addEventListener("change", renderPartReview);

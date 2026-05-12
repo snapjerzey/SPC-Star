@@ -41,6 +41,15 @@ public sealed class FileBackedSpcRepositoryTests
                 Reason = "Lot Change",
                 SubmittedAt = DateTimeOffset.Parse("2026-05-05T12:10:01Z")
             });
+            repository.JobNotes.Add(new JobNote
+            {
+                JobNum = "J100",
+                PartNum = "P100",
+                ResourceId = "PRESS1",
+                OperatorUserId = "operator1",
+                NoteText = "Checked material lot and restarted.",
+                Timestamp = DateTimeOffset.Parse("2026-05-05T12:15:00Z")
+            });
 
             repository.SaveChanges();
 
@@ -52,6 +61,7 @@ public sealed class FileBackedSpcRepositoryTests
             Assert.Contains(reloaded.Characteristics, characteristic => characteristic.Name == "Diameter");
             Assert.Contains(reloaded.Measurements, measurement => measurement.Value == 5.1m);
             Assert.Contains(reloaded.MaterialChanges, change => change.NewLotNum == "LOT-1");
+            Assert.Contains(reloaded.JobNotes, note => note.NoteText == "Checked material lot and restarted.");
         }
         finally
         {

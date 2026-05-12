@@ -178,6 +178,22 @@
           <canvas id="trendCanvas" class="trend-canvas" width="760" height="220"></canvas>
           <p id="trendMessage" class="message">No trend data yet.</p>
         </section>
+
+        <section id="jobNotesPanel" class="panel hidden">
+          <div class="panel-heading">
+            <h2>Job Notes</h2>
+            <p>Leave a note for the next operator, tech, QA, or admin reviewing this job.</p>
+          </div>
+          <form id="jobNoteForm" class="job-note-form">
+            <label>
+              Note
+              <textarea id="jobNoteText" rows="3" maxlength="1000"></textarea>
+            </label>
+            <button type="submit">Submit Note</button>
+          </form>
+          <p id="jobNoteMessage" class="message"></p>
+          <div id="jobNoteList" class="job-note-list empty">No notes for this job yet.</div>
+        </section>
       </section>
     </section>
 
@@ -471,6 +487,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-global-rule-default"></script>
+  <script src="/app.js?v=20260512-job-notes"></script>
 </body>
 </html>

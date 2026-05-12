@@ -17,6 +17,7 @@ public interface ISpcRepository
     List<ResourceMachine> Resources { get; }
     List<Device> Devices { get; }
     List<InspectionMeasurement> Measurements { get; }
+    List<JobNote> JobNotes { get; }
     List<ControlLimitSet> ControlLimits { get; }
     List<ProcessAlert> Alerts { get; }
     List<RuleViolation> RuleViolations { get; }

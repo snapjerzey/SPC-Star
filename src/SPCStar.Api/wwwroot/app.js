@@ -3,6 +3,7 @@ const state = {
   snapshot: null,
   contexts: [],
   selectedPlans: [],
+  jobNotes: [],
   trendCharacteristic: "",
   trendChartType: "Individuals",
   activeLock: null,
@@ -155,6 +156,7 @@ function renderEmptyContext(message = "") {
   renderLock(null);
   $("measurementForm").classList.add("hidden");
   $("trendPanel").classList.add("hidden");
+  $("jobNotesPanel").classList.add("hidden");
   $("materialDivider").classList.add("hidden");
   $("materialSection").classList.add("hidden");
   $("variableList").innerHTML = "";
@@ -163,6 +165,9 @@ function renderEmptyContext(message = "") {
   $("entryMessage").textContent = message;
   $("entryMessage").className = message ? "message error" : "message";
   $("materialMessage").textContent = "";
+  $("jobNoteText").value = "";
+  $("jobNoteMessage").textContent = "";
+  renderJobNotes([]);
   drawTrend([]);
 }
 
@@ -184,6 +189,7 @@ function renderContext() {
   $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq}`;
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
+  $("jobNotesPanel").classList.remove("hidden");
   $("materialDivider").classList.remove("hidden");
   $("materialSection").classList.remove("hidden");
   state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
@@ -192,6 +198,7 @@ function renderContext() {
   renderMeanSummary();
   renderTrendChoices();
   loadTrend();
+  loadJobNotes(jobNum);
 }
 
 function renderLock(activeLock) {
@@ -593,6 +600,87 @@ async function saveMaterialChange(event) {
   }
 }
 
+async function loadJobNotes(jobNum) {
+  if (!jobNum) {
+    renderJobNotes([]);
+    return;
+  }
+
+  try {
+    const notes = await api(`/jobs/${encodeURIComponent(jobNum)}/notes`);
+    state.jobNotes = notes;
+    renderJobNotes(notes);
+  } catch (error) {
+    $("jobNoteMessage").textContent = readableError(error);
+    $("jobNoteMessage").className = "message error";
+  }
+}
+
+async function saveJobNote(event) {
+  event.preventDefault();
+  const { jobNum, resourceId, set } = selectedValues();
+  const noteText = $("jobNoteText").value.trim();
+  if (!jobNum || !resourceId || !set) {
+    $("jobNoteMessage").textContent = "Start work before saving a job note.";
+    $("jobNoteMessage").className = "message error";
+    return;
+  }
+
+  if (!noteText) {
+    $("jobNoteMessage").textContent = "Enter a note before submitting.";
+    $("jobNoteMessage").className = "message error";
+    return;
+  }
+
+  try {
+    await api(`/jobs/${encodeURIComponent(jobNum)}/notes`, {
+      method: "POST",
+      body: JSON.stringify({
+        jobNum,
+        partNum: set.partNum,
+        resourceId,
+        operatorUserId: state.user.userName,
+        noteText,
+        timestamp: new Date().toISOString()
+      })
+    });
+    $("jobNoteText").value = "";
+    $("jobNoteMessage").textContent = "Job note saved.";
+    $("jobNoteMessage").className = "message ok";
+    await loadJobNotes(jobNum);
+  } catch (error) {
+    $("jobNoteMessage").textContent = readableError(error);
+    $("jobNoteMessage").className = "message error";
+  }
+}
+
+function renderJobNotes(notes) {
+  const list = $("jobNoteList");
+  if (!notes.length) {
+    list.className = "job-note-list empty";
+    list.textContent = "No notes for this job yet.";
+    return;
+  }
+
+  list.className = "job-note-list";
+  list.innerHTML = "";
+  notes.forEach((note) => {
+    const item = document.createElement("article");
+    item.className = "job-note-item";
+    const meta = document.createElement("div");
+    meta.className = "job-note-meta";
+    const user = document.createElement("strong");
+    user.textContent = note.operatorUserId;
+    const details = document.createElement("span");
+    details.textContent = `${formatDateTime(note.timestamp)} / ${note.partNum} / ${note.resourceId}`;
+    const text = document.createElement("p");
+    text.textContent = note.noteText;
+    meta.append(user, details);
+    item.append(meta, text);
+    list.appendChild(item);
+  });
+}
+
 async function clearLock(event) {
   event.preventDefault();
   if (!state.activeLock) {
@@ -656,6 +744,7 @@ function logout() {
   state.snapshot = null;
   state.contexts = [];
   state.selectedPlans = [];
+  state.jobNotes = [];
   state.trendCharacteristic = "";
   state.activeLock = null;
   state.users = [];
@@ -676,6 +765,7 @@ function logout() {
 function clearWorkContext() {
   state.contexts = [];
   state.selectedPlans = [];
+  state.jobNotes = [];
   state.trendCharacteristic = "";
   state.activeLock = null;
   renderEmptyContext();
@@ -1169,6 +1259,16 @@ function formatTime(value) {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatDateTime(value) {
+  return new Date(value).toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 function ruleLabel(rule) {
   return {
     OnePointBeyondControlLimit: "One point beyond control limit",
@@ -1196,6 +1296,7 @@ $("resourceId").addEventListener("change", clearWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("materialForm").addEventListener("submit", saveMaterialChange);
+$("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
 $("overrideUserName").addEventListener("input", () => {
   $("godReasonLabel").classList.toggle("hidden", $("overrideUserName").value.trim().toLowerCase() !== "god1");

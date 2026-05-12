@@ -73,6 +73,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         List<ResourceMachine> Resources,
         List<Device> Devices,
         List<InspectionMeasurement> Measurements,
+        List<JobNote>? JobNotes,
         List<ControlLimitSet> ControlLimits,
         List<ProcessAlert> Alerts,
         List<RuleViolation> RuleViolations,
@@ -95,6 +96,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
                 [.. repository.Resources],
                 [.. repository.Devices],
                 [.. repository.Measurements],
+                [.. repository.JobNotes],
                 [.. repository.ControlLimits],
                 [.. repository.Alerts],
                 [.. repository.RuleViolations],
@@ -121,6 +123,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
             repository.Resources.AddRange(Resources);
             repository.Devices.AddRange(Devices);
             repository.Measurements.AddRange(Measurements);
+            repository.JobNotes.AddRange(JobNotes ?? []);
             repository.ControlLimits.AddRange(ControlLimits);
             repository.Alerts.AddRange(Alerts);
             repository.RuleViolations.AddRange(RuleViolations);

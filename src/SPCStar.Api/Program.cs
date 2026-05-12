@@ -23,6 +23,7 @@ builder.Services.AddSingleton<InspectionMeasurementService>();
 builder.Services.AddSingleton<AlertOverrideService>();
 builder.Services.AddSingleton<QaSummaryExportService>();
 builder.Services.AddSingleton<MaterialChangeLogService>();
+builder.Services.AddSingleton<JobNoteService>();
 builder.Services.AddSingleton<InspectionFrequencyService>();
 builder.Services.AddSingleton<ChartDataService>();
 builder.Services.AddSingleton<HistoryExportService>();
@@ -163,6 +164,24 @@ app.MapPost("/material-changes", (MaterialChangeLogEntry request, MaterialChange
 
     return result.Succeeded
         ? Results.Created($"/material-changes/{result.Value!.Id}", result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
+app.MapGet("/jobs/{jobNum}/notes", (string jobNum, JobNoteService service) =>
+{
+    return Results.Ok(service.GetForJob(jobNum));
+});
+
+app.MapPost("/jobs/{jobNum}/notes", (string jobNum, JobNoteEntry request, JobNoteService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.Add(request with { JobNum = jobNum });
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Created($"/jobs/{jobNum}/notes/{result.Value!.Id}", result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 });
 

@@ -84,6 +84,17 @@ public sealed class Job
     public required string PartNum { get; set; }
 }
 
+public sealed class JobNote
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string JobNum { get; set; }
+    public required string PartNum { get; set; }
+    public required string ResourceId { get; set; }
+    public required string OperatorUserId { get; set; }
+    public required string NoteText { get; set; }
+    public DateTimeOffset Timestamp { get; set; }
+}
+
 public sealed class ResourceMachine
 {
     public Guid Id { get; init; } = Guid.NewGuid();

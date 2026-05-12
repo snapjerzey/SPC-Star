@@ -23,6 +23,33 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_CreatesSpecAlert_WhenSpecLimitOnlyRuleIsSelected()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        SetRuleSet(repository, "Diameter", "SpecLimitOnly");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(6m));
+
+        Assert.True(result.Succeeded);
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
+    }
+
+    [Fact]
+    public void EnterMeasurement_DoesNotCreateMeasuredAlert_WhenNoAutomaticRuleIsSelected()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        SetRuleSet(repository, "Diameter", "None");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(13.5m));
+
+        Assert.True(result.Succeeded);
+        Assert.Empty(repository.Alerts);
+    }
+
+    [Fact]
     public void EnterMeasurement_RejectsUnknownInspectionTarget()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -281,6 +308,13 @@ public sealed class InspectionAndOverrideTests
             AlertRuleSet = "WesternElectric",
             Frequency = new InspectionFrequency { Type = FrequencyType.Quantity, Value = 10000, Unit = FrequencyUnit.Pieces }
         });
+    }
+
+    private static void SetRuleSet(InMemorySpcRepository repository, string characteristicName, string ruleSet)
+    {
+        var characteristic = repository.Characteristics.Single(characteristic => characteristic.Name == characteristicName);
+        var plan = repository.InspectionPlans.Single(plan => plan.CharacteristicId == characteristic.Id);
+        plan.AlertRuleSet = ruleSet;
     }
 
     private static ProcessAlert AddAlert(InMemorySpcRepository repository)

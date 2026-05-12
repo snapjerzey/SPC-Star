@@ -383,7 +383,7 @@ textarea {
   align-items: end;
 }
 .timing-fields {
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 .edit-setup-fields {
   grid-template-columns: minmax(220px, 1fr) auto;
@@ -464,6 +464,24 @@ textarea {
   gap: 12px;
   align-items: end;
   margin-bottom: 12px;
+}
+.rule-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.rule-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfdff;
+  padding: 14px;
+}
+.rule-card p {
+  margin-bottom: 0;
+  line-height: 1.45;
+}
+.muted-rule {
+  background: #f8fafc;
 }
 .setup-list {
   display: grid;

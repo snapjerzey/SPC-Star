@@ -571,7 +571,7 @@ function showPanel(panelName) {
 }
 
 function showSetupSection(sectionName) {
-  const sections = ["Inspection", "Users", "Import", "Review", "JobData"];
+  const sections = ["Inspection", "Users", "Rules", "Import", "Review", "JobData"];
   sections.forEach((section) => {
     $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
     $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
@@ -877,6 +877,7 @@ function loadSelectedPartSetup() {
   updateSetupFrequencyUnits();
   $("setupFrequencyValue").value = String(firstPlan.frequencyValue || 1);
   $("setupFrequencyUnit").value = firstPlan.frequencyUnit;
+  $("setupAlertRuleSet").value = firstPlan.alertRuleSet || "WesternElectric";
   $("setupVariableRows").innerHTML = "";
   set.plans.forEach((plan) => addSetupVariableRow(plan));
   $("inspectionSetupMessage").textContent = `${set.partNum} loaded for editing.`;
@@ -892,6 +893,7 @@ function clearInspectionSetupForm() {
   $("setupFrequencyType").value = "Quantity";
   $("setupFrequencyValue").value = "10000";
   $("setupFrequencyUnit").value = "Pieces";
+  $("setupAlertRuleSet").value = "WesternElectric";
   updateSetupFrequencyUnits();
   $("setupVariableRows").innerHTML = "";
   addSetupVariableRow();
@@ -952,7 +954,7 @@ async function saveInspectionSetup(event) {
       frequencyType: $("setupFrequencyType").value,
       frequencyValue: Number($("setupFrequencyValue").value),
       frequencyUnit: $("setupFrequencyUnit").value,
-      alertRuleSet: "WesternElectric"
+      alertRuleSet: $("setupAlertRuleSet").value
     };
 
     for (const variable of variables) {
@@ -1045,6 +1047,7 @@ function ruleLabel(rule) {
     TwoOfThreeNearControlLimit: "Two of three near control limit",
     FourOfFiveApproachingLimit: "Four of five approaching limit",
     EightConsecutiveOneSideOfCenterline: "Eight consecutive one side of centerline",
+    SpecLimitViolation: "Spec limit violation",
     AttributeRejected: "Attribute rejected"
   }[rule] || rule;
 }
@@ -1071,6 +1074,7 @@ $("inspectionTab").addEventListener("click", () => showPanel("inspect"));
 $("setupTab").addEventListener("click", () => showPanel("setup"));
 $("setupInspectionSectionTab").addEventListener("click", () => showSetupSection("Inspection"));
 $("setupUsersSectionTab").addEventListener("click", () => showSetupSection("Users"));
+$("setupRulesSectionTab").addEventListener("click", () => showSetupSection("Rules"));
 $("setupImportSectionTab").addEventListener("click", () => showSetupSection("Import"));
 $("setupReviewSectionTab").addEventListener("click", () => showSetupSection("Review"));
 $("setupJobDataSectionTab").addEventListener("click", () => showSetupSection("JobData"));

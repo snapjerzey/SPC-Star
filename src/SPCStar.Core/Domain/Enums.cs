@@ -36,6 +36,7 @@ public enum RuleTriggered
     TwoOfThreeNearControlLimit,
     FourOfFiveApproachingLimit,
     EightConsecutiveOneSideOfCenterline,
+    SpecLimitViolation,
     AttributeRejected
 }
 

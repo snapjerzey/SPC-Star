@@ -119,9 +119,9 @@ public sealed class SetupImportService(ISpcRepository repository)
                 errors.Add($"Row {rowNumber}: Invalid frequency. FrequencyType and FrequencyUnit are not compatible.");
             }
 
-            if (!string.Equals(row.GetValueOrDefault("AlertRuleSet"), "WesternElectric", StringComparison.OrdinalIgnoreCase))
+            if (!IsSupportedRuleSet(row.GetValueOrDefault("AlertRuleSet") ?? ""))
             {
-                errors.Add($"Row {rowNumber}: Invalid AlertRuleSet. MVP supports WesternElectric.");
+                errors.Add($"Row {rowNumber}: Invalid AlertRuleSet. Use WesternElectric, SpecLimitOnly, or None.");
             }
 
             if (!bool.TryParse(row.GetValueOrDefault("IsRequiredForCOA"), out _))
@@ -148,6 +148,13 @@ public sealed class SetupImportService(ISpcRepository repository)
             FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart,
             _ => false
         };
+    }
+
+    private static bool IsSupportedRuleSet(string ruleSet)
+    {
+        return string.Equals(ruleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase);
     }
 
     private void Upsert(Dictionary<string, string> row)

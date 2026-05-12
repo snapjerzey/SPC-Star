@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260512-edit-part-setup">
+  <link rel="stylesheet" href="/styles.css?v=20260512-rule-sets">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -170,6 +170,7 @@
       <div class="setup-nav">
         <button id="setupInspectionSectionTab" type="button" class="setup-nav-button active">Parts & Inspections</button>
         <button id="setupUsersSectionTab" type="button" class="setup-nav-button">Users</button>
+        <button id="setupRulesSectionTab" type="button" class="setup-nav-button">Rules</button>
         <button id="setupImportSectionTab" type="button" class="setup-nav-button">Import</button>
         <button id="setupReviewSectionTab" type="button" class="setup-nav-button">Review</button>
         <button id="setupJobDataSectionTab" type="button" class="setup-nav-button">Job Data</button>
@@ -229,6 +230,14 @@
                   </select>
                 </label>
                 <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" value="10000" required></label>
+                <label>
+                  Rule set
+                  <select id="setupAlertRuleSet">
+                    <option value="WesternElectric">Western Electric</option>
+                    <option value="SpecLimitOnly">Spec Limit Only</option>
+                    <option value="None">No Automatic Rule</option>
+                  </select>
+                </label>
                 <label>
                   Frequency unit
                   <select id="setupFrequencyUnit">
@@ -301,6 +310,33 @@
         </section>
       </section>
 
+      <section id="setupRulesSection" class="setup-section hidden">
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Inspection Rules</h2>
+            <p>Select the active rule set on each part inspection setup.</p>
+          </div>
+          <div class="rule-card-grid">
+            <article class="rule-card">
+              <h3>Western Electric</h3>
+              <p>Detects non-random process behavior using control-limit signals such as one point beyond the control limit, repeated near-limit behavior, and long runs on one side of center.</p>
+            </article>
+            <article class="rule-card">
+              <h3>Spec Limit Only</h3>
+              <p>Locks only when a measured value is outside the lower or upper specification limit. This is simpler and less sensitive to process drift.</p>
+            </article>
+            <article class="rule-card">
+              <h3>No Automatic Rule</h3>
+              <p>Records inspection results without creating automatic drift or out-of-limit locks for measured variables. Accept/Reject failures still lock.</p>
+            </article>
+            <article class="rule-card muted-rule">
+              <h3>Future Rule Sets</h3>
+              <p>Nelson, Westgard, and customer-specific rule sets can be added later using the same setup selector without changing the operator workflow.</p>
+            </article>
+          </div>
+        </section>
+      </section>
+
       <section id="setupImportSection" class="setup-section hidden">
       <section class="panel">
         <div class="panel-heading horizontal">
@@ -359,6 +395,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-edit-part-setup"></script>
+  <script src="/app.js?v=20260512-rule-sets"></script>
 </body>
 </html>

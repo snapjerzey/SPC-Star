@@ -264,9 +264,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
         if (request.CharacteristicType == CharacteristicType.Variable && request.Lcl.HasValue && request.Ucl.HasValue && request.Lcl.Value >= request.Ucl.Value) errors.Add("LCL must be less than UCL.");
         if (request.SampleSize <= 0) errors.Add("SampleSize must be greater than zero.");
         if (request.FrequencyValue <= 0) errors.Add("FrequencyValue must be greater than zero.");
-        if (!string.Equals(request.AlertRuleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase))
+        if (!IsSupportedRuleSet(request.AlertRuleSet))
         {
-            errors.Add("MVP supports WesternElectric alert rules.");
+            errors.Add("AlertRuleSet must be WesternElectric, SpecLimitOnly, or None.");
         }
 
         if (!IsValidFrequencyPair(request.FrequencyType, request.FrequencyUnit))
@@ -286,6 +286,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
             FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart,
             _ => false
         };
+    }
+
+    private static bool IsSupportedRuleSet(string ruleSet)
+    {
+        return string.Equals(ruleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void Required(string value, string name, List<string> errors)

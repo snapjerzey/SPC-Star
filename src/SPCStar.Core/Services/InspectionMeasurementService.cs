@@ -158,6 +158,12 @@ public sealed class InspectionMeasurementService(
             return;
         }
 
+        var plan = FindInspectionPlan(characteristic);
+        if (plan is null || string.Equals(plan.AlertRuleSet, "None", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         var limits = repository.ControlLimits.FirstOrDefault(limit =>
             limit.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
             limit.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
@@ -166,6 +172,12 @@ public sealed class InspectionMeasurementService(
 
         if (limits is null)
         {
+            return;
+        }
+
+        if (string.Equals(plan.AlertRuleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase))
+        {
+            CreateSpecLimitAlert(measurement);
             return;
         }
 
@@ -213,6 +225,66 @@ public sealed class InspectionMeasurementService(
             ruleViolation.MeasurementIds.AddRange(violation.MeasurementIds);
             repository.RuleViolations.Add(ruleViolation);
         }
+    }
+
+    private InspectionPlan? FindInspectionPlan(Characteristic? characteristic)
+    {
+        return characteristic is null
+            ? null
+            : repository.InspectionPlans.FirstOrDefault(plan => plan.CharacteristicId == characteristic.Id);
+    }
+
+    private void CreateSpecLimitAlert(InspectionMeasurement measurement)
+    {
+        var spec = FindSpecLimit(measurement);
+        if (spec is null || measurement.Value >= spec.Lsl && measurement.Value <= spec.Usl)
+        {
+            return;
+        }
+
+        var alert = new ProcessAlert
+        {
+            JobNum = measurement.JobNum,
+            PartNum = measurement.PartNum,
+            ResourceId = measurement.ResourceId,
+            CharacteristicName = measurement.CharacteristicName,
+            OperatorUserId = measurement.OperatorUserId,
+            RuleTriggered = RuleTriggered.SpecLimitViolation,
+            LockedAt = measurement.Timestamp
+        };
+
+        repository.Alerts.Add(alert);
+        var ruleViolation = new RuleViolation
+        {
+            AlertId = alert.Id,
+            RuleTriggered = RuleTriggered.SpecLimitViolation,
+            DetectedAt = measurement.Timestamp
+        };
+        ruleViolation.MeasurementIds.Add(measurement.Id);
+        repository.RuleViolations.Add(ruleViolation);
+    }
+
+    private SpecLimit? FindSpecLimit(InspectionMeasurement measurement)
+    {
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase));
+        if (part is null)
+        {
+            return null;
+        }
+
+        var operation = repository.Operations.FirstOrDefault(item => item.PartId == part.Id && item.OperationSeq == measurement.OperationSeq);
+        if (operation is null)
+        {
+            return null;
+        }
+
+        var characteristic = repository.Characteristics.FirstOrDefault(item =>
+            item.OperationId == operation.Id &&
+            item.Name.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase));
+
+        return characteristic is null
+            ? null
+            : repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
     }
 
     private Characteristic? FindCharacteristic(InspectionMeasurementEntry entry)

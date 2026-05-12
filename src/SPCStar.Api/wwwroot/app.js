@@ -607,9 +607,9 @@ async function loadJobNotes(jobNum) {
   }
 
   try {
-    const notes = await api(`/jobs/${encodeURIComponent(jobNum)}/notes`);
-    state.jobNotes = notes;
-    renderJobNotes(notes);
+    const history = await api(`/jobs/${encodeURIComponent(jobNum)}/history`);
+    state.jobNotes = history;
+    renderJobNotes(history);
   } catch (error) {
     $("jobNoteMessage").textContent = readableError(error);
     $("jobNoteMessage").className = "message error";
@@ -654,31 +654,58 @@ async function saveJobNote(event) {
   }
 }
 
-function renderJobNotes(notes) {
+function renderJobNotes(entries) {
   const list = $("jobNoteList");
-  if (!notes.length) {
+  if (!entries.length) {
     list.className = "job-note-list empty";
-    list.textContent = "No notes for this job yet.";
+    list.textContent = "No history for this job yet.";
     return;
   }
 
   list.className = "job-note-list";
   list.innerHTML = "";
-  notes.forEach((note) => {
+  entries.forEach((entry) => {
     const item = document.createElement("article");
-    item.className = "job-note-item";
+    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : ""}`;
     const meta = document.createElement("div");
     meta.className = "job-note-meta";
     const user = document.createElement("strong");
-    user.textContent = note.operatorUserId;
+    user.textContent = entry.entryType === "Lock"
+      ? `${entry.characteristicName} ${entry.status === "Active" ? "locked" : "lock cleared"}`
+      : entry.operatorUserId;
     const details = document.createElement("span");
-    details.textContent = `${formatDateTime(note.timestamp)} / ${note.partNum} / ${note.resourceId}`;
+    details.textContent = `${formatDateTime(entry.timestamp)} / ${entry.partNum} / ${entry.resourceId}`;
     const text = document.createElement("p");
-    text.textContent = note.noteText;
+    if (entry.entryType === "Lock") {
+      text.textContent = lockHistoryText(entry);
+    } else {
+      text.textContent = entry.noteText;
+    }
     meta.append(user, details);
     item.append(meta, text);
     list.appendChild(item);
   });
+}
+
+function lockHistoryText(entry) {
+  const parts = [`${ruleLabel(entry.ruleTriggered)}.`];
+  if (entry.status === "Active") {
+    parts.push("This lock is still active.");
+  }
+
+  if (entry.overrideUserId) {
+    parts.push(`Cleared by ${entry.overrideUserId}${entry.overrideRole ? ` (${entry.overrideRole})` : ""} at ${formatDateTime(entry.unlockedAt)}.`);
+  }
+
+  if (entry.causeCategory || entry.causeText) {
+    parts.push(`Cause: ${[entry.causeCategory, entry.causeText].filter(Boolean).join(" - ")}.`);
+  }
+
+  if (entry.solutionText) {
+    parts.push(`Action: ${entry.solutionText}.`);
+  }
+
+  return parts.join(" ");
 }
 
 async function clearLock(event) {

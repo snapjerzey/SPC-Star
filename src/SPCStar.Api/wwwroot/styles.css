@@ -705,6 +705,13 @@ textarea {
   background: #fbfdff;
   padding: 12px;
 }
+.lock-history-item {
+  border-color: #fedf89;
+  background: #fffcf5;
+}
+.lock-history-item .job-note-meta strong {
+  color: var(--warn);
+}
 .job-note-meta {
   display: flex;
   flex-wrap: wrap;

@@ -24,6 +24,7 @@ builder.Services.AddSingleton<AlertOverrideService>();
 builder.Services.AddSingleton<QaSummaryExportService>();
 builder.Services.AddSingleton<MaterialChangeLogService>();
 builder.Services.AddSingleton<JobNoteService>();
+builder.Services.AddSingleton<JobHistoryService>();
 builder.Services.AddSingleton<InspectionFrequencyService>();
 builder.Services.AddSingleton<ChartDataService>();
 builder.Services.AddSingleton<HistoryExportService>();
@@ -168,6 +169,11 @@ app.MapPost("/material-changes", (MaterialChangeLogEntry request, MaterialChange
 });
 
 app.MapGet("/jobs/{jobNum}/notes", (string jobNum, JobNoteService service) =>
+{
+    return Results.Ok(service.GetForJob(jobNum));
+});
+
+app.MapGet("/jobs/{jobNum}/history", (string jobNum, JobHistoryService service) =>
 {
     return Results.Ok(service.GetForJob(jobNum));
 });

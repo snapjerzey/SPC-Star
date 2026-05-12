@@ -1,0 +1,80 @@
+using SPCStar.Core.Domain;
+using SPCStar.Core.Infrastructure;
+
+namespace SPCStar.Core.Services;
+
+public sealed record JobHistoryEntryDto(
+    Guid Id,
+    string EntryType,
+    string JobNum,
+    string PartNum,
+    string ResourceId,
+    string OperatorUserId,
+    DateTimeOffset Timestamp,
+    string? NoteText = null,
+    string? CharacteristicName = null,
+    RuleTriggered? RuleTriggered = null,
+    AlertStatus? Status = null,
+    string? OverrideUserId = null,
+    string? OverrideRole = null,
+    string? CauseCategory = null,
+    string? CauseText = null,
+    string? SolutionText = null,
+    DateTimeOffset? UnlockedAt = null);
+
+public sealed class JobHistoryService(ISpcRepository repository)
+{
+    public IReadOnlyList<JobHistoryEntryDto> GetForJob(string jobNum)
+    {
+        if (string.IsNullOrWhiteSpace(jobNum))
+        {
+            return [];
+        }
+
+        var normalizedJob = jobNum.Trim();
+        var notes = repository.JobNotes
+            .Where(note => note.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Select(note => new JobHistoryEntryDto(
+                note.Id,
+                "Note",
+                note.JobNum,
+                note.PartNum,
+                note.ResourceId,
+                note.OperatorUserId,
+                note.Timestamp,
+                NoteText: note.NoteText));
+
+        var locks = repository.Alerts
+            .Where(alert => alert.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Select(alert =>
+            {
+                var audit = repository.AlertOverrides
+                    .Where(overrideRow => overrideRow.AlertId == alert.Id)
+                    .OrderByDescending(overrideRow => overrideRow.UnlockedAt)
+                    .FirstOrDefault();
+
+                return new JobHistoryEntryDto(
+                    alert.Id,
+                    "Lock",
+                    alert.JobNum,
+                    alert.PartNum,
+                    alert.ResourceId,
+                    alert.OperatorUserId,
+                    alert.LockedAt,
+                    CharacteristicName: alert.CharacteristicName,
+                    RuleTriggered: alert.RuleTriggered,
+                    Status: alert.Status,
+                    OverrideUserId: audit?.OverrideUserId,
+                    OverrideRole: audit?.OverrideRole,
+                    CauseCategory: audit?.CauseCategory,
+                    CauseText: audit?.CauseText,
+                    SolutionText: audit?.SolutionText,
+                    UnlockedAt: audit?.UnlockedAt);
+            });
+
+        return notes
+            .Concat(locks)
+            .OrderByDescending(entry => entry.Timestamp)
+            .ToArray();
+    }
+}

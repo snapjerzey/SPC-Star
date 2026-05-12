@@ -865,7 +865,7 @@ function renderJobSummary(rows) {
   container.className = "data-table job-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Job</span><span>Variable</span><span>Mean</span><span>COA Count</span><span>Excluded</span><span>Status</span>
+      <span>Job</span><span>Variable</span><span>COA Stat</span><span>COA Value</span><span>Mean</span><span>COA Count</span><span>Excluded</span><span>Status</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
@@ -873,6 +873,8 @@ function renderJobSummary(rows) {
     item.innerHTML = `
       <span>${row.jobNum}</span>
       <span>${row.characteristicName} (${row.unitOfMeasure})</span>
+      <span>${coaStatisticLabel(row.coaStatisticType)}</span>
+      <span>${formatNumber(row.coaValue)}</span>
       <span>${formatNumber(row.mean)}</span>
       <span>${row.count}</span>
       <span>${row.outOfSpecExcludedCount || 0}</span>
@@ -897,6 +899,13 @@ function parseJobNums() {
     .split(",")
     .map((jobNum) => jobNum.trim())
     .filter(Boolean);
+}
+
+function coaStatisticLabel(value) {
+  return {
+    Mean: "Mean",
+    StandardDeviation: "Std dev"
+  }[value] || value || "Mean";
 }
 
 function renderUsers() {
@@ -971,6 +980,13 @@ function setupVariableRowTemplate() {
         <option value="false">No</option>
       </select>
     </label>
+    <label class="setup-coa-stat-field">
+      <span>COA stat</span>
+      <select class="setup-coa-statistic">
+        <option value="Mean">Mean</option>
+        <option value="StandardDeviation">Std dev</option>
+      </select>
+    </label>
     <button type="button" class="secondary compact-button remove-variable-button">Remove</button>`;
 }
 
@@ -988,11 +1004,13 @@ function addSetupVariableRow(values = {}) {
   row.querySelector(".setup-lcl").value = values.lcl ?? "";
   row.querySelector(".setup-ucl").value = values.ucl ?? "";
   row.querySelector(".setup-coa-required").value = String(values.isRequiredForCoa ?? true);
+  row.querySelector(".setup-coa-statistic").value = values.coaStatisticType || "Mean";
   row.querySelector(".setup-characteristic-type").addEventListener("change", () => updateSetupVariableType(row));
   row.querySelector(".remove-variable-button").addEventListener("click", () => {
     if ($("setupVariableRows").children.length === 1) {
       row.querySelectorAll("input").forEach((input) => { input.value = ""; });
       row.querySelector(".setup-coa-required").value = "true";
+      row.querySelector(".setup-coa-statistic").value = "Mean";
       return;
     }
     row.remove();
@@ -1137,7 +1155,8 @@ function setupVariableRows() {
     usl: Number(row.querySelector(".setup-usl").value),
     lcl: optionalInputNumber(row.querySelector(".setup-lcl")),
     ucl: optionalInputNumber(row.querySelector(".setup-ucl")),
-    isRequiredForCoa: row.querySelector(".setup-coa-required").value === "true"
+    isRequiredForCoa: row.querySelector(".setup-coa-required").value === "true",
+    coaStatisticType: row.querySelector(".setup-coa-statistic").value
   }));
 }
 
@@ -1183,6 +1202,7 @@ async function saveInspectionSetup(event) {
           ucl: variable.ucl,
           unitOfMeasure: variable.unitOfMeasure,
           isRequiredForCoa: variable.isRequiredForCoa,
+          coaStatisticType: variable.coaStatisticType,
           originalProcessCode: state.editingSetup?.processCode || null,
           originalOperationSeq: state.editingSetup?.operationSeq || null,
           originalCharacteristicName: variable.originalCharacteristicName
@@ -1237,9 +1257,9 @@ function newClientRecordId() {
 
 function loadCsvTemplate() {
   $("csvImportText").value = [
-    "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
-    "P200,Example part,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,5,Quantity,10000,Pieces,WesternElectric,true",
-    "P200,Example part,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,5,Quantity,10000,Pieces,NelsonRules,true"
+    "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
+    "P200,Example part,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,5,Quantity,10000,Pieces,WesternElectric,true,Mean",
+    "P200,Example part,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,5,Quantity,10000,Pieces,NelsonRules,true,StandardDeviation"
   ].join("\n");
 }
 

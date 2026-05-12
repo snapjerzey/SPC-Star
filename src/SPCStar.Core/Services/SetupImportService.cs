@@ -129,6 +129,12 @@ public sealed class SetupImportService(ISpcRepository repository)
                 errors.Add($"Row {rowNumber}: IsRequiredForCOA must be true or false.");
             }
 
+            if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("COAStatistic")) &&
+                !Enum.TryParse<CoaStatisticType>(row.GetValueOrDefault("COAStatistic"), true, out _))
+            {
+                errors.Add($"Row {rowNumber}: Invalid COAStatistic.");
+            }
+
             var duplicateKey = $"{row.GetValueOrDefault("PartNum")}|{row.GetValueOrDefault("ProcessCode")}|{operationSeq}|{row.GetValueOrDefault("CharacteristicName")}";
             if (!seenCharacteristics.Add(duplicateKey))
             {
@@ -210,7 +216,8 @@ public sealed class SetupImportService(ISpcRepository repository)
                 Name = row["CharacteristicName"],
                 Type = Enum.Parse<CharacteristicType>(row["CharacteristicType"], true),
                 UnitOfMeasure = row["UnitOfMeasure"],
-                IsRequiredForCoa = bool.Parse(row["IsRequiredForCOA"])
+                IsRequiredForCoa = bool.Parse(row["IsRequiredForCOA"]),
+                CoaStatisticType = CoaStatistic(row)
             };
             repository.Characteristics.Add(characteristic);
         }
@@ -219,6 +226,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             characteristic.Type = Enum.Parse<CharacteristicType>(row["CharacteristicType"], true);
             characteristic.UnitOfMeasure = row["UnitOfMeasure"];
             characteristic.IsRequiredForCoa = bool.Parse(row["IsRequiredForCOA"]);
+            characteristic.CoaStatisticType = CoaStatistic(row);
         }
 
         var spec = repository.SpecLimits.FirstOrDefault(s => s.CharacteristicId == characteristic.Id);
@@ -273,6 +281,13 @@ public sealed class SetupImportService(ISpcRepository repository)
             Value = int.Parse(row["FrequencyValue"]),
             Unit = Enum.Parse<FrequencyUnit>(row["FrequencyUnit"], true)
         };
+    }
+
+    private static CoaStatisticType CoaStatistic(Dictionary<string, string> row)
+    {
+        return row.TryGetValue("COAStatistic", out var value) && !string.IsNullOrWhiteSpace(value)
+            ? Enum.Parse<CoaStatisticType>(value, true)
+            : CoaStatisticType.Mean;
     }
 
     private void UpsertControlLimit(Dictionary<string, string> row, Part part, ManufacturingProcess process, int operationSeq)

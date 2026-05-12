@@ -448,6 +448,7 @@ textarea {
 .setup-unit-field { grid-column: span 2; }
 .numeric-setup-field { grid-column: span 2; }
 .setup-coa-field { grid-column: span 1; }
+.setup-coa-stat-field { grid-column: span 2; }
 .remove-variable-button { grid-column: span 2; }
 .setup-type-field select {
   border-color: #93c5fd;
@@ -554,7 +555,7 @@ textarea {
   align-items: center;
 }
 .job-summary-table .data-row {
-  grid-template-columns: 1fr 1.4fr 1fr .9fr .9fr .9fr;
+  grid-template-columns: .9fr 1.2fr .8fr .9fr .9fr .8fr .8fr .8fr;
 }
 .data-row.header {
   color: #35516f;
@@ -754,6 +755,7 @@ textarea {
   .setup-unit-field,
   .numeric-setup-field,
   .setup-coa-field,
+  .setup-coa-stat-field,
   .setup-variable-row .remove-variable-button {
     grid-column: span 2;
   }

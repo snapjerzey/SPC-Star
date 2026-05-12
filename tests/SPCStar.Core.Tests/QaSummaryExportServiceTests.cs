@@ -28,8 +28,8 @@ public sealed class QaSummaryExportServiceTests
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Value);
         var csv = result.Value!;
-        Assert.Contains("PartNum,JobNum,CharacteristicName,Mean,Min,Max,StdDev,Count,OutOfSpecExcluded,LSL,USL,PassFailStatus", csv);
-        Assert.Contains("P100,J100,Diameter,5,4.9,5.1", csv);
+        Assert.Contains("PartNum,JobNum,CharacteristicName,COAStatistic,COAValue,Mean,Min,Max,StdDev,Count,OutOfSpecExcluded,LSL,USL,PassFailStatus", csv);
+        Assert.Contains("P100,J100,Diameter,Mean,5,5,4.9,5.1", csv);
         Assert.Contains("Pass", csv);
     }
 
@@ -46,6 +46,8 @@ public sealed class QaSummaryExportServiceTests
         Assert.Equal("Diameter", row.CharacteristicName);
         Assert.True(row.IsRequiredForCoa);
         Assert.Equal(3, row.Count);
+        Assert.Equal(CoaStatisticType.Mean, row.CoaStatisticType);
+        Assert.Equal(5.0m, row.CoaValue);
         Assert.Equal(5.0m, row.Mean);
         Assert.Equal("Pass", row.Status);
     }
@@ -69,6 +71,21 @@ public sealed class QaSummaryExportServiceTests
     }
 
     [Fact]
+    public void BuildJobVariableMeans_UsesStandardDeviationWhenRequiredForCoa()
+    {
+        var repository = RepositoryWithMeasurements(CoaStatisticType.StandardDeviation);
+        var service = new QaSummaryExportService(repository);
+
+        var result = service.BuildJobVariableMeans("J100");
+
+        Assert.True(result.Succeeded);
+        var row = Assert.Single(result.Value!);
+        Assert.Equal(CoaStatisticType.StandardDeviation, row.CoaStatisticType);
+        Assert.Equal(0.1m, decimal.Round(row.CoaValue!.Value, 5));
+        Assert.Equal(5.0m, row.Mean);
+    }
+
+    [Fact]
     public void ExportCsv_ExcludesOutOfSpecMeasurementsFromCoaStats()
     {
         var repository = RepositoryWithMeasurements();
@@ -78,7 +95,7 @@ public sealed class QaSummaryExportServiceTests
         var result = service.ExportCsv(new QaSummaryExportRequest(["P100"], ["J100"], ["Diameter"], null, null));
 
         Assert.True(result.Succeeded);
-        Assert.Contains("P100,J100,Diameter,5,4.9,5.1", result.Value);
+        Assert.Contains("P100,J100,Diameter,Mean,5,5,4.9,5.1", result.Value);
         Assert.Contains(",3,1,4.5,5.5,Pass", result.Value);
     }
 
@@ -98,7 +115,7 @@ public sealed class QaSummaryExportServiceTests
         Assert.Contains(result.Value, row => row.JobNum == "J200" && row.Mean == 5.2m);
     }
 
-    private static InMemorySpcRepository RepositoryWithMeasurements()
+    private static InMemorySpcRepository RepositoryWithMeasurements(CoaStatisticType coaStatisticType = CoaStatisticType.Mean)
     {
         var repository = new InMemorySpcRepository();
         var part = new Part { PartNum = "P100", Description = "Widget" };
@@ -110,7 +127,8 @@ public sealed class QaSummaryExportServiceTests
             Name = "Diameter",
             Type = CharacteristicType.Variable,
             UnitOfMeasure = "mm",
-            IsRequiredForCoa = true
+            IsRequiredForCoa = true,
+            CoaStatisticType = coaStatisticType
         };
 
         repository.Parts.Add(part);

@@ -14,6 +14,8 @@ public sealed record QaSummaryRow(
     string PartNum,
     string JobNum,
     string CharacteristicName,
+    CoaStatisticType CoaStatisticType,
+    decimal? CoaValue,
     decimal? Mean,
     decimal? Min,
     decimal? Max,
@@ -30,6 +32,8 @@ public sealed record JobVariableMeanRow(
     string CharacteristicName,
     string UnitOfMeasure,
     bool IsRequiredForCoa,
+    CoaStatisticType CoaStatisticType,
+    decimal? CoaValue,
     decimal Nominal,
     decimal Lsl,
     decimal Usl,
@@ -47,6 +51,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         "PartNum",
         "JobNum",
         "CharacteristicName",
+        "COAStatistic",
+        "COAValue",
         "Mean",
         "Min",
         "Max",
@@ -143,6 +149,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             "CharacteristicName",
             "UnitOfMeasure",
             "IsRequiredForCOA",
+            "COAStatistic",
+            "COAValue",
             "Nominal",
             "LSL",
             "USL",
@@ -160,6 +168,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["CharacteristicName"] = row.CharacteristicName,
             ["UnitOfMeasure"] = row.UnitOfMeasure,
             ["IsRequiredForCOA"] = row.IsRequiredForCoa.ToString(),
+            ["COAStatistic"] = row.CoaStatisticType.ToString(),
+            ["COAValue"] = row.CoaValue?.ToString("0.#####") ?? string.Empty,
             ["Nominal"] = row.Nominal.ToString("0.#####"),
             ["LSL"] = row.Lsl.ToString("0.#####"),
             ["USL"] = row.Usl.ToString("0.#####"),
@@ -184,7 +194,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase) &&
                 (!requiredOnly || characteristic.IsRequiredForCoa)
             orderby operation.OperationSeq, characteristic.Name
-            select new { part.PartNum, characteristic.Name, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, spec.Nominal, spec.Lsl, spec.Usl };
+            select new { part.PartNum, characteristic.Name, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         return plans.Select(plan =>
         {
@@ -200,6 +210,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
                 .ToArray();
             var outOfSpecCount = values.Length - acceptedValues.Length;
             var mean = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Average();
+            var stdDev = StandardDeviation(acceptedValues);
+            var coaValue = CoaValue(plan.CoaStatisticType, mean, stdDev);
 
             return new JobVariableMeanRow(
                 job.JobNum,
@@ -207,6 +219,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
                 plan.Name,
                 plan.UnitOfMeasure,
                 plan.IsRequiredForCoa,
+                plan.CoaStatisticType,
+                coaValue,
                 plan.Nominal,
                 plan.Lsl,
                 plan.Usl,
@@ -232,6 +246,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["PartNum"] = row.PartNum,
             ["JobNum"] = row.JobNum,
             ["CharacteristicName"] = row.CharacteristicName,
+            ["COAStatistic"] = row.CoaStatisticType.ToString(),
+            ["COAValue"] = row.CoaValue?.ToString("0.#####") ?? string.Empty,
             ["Mean"] = row.Mean?.ToString("0.#####") ?? string.Empty,
             ["Min"] = row.Min?.ToString("0.#####") ?? string.Empty,
             ["Max"] = row.Max?.ToString("0.#####") ?? string.Empty,
@@ -249,6 +265,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
     private QaSummaryRow BuildRow(string partNum, string jobNum, string characteristicName, IReadOnlyList<decimal> values)
     {
         var spec = FindSpecLimit(partNum, characteristicName);
+        var coaStatisticType = FindCharacteristic(partNum, characteristicName)?.CoaStatisticType ?? CoaStatisticType.Mean;
         var acceptedValues = spec is null
             ? values.ToArray()
             : values.Where(value => value >= spec.Lsl && value <= spec.Usl).ToArray();
@@ -256,16 +273,15 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         var mean = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Average();
         var min = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Min();
         var max = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Max();
-        var stdDev = acceptedValues.Length == 0
-            ? (decimal?)null
-            : acceptedValues.Length == 1
-                ? 0m
-                : (decimal)Math.Sqrt(acceptedValues.Select(value => Math.Pow((double)(value - mean!.Value), 2)).Sum() / (acceptedValues.Length - 1));
+        var stdDev = StandardDeviation(acceptedValues);
+        var coaValue = CoaValue(coaStatisticType, mean, stdDev);
 
         return new QaSummaryRow(
             partNum,
             jobNum,
             characteristicName,
+            coaStatisticType,
+            coaValue,
             mean,
             min,
             max,
@@ -279,6 +295,14 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
 
     private SpecLimit? FindSpecLimit(string partNum, string characteristicName)
     {
+        var characteristic = FindCharacteristic(partNum, characteristicName);
+        return characteristic is null
+            ? null
+            : repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
+    }
+
+    private Characteristic? FindCharacteristic(string partNum, string characteristicName)
+    {
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase));
         if (part is null)
         {
@@ -289,12 +313,33 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             .Where(operation => operation.PartId == part.Id)
             .Select(operation => operation.Id)
             .ToHashSet();
-        var characteristic = repository.Characteristics.FirstOrDefault(item =>
+        return repository.Characteristics.FirstOrDefault(item =>
             operationIds.Contains(item.OperationId) &&
             item.Name.Equals(characteristicName, StringComparison.OrdinalIgnoreCase));
+    }
 
-        return characteristic is null
-            ? null
-            : repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
+    private static decimal? StandardDeviation(IReadOnlyCollection<decimal> values)
+    {
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        if (values.Count == 1)
+        {
+            return 0m;
+        }
+
+        var mean = values.Average();
+        return (decimal)Math.Sqrt(values.Select(value => Math.Pow((double)(value - mean), 2)).Sum() / (values.Count - 1));
+    }
+
+    private static decimal? CoaValue(CoaStatisticType statisticType, decimal? mean, decimal? standardDeviation)
+    {
+        return statisticType switch
+        {
+            CoaStatisticType.StandardDeviation => standardDeviation,
+            _ => mean
+        };
     }
 }

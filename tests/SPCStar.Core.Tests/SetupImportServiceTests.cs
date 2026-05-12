@@ -1,4 +1,5 @@
 using SPCStar.Core.Infrastructure;
+using SPCStar.Core.Domain;
 using SPCStar.Core.Services;
 using Xunit;
 
@@ -52,6 +53,22 @@ public sealed class SetupImportServiceTests
         var limit = Assert.Single(repository.ControlLimits);
         Assert.Equal(4.25m, limit.Lcl);
         Assert.Equal(5.75m, limit.Ucl);
+    }
+
+    [Fact]
+    public void ImportCsv_ImportsCoaStatisticWhenProvided()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
+            "P100,Widget,MOLD,Molding,10,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true,StandardDeviation",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(CoaStatisticType.StandardDeviation, repository.Characteristics.Single().CoaStatisticType);
     }
 
     [Fact]

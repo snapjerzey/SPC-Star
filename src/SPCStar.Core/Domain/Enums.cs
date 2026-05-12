@@ -52,6 +52,12 @@ public enum PassFailStatus
     Fail
 }
 
+public enum CoaStatisticType
+{
+    Mean,
+    StandardDeviation
+}
+
 public enum InspectionDueStatus
 {
     NotConfigured,

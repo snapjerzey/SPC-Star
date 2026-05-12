@@ -31,7 +31,8 @@ public sealed record UpsertInspectionSetupRequest(
     bool IsRequiredForCoa,
     string? OriginalProcessCode = null,
     int? OriginalOperationSeq = null,
-    string? OriginalCharacteristicName = null);
+    string? OriginalCharacteristicName = null,
+    CoaStatisticType CoaStatisticType = CoaStatisticType.Mean);
 
 public sealed class SetupManagementService(ISpcRepository repository)
 {
@@ -168,7 +169,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 Name = request.CharacteristicName.Trim(),
                 Type = request.CharacteristicType,
                 UnitOfMeasure = request.UnitOfMeasure.Trim(),
-                IsRequiredForCoa = request.IsRequiredForCoa
+                IsRequiredForCoa = request.IsRequiredForCoa,
+                CoaStatisticType = request.CoaStatisticType
             };
             repository.Characteristics.Add(characteristic);
         }
@@ -179,6 +181,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             characteristic.Type = request.CharacteristicType;
             characteristic.UnitOfMeasure = request.UnitOfMeasure.Trim();
             characteristic.IsRequiredForCoa = request.IsRequiredForCoa;
+            characteristic.CoaStatisticType = request.CoaStatisticType;
             RenameControlLimitCharacteristic(request, oldCharacteristicName);
         }
 

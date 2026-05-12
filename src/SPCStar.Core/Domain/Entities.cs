@@ -46,6 +46,7 @@ public sealed class Characteristic
     public CharacteristicType Type { get; set; }
     public required string UnitOfMeasure { get; set; }
     public bool IsRequiredForCoa { get; set; }
+    public CoaStatisticType CoaStatisticType { get; set; } = CoaStatisticType.Mean;
 }
 
 public sealed class SpecLimit

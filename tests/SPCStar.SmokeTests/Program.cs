@@ -173,7 +173,7 @@ static void QaExportCalculatesSummaryCsv()
     var result = new QaSummaryExportService(RepositoryWithMeasurements())
         .ExportCsv(new QaSummaryExportRequest(["P100"], ["J100"], ["Diameter"], null, null));
     AssertTrue(result.Succeeded);
-    AssertTrue(result.Value is not null && result.Value.Contains("P100,J100,Diameter,5,4.9,5.1", StringComparison.Ordinal));
+    AssertTrue(result.Value is not null && result.Value.Contains("P100,J100,Diameter,Mean,5,5,4.9,5.1", StringComparison.Ordinal));
 }
 
 static void MaterialChangeValidatesRequiredFields()

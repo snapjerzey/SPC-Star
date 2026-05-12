@@ -1,4 +1,4 @@
-@baseUrl = http://localhost:5088
+@baseUrl = http://localhost:5000
 
 ### Health
 GET {{baseUrl}}/health
@@ -57,6 +57,22 @@ Content-Type: application/json
   "deviceId": "tablet-press1",
   "clientRecordId": "material-001",
   "submittedAt": "2026-05-01T12:11:00Z"
+}
+
+### List job notes
+GET {{baseUrl}}/jobs/J100/notes
+
+### Add job note
+POST {{baseUrl}}/jobs/J100/notes
+Content-Type: application/json
+
+{
+  "jobNum": "J100",
+  "partNum": "P100",
+  "resourceId": "PRESS1",
+  "operatorUserId": "operator1",
+  "noteText": "Observed flash on cavity side. Line tech adjusted clamp settings.",
+  "timestamp": "2026-05-01T12:20:00Z"
 }
 
 ### Sync queued offline tablet changes

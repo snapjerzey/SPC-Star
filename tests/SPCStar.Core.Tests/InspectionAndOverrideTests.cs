@@ -50,6 +50,21 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_CreatesNelsonTrendAlert_WhenNelsonRulesAreSelected()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        SetRuleSet(repository, "Diameter", "NelsonRules");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        foreach (var (value, index) in new[] { 5.01m, 5.02m, 5.03m, 5.04m, 5.05m, 5.06m }.Select((value, index) => (value, index)))
+        {
+            service.EnterMeasurement(Entry(value, index));
+        }
+
+        Assert.Contains(repository.Alerts, alert => alert.RuleTriggered == RuleTriggered.NelsonTrend);
+    }
+
+    [Fact]
     public void EnterMeasurement_RejectsUnknownInspectionTarget()
     {
         var repository = RepositoryWithSecurityAndLimits();

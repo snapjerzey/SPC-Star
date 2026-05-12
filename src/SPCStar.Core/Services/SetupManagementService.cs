@@ -266,7 +266,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         if (request.FrequencyValue <= 0) errors.Add("FrequencyValue must be greater than zero.");
         if (!IsSupportedRuleSet(request.AlertRuleSet))
         {
-            errors.Add("AlertRuleSet must be WesternElectric, SpecLimitOnly, or None.");
+            errors.Add("AlertRuleSet is not supported.");
         }
 
         if (!IsValidFrequencyPair(request.FrequencyType, request.FrequencyUnit))
@@ -291,6 +291,12 @@ public sealed class SetupManagementService(ISpcRepository repository)
     private static bool IsSupportedRuleSet(string ruleSet)
     {
         return string.Equals(ruleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "NelsonRules", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "Cusum", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "Ewma", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "MovingAverageTrend", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "LinearTrendSlope", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "Custom", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase);
     }

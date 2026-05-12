@@ -121,7 +121,7 @@ public sealed class SetupImportService(ISpcRepository repository)
 
             if (!IsSupportedRuleSet(row.GetValueOrDefault("AlertRuleSet") ?? ""))
             {
-                errors.Add($"Row {rowNumber}: Invalid AlertRuleSet. Use WesternElectric, SpecLimitOnly, or None.");
+                errors.Add($"Row {rowNumber}: Invalid AlertRuleSet.");
             }
 
             if (!bool.TryParse(row.GetValueOrDefault("IsRequiredForCOA"), out _))
@@ -153,6 +153,12 @@ public sealed class SetupImportService(ISpcRepository repository)
     private static bool IsSupportedRuleSet(string ruleSet)
     {
         return string.Equals(ruleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "NelsonRules", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "Cusum", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "Ewma", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "MovingAverageTrend", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "LinearTrendSlope", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "Custom", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase);
     }

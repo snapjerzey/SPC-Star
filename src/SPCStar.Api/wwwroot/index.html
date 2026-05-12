@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260512-rule-sets">
+  <link rel="stylesheet" href="/styles.css?v=20260512-drift-methods">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -234,6 +234,12 @@
                   Rule set
                   <select id="setupAlertRuleSet">
                     <option value="WesternElectric">Western Electric</option>
+                    <option value="NelsonRules">Nelson Rules</option>
+                    <option value="Cusum">CUSUM</option>
+                    <option value="Ewma">EWMA</option>
+                    <option value="MovingAverageTrend">Moving Average Trend</option>
+                    <option value="LinearTrendSlope">Linear Trend / Slope</option>
+                    <option value="Custom">Custom Rule</option>
                     <option value="SpecLimitOnly">Spec Limit Only</option>
                     <option value="None">No Automatic Rule</option>
                   </select>
@@ -322,6 +328,30 @@
               <p>Detects non-random process behavior using control-limit signals such as one point beyond the control limit, repeated near-limit behavior, and long runs on one side of center.</p>
             </article>
             <article class="rule-card">
+              <h3>Nelson Rules</h3>
+              <p>Builds on control-chart signals and adds trend detection, including repeated movement in one direction.</p>
+            </article>
+            <article class="rule-card">
+              <h3>CUSUM</h3>
+              <p>Tracks cumulative deviation from center to catch small sustained process shifts earlier than a simple limit check.</p>
+            </article>
+            <article class="rule-card">
+              <h3>EWMA</h3>
+              <p>Uses an exponentially weighted moving average so recent values matter most while still preserving process history.</p>
+            </article>
+            <article class="rule-card">
+              <h3>Moving Average Trend</h3>
+              <p>Compares the latest moving average against the process center to detect sustained drift without reacting to one noisy value.</p>
+            </article>
+            <article class="rule-card">
+              <h3>Linear Trend / Slope</h3>
+              <p>Looks at the slope of recent measurements to detect a steady upward or downward drift pattern.</p>
+            </article>
+            <article class="rule-card">
+              <h3>Custom Rule</h3>
+              <p>Reserved for admin-defined rule logic and warning behavior. The current default flags four recent points beyond one sigma on the same side of center.</p>
+            </article>
+            <article class="rule-card">
               <h3>Spec Limit Only</h3>
               <p>Locks only when a measured value is outside the lower or upper specification limit. This is simpler and less sensitive to process drift.</p>
             </article>
@@ -330,8 +360,8 @@
               <p>Records inspection results without creating automatic drift or out-of-limit locks for measured variables. Accept/Reject failures still lock.</p>
             </article>
             <article class="rule-card muted-rule">
-              <h3>Future Rule Sets</h3>
-              <p>Nelson, Westgard, and customer-specific rule sets can be added later using the same setup selector without changing the operator workflow.</p>
+              <h3>Warning Behavior</h3>
+              <p>The next layer will let admins decide whether each rule creates a warning, lockout, notification, or audit-only event.</p>
             </article>
           </div>
         </section>
@@ -395,6 +425,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-rule-sets"></script>
+  <script src="/app.js?v=20260512-drift-methods"></script>
 </body>
 </html>

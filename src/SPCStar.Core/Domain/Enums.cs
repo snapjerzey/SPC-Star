@@ -37,6 +37,12 @@ public enum RuleTriggered
     FourOfFiveApproachingLimit,
     EightConsecutiveOneSideOfCenterline,
     SpecLimitViolation,
+    NelsonTrend,
+    CusumShift,
+    EwmaShift,
+    MovingAverageTrend,
+    LinearTrendSlope,
+    CustomRuleTriggered,
     AttributeRejected
 }
 

@@ -193,7 +193,7 @@ public sealed class InspectionMeasurementService(
             .Select(item => new WesternElectricPoint(item.Id, item.Value, item.Timestamp))
             .ToArray();
 
-        var violations = westernElectricRuleService.Detect(points, limits.CenterLine, limits.Lcl, limits.Ucl);
+        var violations = DetectRuleViolations(plan.AlertRuleSet, points, limits.CenterLine, limits.Lcl, limits.Ucl);
         foreach (var violation in violations.Where(violation => violation.MeasurementIds.Contains(measurement.Id)))
         {
             var alertExists = repository.RuleViolations.Any(existing =>
@@ -226,6 +226,197 @@ public sealed class InspectionMeasurementService(
             repository.RuleViolations.Add(ruleViolation);
         }
     }
+
+    private IReadOnlyList<WesternElectricViolation> DetectRuleViolations(
+        string ruleSet,
+        IReadOnlyList<WesternElectricPoint> points,
+        decimal centerLine,
+        decimal lcl,
+        decimal ucl)
+    {
+        if (string.Equals(ruleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase))
+        {
+            return westernElectricRuleService.Detect(points, centerLine, lcl, ucl);
+        }
+
+        var sigma = Sigma(centerLine, lcl, ucl);
+        if (string.Equals(ruleSet, "NelsonRules", StringComparison.OrdinalIgnoreCase))
+        {
+            return DetectNelson(points, centerLine, lcl, ucl);
+        }
+
+        if (string.Equals(ruleSet, "Cusum", StringComparison.OrdinalIgnoreCase))
+        {
+            return DetectCusum(points, centerLine, sigma);
+        }
+
+        if (string.Equals(ruleSet, "Ewma", StringComparison.OrdinalIgnoreCase))
+        {
+            return DetectEwma(points, centerLine, sigma);
+        }
+
+        if (string.Equals(ruleSet, "MovingAverageTrend", StringComparison.OrdinalIgnoreCase))
+        {
+            return DetectMovingAverageTrend(points, centerLine, sigma);
+        }
+
+        if (string.Equals(ruleSet, "LinearTrendSlope", StringComparison.OrdinalIgnoreCase))
+        {
+            return DetectLinearTrendSlope(points, sigma);
+        }
+
+        if (string.Equals(ruleSet, "Custom", StringComparison.OrdinalIgnoreCase))
+        {
+            return DetectCustomDefault(points, centerLine, sigma);
+        }
+
+        return [];
+    }
+
+    private IReadOnlyList<WesternElectricViolation> DetectNelson(IReadOnlyList<WesternElectricPoint> points, decimal centerLine, decimal lcl, decimal ucl)
+    {
+        var violations = westernElectricRuleService.Detect(points, centerLine, lcl, ucl).ToList();
+        for (var i = 0; i <= points.Count - 6; i++)
+        {
+            var window = points.Skip(i).Take(6).ToArray();
+            var increasing = window.Zip(window.Skip(1), (a, b) => b.Value > a.Value).All(BooleanIdentity);
+            var decreasing = window.Zip(window.Skip(1), (a, b) => b.Value < a.Value).All(BooleanIdentity);
+            if (increasing || decreasing)
+            {
+                violations.Add(new WesternElectricViolation(
+                    RuleTriggered.NelsonTrend,
+                    window.Select(point => point.MeasurementId).ToArray(),
+                    window[^1].Timestamp));
+            }
+        }
+
+        return violations;
+    }
+
+    private static IReadOnlyList<WesternElectricViolation> DetectCusum(IReadOnlyList<WesternElectricPoint> points, decimal centerLine, decimal sigma)
+    {
+        var positive = 0m;
+        var negative = 0m;
+        var reference = 0.5m * sigma;
+        var limit = 5m * sigma;
+        for (var i = 0; i < points.Count; i++)
+        {
+            positive = Math.Max(0m, positive + points[i].Value - centerLine - reference);
+            negative = Math.Min(0m, negative + points[i].Value - centerLine + reference);
+            if (positive > limit || Math.Abs(negative) > limit)
+            {
+                return [new WesternElectricViolation(
+                    RuleTriggered.CusumShift,
+                    points.Take(i + 1).TakeLast(Math.Min(i + 1, 10)).Select(point => point.MeasurementId).ToArray(),
+                    points[i].Timestamp)];
+            }
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyList<WesternElectricViolation> DetectEwma(IReadOnlyList<WesternElectricPoint> points, decimal centerLine, decimal sigma)
+    {
+        if (points.Count < 3)
+        {
+            return [];
+        }
+
+        const decimal lambda = 0.2m;
+        var ewma = centerLine;
+        var limit = 3m * sigma * (decimal)Math.Sqrt((double)(lambda / (2m - lambda)));
+        foreach (var point in points)
+        {
+            ewma = lambda * point.Value + (1m - lambda) * ewma;
+            if (Math.Abs(ewma - centerLine) > limit)
+            {
+                return [new WesternElectricViolation(
+                    RuleTriggered.EwmaShift,
+                    [point.MeasurementId],
+                    point.Timestamp)];
+            }
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyList<WesternElectricViolation> DetectMovingAverageTrend(IReadOnlyList<WesternElectricPoint> points, decimal centerLine, decimal sigma)
+    {
+        if (points.Count < 5)
+        {
+            return [];
+        }
+
+        var window = points.TakeLast(5).ToArray();
+        var average = window.Average(point => point.Value);
+        if (Math.Abs(average - centerLine) >= sigma)
+        {
+            return [new WesternElectricViolation(
+                RuleTriggered.MovingAverageTrend,
+                window.Select(point => point.MeasurementId).ToArray(),
+                window[^1].Timestamp)];
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyList<WesternElectricViolation> DetectLinearTrendSlope(IReadOnlyList<WesternElectricPoint> points, decimal sigma)
+    {
+        if (points.Count < 6)
+        {
+            return [];
+        }
+
+        var window = points.TakeLast(6).ToArray();
+        var n = window.Length;
+        var meanX = (n - 1) / 2m;
+        var meanY = window.Average(point => point.Value);
+        var numerator = window.Select((point, index) => ((decimal)index - meanX) * (point.Value - meanY)).Sum();
+        var denominator = window.Select((_, index) => ((decimal)index - meanX) * ((decimal)index - meanX)).Sum();
+        var slope = denominator == 0m ? 0m : numerator / denominator;
+        var netChange = Math.Abs(window[^1].Value - window[0].Value);
+        if (Math.Abs(slope) >= sigma / 3m && netChange >= sigma)
+        {
+            return [new WesternElectricViolation(
+                RuleTriggered.LinearTrendSlope,
+                window.Select(point => point.MeasurementId).ToArray(),
+                window[^1].Timestamp)];
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyList<WesternElectricViolation> DetectCustomDefault(IReadOnlyList<WesternElectricPoint> points, decimal centerLine, decimal sigma)
+    {
+        if (points.Count < 4)
+        {
+            return [];
+        }
+
+        var window = points.TakeLast(4).ToArray();
+        if (window.All(point => point.Value > centerLine + sigma) || window.All(point => point.Value < centerLine - sigma))
+        {
+            return [new WesternElectricViolation(
+                RuleTriggered.CustomRuleTriggered,
+                window.Select(point => point.MeasurementId).ToArray(),
+                window[^1].Timestamp)];
+        }
+
+        return [];
+    }
+
+    private static decimal Sigma(decimal centerLine, decimal lcl, decimal ucl)
+    {
+        var sigma = (ucl - centerLine) / 3m;
+        if (sigma <= 0 || centerLine <= lcl || centerLine >= ucl)
+        {
+            throw new ArgumentException("Control limits must surround the centerline and imply a positive sigma.");
+        }
+
+        return sigma;
+    }
+
+    private static bool BooleanIdentity(bool value) => value;
 
     private InspectionPlan? FindInspectionPlan(Characteristic? characteristic)
     {

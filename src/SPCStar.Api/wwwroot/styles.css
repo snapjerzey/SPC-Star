@@ -712,6 +712,13 @@ textarea {
 .lock-history-item .job-note-meta strong {
   color: var(--warn);
 }
+.material-history-item {
+  border-color: #abefc6;
+  background: #f6fef9;
+}
+.material-history-item .job-note-meta strong {
+  color: var(--ok);
+}
 .job-note-meta {
   display: flex;
   flex-wrap: wrap;

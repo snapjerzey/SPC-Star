@@ -20,7 +20,11 @@ public sealed record JobHistoryEntryDto(
     string? CauseCategory = null,
     string? CauseText = null,
     string? SolutionText = null,
-    DateTimeOffset? UnlockedAt = null);
+    DateTimeOffset? UnlockedAt = null,
+    string? MaterialPartNum = null,
+    string? NewLotNum = null,
+    decimal? QuantityLoaded = null,
+    string? Reason = null);
 
 public sealed class JobHistoryService(ISpcRepository repository)
 {
@@ -72,8 +76,24 @@ public sealed class JobHistoryService(ISpcRepository repository)
                     UnlockedAt: audit?.UnlockedAt);
             });
 
+        var materialChanges = repository.MaterialChanges
+            .Where(change => change.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Select(change => new JobHistoryEntryDto(
+                change.Id,
+                "Material",
+                change.JobNum,
+                change.PartNum,
+                change.ResourceId,
+                change.OperatorUserId,
+                change.Timestamp,
+                MaterialPartNum: change.MaterialPartNum,
+                NewLotNum: change.NewLotNum,
+                QuantityLoaded: change.QuantityLoaded,
+                Reason: change.Reason));
+
         return notes
             .Concat(locks)
+            .Concat(materialChanges)
             .OrderByDescending(entry => entry.Timestamp)
             .ToArray();
     }

@@ -594,6 +594,7 @@ async function saveMaterialChange(event) {
     $("quantityLoaded").value = "";
     $("materialMessage").textContent = "Material event saved.";
     $("materialMessage").className = "message ok";
+    await loadJobNotes(jobNum);
   } catch (error) {
     $("materialMessage").textContent = readableError(error);
     $("materialMessage").className = "message error";
@@ -666,18 +667,18 @@ function renderJobNotes(entries) {
   list.innerHTML = "";
   entries.forEach((entry) => {
     const item = document.createElement("article");
-    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : ""}`;
+    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : entry.entryType === "Material" ? "material-history-item" : ""}`;
     const meta = document.createElement("div");
     meta.className = "job-note-meta";
     const user = document.createElement("strong");
-    user.textContent = entry.entryType === "Lock"
-      ? `${entry.characteristicName} ${entry.status === "Active" ? "locked" : "lock cleared"}`
-      : entry.operatorUserId;
+    user.textContent = historyEntryTitle(entry);
     const details = document.createElement("span");
     details.textContent = `${formatDateTime(entry.timestamp)} / ${entry.partNum} / ${entry.resourceId}`;
     const text = document.createElement("p");
     if (entry.entryType === "Lock") {
       text.textContent = lockHistoryText(entry);
+    } else if (entry.entryType === "Material") {
+      text.textContent = materialHistoryText(entry);
     } else {
       text.textContent = entry.noteText;
     }
@@ -685,6 +686,18 @@ function renderJobNotes(entries) {
     item.append(meta, text);
     list.appendChild(item);
   });
+}
+
+function historyEntryTitle(entry) {
+  if (entry.entryType === "Lock") {
+    return `${entry.characteristicName} ${entry.status === "Active" ? "locked" : "lock cleared"}`;
+  }
+
+  if (entry.entryType === "Material") {
+    return `Material ${entry.reason || "event"}`;
+  }
+
+  return entry.operatorUserId;
 }
 
 function lockHistoryText(entry) {
@@ -705,6 +718,15 @@ function lockHistoryText(entry) {
     parts.push(`Action: ${entry.solutionText}.`);
   }
 
+  return parts.join(" ");
+}
+
+function materialHistoryText(entry) {
+  const parts = [`${entry.materialPartNum || "Material"} lot ${entry.newLotNum || "-"}.`];
+  if (entry.quantityLoaded !== null && entry.quantityLoaded !== undefined) {
+    parts.push(`Quantity ${formatNumber(entry.quantityLoaded)}.`);
+  }
+  parts.push(`Recorded by ${entry.operatorUserId}.`);
   return parts.join(" ");
 }
 

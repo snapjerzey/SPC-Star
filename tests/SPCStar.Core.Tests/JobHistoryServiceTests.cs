@@ -50,13 +50,29 @@ public sealed class JobHistoryServiceTests
             NoteText = "Watch cavity side for flash.",
             Timestamp = DateTimeOffset.Parse("2026-05-12T08:20:00Z")
         });
+        repository.MaterialChanges.Add(new MaterialChangeLog
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            MaterialPartNum = "RESIN-A",
+            OldLotNum = string.Empty,
+            NewLotNum = "LOT-2",
+            QuantityLoaded = 250m,
+            ResourceId = "PRESS1",
+            OperatorUserId = "operator1",
+            Timestamp = DateTimeOffset.Parse("2026-05-12T08:10:00Z"),
+            Reason = "Lot Change",
+            SubmittedAt = DateTimeOffset.Parse("2026-05-12T08:11:00Z")
+        });
 
         var history = new JobHistoryService(repository).GetForJob("J100");
 
-        Assert.Equal(2, history.Count);
+        Assert.Equal(3, history.Count);
         Assert.Equal("Note", history[0].EntryType);
-        Assert.Equal("Lock", history[1].EntryType);
-        Assert.Equal("Tooling", history[1].CauseCategory);
-        Assert.Equal("Changed tool insert", history[1].SolutionText);
+        Assert.Equal("Material", history[1].EntryType);
+        Assert.Equal("Lock", history[2].EntryType);
+        Assert.Equal("LOT-2", history[1].NewLotNum);
+        Assert.Equal("Tooling", history[2].CauseCategory);
+        Assert.Equal("Changed tool insert", history[2].SolutionText);
     }
 }

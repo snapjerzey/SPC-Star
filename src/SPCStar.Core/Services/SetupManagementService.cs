@@ -7,6 +7,8 @@ public sealed record UserSetupDto(string UserName, IReadOnlyList<string> Roles, 
 
 public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles);
 
+public sealed record UpdateSettingsRequest(string GlobalAlertRuleSet);
+
 public sealed record UpsertInspectionSetupRequest(
     string PartNum,
     string PartDescription,
@@ -50,6 +52,22 @@ public sealed class SetupManagementService(ISpcRepository repository)
             .Select(role => role.Name)
             .OrderBy(role => role)
             .ToArray();
+    }
+
+    public SettingsSetupDto GetSettings()
+    {
+        return new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet);
+    }
+
+    public ServiceResult<SettingsSetupDto> UpdateSettings(UpdateSettingsRequest request)
+    {
+        if (!IsSupportedRuleSet(request.GlobalAlertRuleSet) || string.Equals(request.GlobalAlertRuleSet, "GlobalDefault", StringComparison.OrdinalIgnoreCase))
+        {
+            return ServiceResult<SettingsSetupDto>.Fail("GlobalAlertRuleSet is not supported.");
+        }
+
+        repository.Settings.GlobalAlertRuleSet = request.GlobalAlertRuleSet.Trim();
+        return ServiceResult<SettingsSetupDto>.Ok(GetSettings());
     }
 
     public ServiceResult<UserSetupDto> UpsertUser(UpsertUserRequest request)
@@ -337,6 +355,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
     private static bool IsSupportedRuleSet(string ruleSet)
     {
         return string.Equals(ruleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "GlobalDefault", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "NelsonRules", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "Cusum", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "Ewma", StringComparison.OrdinalIgnoreCase) ||

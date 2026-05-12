@@ -268,6 +268,7 @@
               <label class="rule-set-control">
                 Drift detection rule set
                 <select id="setupAlertRuleSet">
+                  <option value="GlobalDefault">Use Global Default</option>
                   <option value="WesternElectric">Western Electric</option>
                   <option value="NelsonRules">Nelson Rules</option>
                   <option value="Cusum">CUSUM</option>
@@ -343,44 +344,66 @@
         <section class="panel">
           <div class="panel-heading">
             <h2>Inspection Rules</h2>
-            <p>Select the active rule set on each part inspection setup.</p>
+            <p>Set the global rule used by default, then override it only where a part needs different drift behavior.</p>
           </div>
+          <form id="globalRuleForm" class="global-rule-form">
+            <label>
+              Global default rule set
+              <select id="globalAlertRuleSet">
+                <option value="WesternElectric">Western Electric</option>
+                <option value="NelsonRules">Nelson Rules</option>
+                <option value="Cusum">CUSUM</option>
+                <option value="Ewma">EWMA</option>
+                <option value="MovingAverageTrend">Moving Average Trend</option>
+                <option value="LinearTrendSlope">Linear Trend / Slope</option>
+                <option value="Custom">Custom Rule</option>
+                <option value="SpecLimitOnly">Spec Limit Only</option>
+                <option value="None">No Automatic Rule</option>
+              </select>
+            </label>
+            <button type="submit">Save Global Rule</button>
+          </form>
+          <p id="globalRuleMessage" class="message"></p>
           <div class="rule-card-grid">
             <article class="rule-card">
+              <h3>Use Global Default</h3>
+              <p>Part setups can inherit the global rule selected here. If a specific part needs different drift detection, override that part in Parts & Inspections without changing the rest of the plant.</p>
+            </article>
+            <article class="rule-card">
               <h3>Western Electric</h3>
-              <p>Detects non-random process behavior using control-limit signals such as one point beyond the control limit, repeated near-limit behavior, and long runs on one side of center.</p>
+              <p>Uses control limits to catch classic non-random process behavior: one point beyond a control limit, two of three points near a control limit, four of five points approaching a limit, or eight consecutive points on one side of center.</p>
             </article>
             <article class="rule-card">
               <h3>Nelson Rules</h3>
-              <p>Builds on control-chart signals and adds trend detection, including repeated movement in one direction.</p>
+              <p>Uses the current Western Electric checks and adds a Nelson-style trend signal when six consecutive measurements move in the same direction. This helps catch steady drift before parts go out of control.</p>
             </article>
             <article class="rule-card">
               <h3>CUSUM</h3>
-              <p>Tracks cumulative deviation from center to catch small sustained process shifts earlier than a simple limit check.</p>
+              <p>Tracks cumulative deviation from center using a reference value of one-half sigma and an action limit of five sigma. This is sensitive to small sustained shifts that may not trip a single-point rule.</p>
             </article>
             <article class="rule-card">
               <h3>EWMA</h3>
-              <p>Uses an exponentially weighted moving average so recent values matter most while still preserving process history.</p>
+              <p>Uses an exponentially weighted moving average with lambda 0.20 and a three-sigma EWMA limit. Recent measurements carry more weight while older process history still matters.</p>
             </article>
             <article class="rule-card">
               <h3>Moving Average Trend</h3>
-              <p>Compares the latest moving average against the process center to detect sustained drift without reacting to one noisy value.</p>
+              <p>Looks at the latest five measurements and compares their average to the process center. It triggers when that moving average is at least one sigma away from center.</p>
             </article>
             <article class="rule-card">
               <h3>Linear Trend / Slope</h3>
-              <p>Looks at the slope of recent measurements to detect a steady upward or downward drift pattern.</p>
+              <p>Checks the slope across the latest six measurements. It triggers when the slope is strong enough and the total movement across the window is at least one sigma.</p>
             </article>
             <article class="rule-card">
               <h3>Custom Rule</h3>
-              <p>Reserved for admin-defined rule logic and warning behavior. The current default flags four recent points beyond one sigma on the same side of center.</p>
+              <p>Reserved for configurable admin-defined behavior. Until the custom-rule editor is added, the default custom behavior triggers when the latest four points are beyond one sigma on the same side of center.</p>
             </article>
             <article class="rule-card">
               <h3>Spec Limit Only</h3>
-              <p>Locks only when a measured value is outside the lower or upper specification limit. This is simpler and less sensitive to process drift.</p>
+              <p>Ignores process-drift patterns and locks only when a measured value is outside the configured lower or upper specification limit.</p>
             </article>
             <article class="rule-card">
               <h3>No Automatic Rule</h3>
-              <p>Records inspection results without creating automatic drift or out-of-limit locks for measured variables. Accept/Reject failures still lock.</p>
+              <p>Records inspection results without automatic drift or measured-variable lockouts. Accept/Reject failures still lock because they are direct failed inspections.</p>
             </article>
             <article class="rule-card muted-rule">
               <h3>Warning Behavior</h3>
@@ -448,6 +471,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-chart-types"></script>
+  <script src="/app.js?v=20260512-global-rule-default"></script>
 </body>
 </html>

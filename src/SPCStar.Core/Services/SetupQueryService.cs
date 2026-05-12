@@ -53,9 +53,12 @@ public sealed record JobSetupDto(string JobNum, string PartNum);
 
 public sealed record ResourceSetupDto(string ResourceId, string? Description);
 
+public sealed record SettingsSetupDto(string GlobalAlertRuleSet);
+
 public sealed record SetupSnapshotDto(
     DateTimeOffset GeneratedAt,
     string SetupVersion,
+    SettingsSetupDto Settings,
     IReadOnlyList<PartSetupDto> Parts,
     IReadOnlyList<ProcessSetupDto> Processes,
     IReadOnlyList<OperationSetupDto> Operations,
@@ -163,7 +166,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
 
         return new SetupSnapshotDto(
             generatedAt ?? DateTimeOffset.UtcNow,
-            BuildSetupVersion(parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources),
+            BuildSetupVersion(new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet), parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources),
+            new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet),
             parts,
             processes,
             operations,
@@ -176,6 +180,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
     }
 
     private static string BuildSetupVersion(
+        SettingsSetupDto settings,
         IReadOnlyList<PartSetupDto> parts,
         IReadOnlyList<ProcessSetupDto> processes,
         IReadOnlyList<OperationSetupDto> operations,
@@ -187,6 +192,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
         IReadOnlyList<ResourceSetupDto> resources)
     {
         var builder = new StringBuilder();
+        builder.Append(nameof(SettingsSetupDto)).Append('|').Append(settings).AppendLine();
         AppendRows(builder, parts);
         AppendRows(builder, processes);
         AppendRows(builder, operations);

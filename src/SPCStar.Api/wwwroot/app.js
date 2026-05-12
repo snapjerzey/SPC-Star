@@ -92,6 +92,7 @@ async function loadSnapshot() {
   fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
   $("partNum").value = "";
   if (canManageSetup()) {
+    renderGlobalRuleSetting();
     renderPartReviewControls();
     renderSetupEditChoices();
     renderPartReview();
@@ -510,7 +511,17 @@ function chartTypeLabel(value) {
     MovingRange: "Moving range",
     Run: "Run chart",
     Histogram: "Histogram",
-    ControlLimits: "Control / spec limits"
+    ControlLimits: "Control / spec limits",
+    GlobalDefault: "Use Global Default",
+    WesternElectric: "Western Electric",
+    NelsonRules: "Nelson Rules",
+    Cusum: "CUSUM",
+    Ewma: "EWMA",
+    MovingAverageTrend: "Moving Average Trend",
+    LinearTrendSlope: "Linear Trend / Slope",
+    Custom: "Custom Rule",
+    SpecLimitOnly: "Spec Limit Only",
+    None: "No Automatic Rule"
   }[value] || value;
 }
 
@@ -691,6 +702,11 @@ function renderSetupEditChoices() {
     label: `${set.partNum} / ${set.processCode}`
   }))];
   fillSelect($("setupEditPartSelect"), sets, (set) => set.key, (set) => set.label);
+}
+
+function renderGlobalRuleSetting() {
+  $("globalAlertRuleSet").value = state.snapshot.settings?.globalAlertRuleSet || "WesternElectric";
+  updateRuleDescription();
 }
 
 function renderPartReview() {
@@ -962,7 +978,7 @@ function clearInspectionSetupForm() {
   $("setupFrequencyType").value = "Quantity";
   $("setupFrequencyValue").value = "10000";
   $("setupFrequencyUnit").value = "Pieces";
-  $("setupAlertRuleSet").value = "WesternElectric";
+  $("setupAlertRuleSet").value = "GlobalDefault";
   updateRuleDescription();
   updateSetupFrequencyUnits();
   $("setupVariableRows").innerHTML = "";
@@ -972,18 +988,37 @@ function clearInspectionSetupForm() {
 }
 
 function updateRuleDescription() {
+  const globalRule = $("globalAlertRuleSet").value || state.snapshot?.settings?.globalAlertRuleSet || "WesternElectric";
   const descriptions = {
-    WesternElectric: "Uses classic control-chart signals for points beyond limits, near-limit patterns, and long runs on one side of center.",
-    NelsonRules: "Adds Nelson-style trend detection, including repeated movement in one direction.",
-    Cusum: "Tracks cumulative deviation from center to catch small sustained process shifts.",
-    Ewma: "Uses an exponentially weighted moving average so recent values matter most while preserving history.",
-    MovingAverageTrend: "Compares the latest moving average against center to detect sustained drift.",
-    LinearTrendSlope: "Detects steady upward or downward drift by checking the slope of recent measurements.",
-    Custom: "Uses admin-defined/custom behavior. Current default flags repeated points beyond one sigma on the same side of center.",
+    GlobalDefault: `Uses the global default rule set: ${chartTypeLabel(globalRule)}. Change the global rule on the Rules tab, or override only this part when it needs different drift behavior.`,
+    WesternElectric: "Applies four active checks: one point beyond a control limit, two of three points near a control limit, four of five points approaching a limit, or eight consecutive points on one side of center.",
+    NelsonRules: "Includes the Western Electric checks and adds a six-point rising or falling trend signal.",
+    Cusum: "Tracks cumulative deviation from center using one-half sigma as the reference value and five sigma as the action limit.",
+    Ewma: "Uses an exponentially weighted moving average with lambda 0.20 and a three-sigma EWMA limit.",
+    MovingAverageTrend: "Checks the latest five measurements and triggers when their average is at least one sigma from center.",
+    LinearTrendSlope: "Checks the latest six measurements and triggers when the slope is strong enough and total movement is at least one sigma.",
+    Custom: "Reserved for admin-defined behavior. For now, it triggers when the latest four points are beyond one sigma on the same side of center.",
     SpecLimitOnly: "Locks only when a value is outside the lower or upper specification limit.",
     None: "Records measured values without automatic drift locks. Accept/Reject failures still lock."
   };
   $("setupRuleDescription").textContent = descriptions[$("setupAlertRuleSet").value] || "";
+}
+
+async function saveGlobalRule(event) {
+  event.preventDefault();
+  try {
+    const settings = await api("/setup/settings", {
+      method: "POST",
+      body: JSON.stringify({ globalAlertRuleSet: $("globalAlertRuleSet").value })
+    });
+    state.snapshot.settings = settings;
+    $("globalRuleMessage").textContent = "Global rule saved.";
+    $("globalRuleMessage").className = "message ok";
+    updateRuleDescription();
+  } catch (error) {
+    $("globalRuleMessage").textContent = readableError(error);
+    $("globalRuleMessage").className = "message error";
+  }
 }
 
 function updateSetupFrequencyUnits() {
@@ -1188,6 +1223,8 @@ $("clearInspectionSetupButton").addEventListener("click", clearInspectionSetupFo
 $("loadPartSetupButton").addEventListener("click", loadSelectedPartSetup);
 $("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);
 $("setupAlertRuleSet").addEventListener("change", updateRuleDescription);
+$("globalAlertRuleSet").addEventListener("change", updateRuleDescription);
+$("globalRuleForm").addEventListener("submit", saveGlobalRule);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
 $("partReviewFilter").addEventListener("change", renderPartReview);

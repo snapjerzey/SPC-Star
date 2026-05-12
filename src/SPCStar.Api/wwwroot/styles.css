@@ -497,6 +497,18 @@ textarea {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
+.global-rule-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 420px) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 10px;
+}
+.global-rule-form select {
+  border-color: #0f63b8;
+  color: #083e7a;
+  font-weight: 800;
+}
 .rule-card {
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -685,7 +697,7 @@ textarea {
   .login-wordmark { letter-spacing: -3px; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
-  .form-grid, .measurement-form, .override-form, .job-summary-form, .timing-fields, .edit-setup-fields, .user-admin-layout { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .override-form, .job-summary-form, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form { grid-template-columns: 1fr; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-nav { padding-bottom: 8px; }
   .setup-variable-row {

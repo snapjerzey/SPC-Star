@@ -153,6 +153,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     private static bool IsSupportedRuleSet(string ruleSet)
     {
         return string.Equals(ruleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ruleSet, "GlobalDefault", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "NelsonRules", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "Cusum", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "Ewma", StringComparison.OrdinalIgnoreCase) ||

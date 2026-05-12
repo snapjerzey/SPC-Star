@@ -65,6 +65,11 @@ public sealed class InspectionPlan
     public InspectionFrequency Frequency { get; set; } = new();
 }
 
+public sealed class AppSettings
+{
+    public string GlobalAlertRuleSet { get; set; } = "WesternElectric";
+}
+
 public sealed class InspectionFrequency
 {
     public FrequencyType Type { get; set; }

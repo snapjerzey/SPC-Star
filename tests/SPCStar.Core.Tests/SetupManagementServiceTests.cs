@@ -22,6 +22,18 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpdateSettings_SavesGlobalAlertRuleSet()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpdateSettings(new UpdateSettingsRequest("Cusum"));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Cusum", repository.Settings.GlobalAlertRuleSet);
+    }
+
+    [Fact]
     public void UpsertInspectionSetup_CreatesPartOperationCharacteristicAndLimits()
     {
         var repository = new InMemorySpcRepository();

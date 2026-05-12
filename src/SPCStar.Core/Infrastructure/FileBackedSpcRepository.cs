@@ -60,6 +60,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
     }
 
     private sealed record RepositorySnapshot(
+        AppSettings? Settings,
         List<PersistedUser> Users,
         List<PersistedRole> Roles,
         List<Part> Parts,
@@ -81,6 +82,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         public static RepositorySnapshot FromRepository(ISpcRepository repository)
         {
             return new RepositorySnapshot(
+                repository.Settings,
                 repository.Users.Select(PersistedUser.FromUser).ToList(),
                 repository.Roles.Select(PersistedRole.FromRole).ToList(),
                 [.. repository.Parts],
@@ -102,6 +104,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
 
         public void CopyTo(ISpcRepository repository)
         {
+            repository.Settings.GlobalAlertRuleSet = Settings?.GlobalAlertRuleSet ?? "WesternElectric";
             repository.Roles.AddRange(Roles.Select(role => role.ToRole()));
             foreach (var user in Users)
             {

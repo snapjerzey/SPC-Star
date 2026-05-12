@@ -161,7 +161,8 @@ public sealed class InspectionMeasurementService(
         }
 
         var plan = FindInspectionPlan(characteristic);
-        if (plan is null || string.Equals(plan.AlertRuleSet, "None", StringComparison.OrdinalIgnoreCase))
+        var ruleSet = ResolveRuleSet(plan);
+        if (plan is null || string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -177,7 +178,7 @@ public sealed class InspectionMeasurementService(
             return;
         }
 
-        if (string.Equals(plan.AlertRuleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase))
         {
             CreateSpecLimitAlert(measurement);
             return;
@@ -195,7 +196,7 @@ public sealed class InspectionMeasurementService(
             .Select(item => new WesternElectricPoint(item.Id, item.Value, item.Timestamp))
             .ToArray();
 
-        var violations = DetectRuleViolations(plan.AlertRuleSet, points, limits.CenterLine, limits.Lcl, limits.Ucl);
+        var violations = DetectRuleViolations(ruleSet, points, limits.CenterLine, limits.Lcl, limits.Ucl);
         foreach (var violation in violations.Where(violation => violation.MeasurementIds.Contains(measurement.Id)))
         {
             var alertExists = repository.RuleViolations.Any(existing =>
@@ -425,6 +426,13 @@ public sealed class InspectionMeasurementService(
         return characteristic is null
             ? null
             : repository.InspectionPlans.FirstOrDefault(plan => plan.CharacteristicId == characteristic.Id);
+    }
+
+    private string ResolveRuleSet(InspectionPlan? plan)
+    {
+        return string.Equals(plan?.AlertRuleSet, "GlobalDefault", StringComparison.OrdinalIgnoreCase)
+            ? repository.Settings.GlobalAlertRuleSet
+            : plan?.AlertRuleSet ?? "None";
     }
 
     private void CreateSpecLimitAlert(InspectionMeasurement measurement)

@@ -4,6 +4,7 @@ namespace SPCStar.Core.Infrastructure;
 
 public class InMemorySpcRepository : ISpcRepository
 {
+    public AppSettings Settings { get; } = new();
     public List<User> Users { get; } = [];
     public List<Role> Roles { get; } = [];
     public List<Part> Parts { get; } = [];

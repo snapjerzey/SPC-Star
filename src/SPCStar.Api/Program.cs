@@ -81,6 +81,24 @@ app.MapGet("/setup/roles", (SetupManagementService service) =>
     return Results.Ok(service.GetRoles());
 });
 
+app.MapGet("/setup/settings", (SetupManagementService service) =>
+{
+    return Results.Ok(service.GetSettings());
+});
+
+app.MapPost("/setup/settings", (UpdateSettingsRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.UpdateSettings(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
     var result = service.UpsertUser(request);

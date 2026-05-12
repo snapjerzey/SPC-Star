@@ -37,6 +37,21 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_UsesGlobalRuleSet_WhenPlanUsesGlobalDefault()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.Settings.GlobalAlertRuleSet = "SpecLimitOnly";
+        SetRuleSet(repository, "Diameter", "GlobalDefault");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(6m));
+
+        Assert.True(result.Succeeded);
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
+    }
+
+    [Fact]
     public void EnterMeasurement_DoesNotCreateMeasuredAlert_WhenNoAutomaticRuleIsSelected()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -62,6 +77,26 @@ public sealed class InspectionAndOverrideTests
         }
 
         Assert.Contains(repository.Alerts, alert => alert.RuleTriggered == RuleTriggered.NelsonTrend);
+    }
+
+    [Theory]
+    [InlineData("Cusum", RuleTriggered.CusumShift, new[] { "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30" })]
+    [InlineData("Ewma", RuleTriggered.EwmaShift, new[] { "5.80", "5.80", "5.80" })]
+    [InlineData("MovingAverageTrend", RuleTriggered.MovingAverageTrend, new[] { "5.40", "5.40", "5.40", "5.40", "5.40" })]
+    [InlineData("LinearTrendSlope", RuleTriggered.LinearTrendSlope, new[] { "4.80", "5.00", "5.20", "5.40", "5.60", "5.80" })]
+    [InlineData("Custom", RuleTriggered.CustomRuleTriggered, new[] { "5.40", "5.40", "5.40", "5.40" })]
+    public void EnterMeasurement_CreatesExpectedAlert_ForSelectedDriftRule(string ruleSet, RuleTriggered expectedRule, string[] values)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        SetRuleSet(repository, "Diameter", ruleSet);
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        foreach (var (text, index) in values.Select((text, index) => (text, index)))
+        {
+            service.EnterMeasurement(Entry(decimal.Parse(text), index));
+        }
+
+        Assert.Contains(repository.Alerts, alert => alert.RuleTriggered == expectedRule);
     }
 
     [Fact]

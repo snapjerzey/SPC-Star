@@ -71,6 +71,13 @@
             <input id="partNum" list="partOptions" autocomplete="off" inputmode="text" required>
             <datalist id="partOptions"></datalist>
           </label>
+          <label>
+            Inspection Phase
+            <select id="inspectionPhase" required>
+              <option value="Set Up">Set Up</option>
+              <option value="In Process" selected>In Process</option>
+            </select>
+          </label>
           <button type="submit">Start Inspecting</button>
         </form>
 
@@ -432,6 +439,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-remove-setup-version"></script>
+  <script src="/app.js?v=20260512-inspection-phase"></script>
 </body>
 </html>

@@ -15,7 +15,8 @@ public sealed record InspectionMeasurementEntry(
     string OperatorUserId,
     string? DeviceId = null,
     string? ClientRecordId = null,
-    DateTimeOffset? SubmittedAt = null);
+    DateTimeOffset? SubmittedAt = null,
+    string InspectionPhase = "In Process");
 
 public sealed class InspectionMeasurementService(
     ISpcRepository repository,
@@ -66,6 +67,7 @@ public sealed class InspectionMeasurementService(
             OperationSeq = entry.OperationSeq,
             ResourceId = entry.ResourceId.Trim(),
             CharacteristicName = entry.CharacteristicName.Trim(),
+            InspectionPhase = NormalizeInspectionPhase(entry.InspectionPhase),
             Value = entry.Value,
             Timestamp = entry.Timestamp,
             OperatorUserId = entry.OperatorUserId.Trim(),
@@ -537,6 +539,11 @@ public sealed class InspectionMeasurementService(
         Required(entry.ResourceId, nameof(entry.ResourceId), errors);
         Required(entry.CharacteristicName, nameof(entry.CharacteristicName), errors);
         Required(entry.OperatorUserId, nameof(entry.OperatorUserId), errors);
+        if (!IsValidInspectionPhase(entry.InspectionPhase))
+        {
+            errors.Add("InspectionPhase must be Set Up or In Process.");
+        }
+
         if (entry.OperationSeq <= 0)
         {
             errors.Add("OperationSeq must be greater than zero.");
@@ -556,5 +563,19 @@ public sealed class InspectionMeasurementService(
     private static string? CleanOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string NormalizeInspectionPhase(string? value)
+    {
+        return value?.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) == true
+            ? "Set Up"
+            : "In Process";
+    }
+
+    private static bool IsValidInspectionPhase(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ||
+            value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -333,6 +333,7 @@ async function submitMeasurement(event) {
           operationSeq: entry.plan.operationSeq,
           resourceId,
           characteristicName: entry.plan.characteristicName,
+          inspectionPhase: $("inspectionPhase").value,
           value: entry.value,
           timestamp: new Date().toISOString(),
           operatorUserId: state.user.userName,

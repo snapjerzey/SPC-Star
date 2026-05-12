@@ -39,7 +39,8 @@ public sealed class HistoryExportService(ISpcRepository repository)
         "CharacteristicName",
         "MeasurementValue",
         "Timestamp",
-        "OperatorUserID"
+        "OperatorUserID",
+        "InspectionPhase"
     ];
 
     private static readonly string[] AlertHeaders =
@@ -83,7 +84,8 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 ["CharacteristicName"] = item.CharacteristicName,
                 ["MeasurementValue"] = item.Value.ToString("0.#####"),
                 ["Timestamp"] = item.Timestamp.ToString("O"),
-                ["OperatorUserID"] = item.OperatorUserId
+                ["OperatorUserID"] = item.OperatorUserId,
+                ["InspectionPhase"] = item.InspectionPhase
             });
 
         return CsvSupport.WriteRows(InspectionHeaders, rows);

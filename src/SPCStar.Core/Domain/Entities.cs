@@ -105,6 +105,7 @@ public sealed class InspectionMeasurement
     public int OperationSeq { get; set; }
     public required string ResourceId { get; set; }
     public required string CharacteristicName { get; set; }
+    public string InspectionPhase { get; set; } = "In Process";
     public decimal Value { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public required string OperatorUserId { get; set; }

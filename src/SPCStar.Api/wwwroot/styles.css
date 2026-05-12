@@ -389,20 +389,18 @@ textarea {
   background: #ffffff;
 }
 .variable-editor {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow-x: auto;
+  display: grid;
+  gap: 10px;
 }
 .variable-editor-header,
 .setup-variable-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.6fr) minmax(126px, .9fr) minmax(80px, .7fr) repeat(5, minmax(92px, 1fr)) minmax(86px, .7fr) minmax(86px, auto);
+  grid-template-columns: minmax(180px, 1.4fr) minmax(140px, .9fr) minmax(96px, .7fr) repeat(5, minmax(96px, .8fr)) minmax(86px, .6fr) minmax(86px, auto);
   gap: 8px;
   align-items: end;
-  min-width: 1190px;
-  padding: 10px 12px;
 }
 .variable-editor-header {
+  display: none;
   background: #f1f6fb;
   color: #35516f;
   font-size: 12px;
@@ -410,7 +408,10 @@ textarea {
   text-transform: uppercase;
 }
 .setup-variable-row {
-  border-top: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  background: #ffffff;
 }
 .setup-variable-row.attribute-row .setup-nominal,
 .setup-variable-row.attribute-row .setup-lsl,
@@ -420,8 +421,11 @@ textarea {
   background: #f8fafc;
   color: #94a3b8;
 }
-.setup-variable-row label span {
+.setup-variable-row.attribute-row .numeric-setup-field {
   display: none;
+}
+.setup-variable-row label span {
+  display: block;
 }
 .setup-variable-row input,
 .setup-variable-row select {
@@ -622,16 +626,8 @@ textarea {
   .form-grid, .measurement-form, .override-form, .job-summary-form, .timing-fields, .user-admin-layout { grid-template-columns: 1fr; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-nav { padding-bottom: 8px; }
-  .variable-editor {
-    border: 0;
-    overflow-x: visible;
-  }
-  .variable-editor-header { display: none; }
   .setup-variable-row {
-    min-width: 0;
     grid-template-columns: 1fr 1fr;
-    border: 1px solid var(--line);
-    border-radius: 6px;
     margin-bottom: 10px;
   }
   .setup-variable-row label:first-child,

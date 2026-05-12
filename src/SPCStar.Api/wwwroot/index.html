@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260512-attribute-checks">
+  <link rel="stylesheet" href="/styles.css?v=20260512-operation-variable-type">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -180,7 +180,7 @@
           <div class="panel-heading horizontal">
             <div>
               <h2>Part Inspection Setup</h2>
-              <p>Create the part, process, operation, sample size, frequency, and all variables together.</p>
+              <p>Create the part, operation, sample size, frequency, and all variables together.</p>
             </div>
           </div>
           <form id="inspectionSetupForm" class="inspection-builder">
@@ -193,11 +193,11 @@
             </div>
 
             <div class="setup-block">
-              <h3>Process</h3>
+              <h3>Operation</h3>
               <div class="setup-fields">
-                <label>Process code<input id="setupProcessCode" required></label>
-                <label>Process description<input id="setupProcessDescription" required></label>
-                <label>Operation<input id="setupOperationSeq" type="number" min="1" value="10" required></label>
+                <label>Operation name<input id="setupProcessCode" required></label>
+                <label>Operation description<input id="setupProcessDescription" required></label>
+                <label>Operation step<input id="setupOperationSeq" type="number" min="1" value="10" required></label>
               </div>
             </div>
 
@@ -348,6 +348,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-attribute-checks"></script>
+  <script src="/app.js?v=20260512-operation-variable-type"></script>
 </body>
 </html>

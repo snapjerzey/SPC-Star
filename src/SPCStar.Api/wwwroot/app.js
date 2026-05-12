@@ -781,11 +781,11 @@ function setupVariableRowTemplate() {
       </select>
     </label>
     <label><span>Unit</span><input class="setup-unit" required></label>
-    <label><span>Target</span><input class="setup-nominal" type="number" step="0.0001" required></label>
-    <label><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
-    <label><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
-    <label><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
-    <label><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
+    <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="0.0001" required></label>
+    <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
+    <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
+    <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
+    <label class="numeric-setup-field"><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
     <label>
       <span>COA</span>
       <select class="setup-coa-required">

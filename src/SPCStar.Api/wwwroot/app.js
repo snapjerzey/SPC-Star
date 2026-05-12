@@ -6,7 +6,8 @@ const state = {
   trendCharacteristic: "",
   activeLock: null,
   users: [],
-  roles: []
+  roles: [],
+  editingSetup: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -808,6 +809,7 @@ function setupVariableRowTemplate() {
 function addSetupVariableRow(values = {}) {
   const row = document.createElement("div");
   row.className = "setup-variable-row";
+  row.dataset.originalCharacteristicName = values.characteristicName || "";
   row.innerHTML = setupVariableRowTemplate();
   row.querySelector(".setup-characteristic-name").value = values.characteristicName || "";
   row.querySelector(".setup-characteristic-type").value = values.characteristicType || "Variable";
@@ -871,6 +873,10 @@ function loadSelectedPartSetup() {
   $("setupProcessCode").value = set.processCode;
   $("setupProcessDescription").value = set.processDescription || set.processCode;
   $("setupOperationSeq").value = String(set.operationSeq || 10);
+  state.editingSetup = {
+    processCode: set.processCode,
+    operationSeq: set.operationSeq || 10
+  };
   const firstPlan = set.plans[0];
   $("setupSampleSize").value = String(firstPlan.sampleSize || 1);
   $("setupFrequencyType").value = firstPlan.frequencyType;
@@ -888,6 +894,7 @@ function loadSelectedPartSetup() {
 function clearInspectionSetupForm() {
   $("inspectionSetupForm").reset();
   $("setupEditPartSelect").value = "";
+  state.editingSetup = null;
   $("setupOperationSeq").value = "10";
   $("setupProcessDescription").value = "";
   $("setupSampleSize").value = "5";
@@ -934,6 +941,7 @@ function updateSetupFrequencyUnits() {
 
 function setupVariableRows() {
   return [...document.querySelectorAll(".setup-variable-row")].map((row) => ({
+    originalCharacteristicName: row.dataset.originalCharacteristicName || null,
     characteristicName: row.querySelector(".setup-characteristic-name").value.trim(),
     characteristicType: row.querySelector(".setup-characteristic-type").value,
     unitOfMeasure: row.querySelector(".setup-unit").value.trim(),
@@ -987,13 +995,20 @@ async function saveInspectionSetup(event) {
           lcl: variable.lcl,
           ucl: variable.ucl,
           unitOfMeasure: variable.unitOfMeasure,
-          isRequiredForCoa: variable.isRequiredForCoa
+          isRequiredForCoa: variable.isRequiredForCoa,
+          originalProcessCode: state.editingSetup?.processCode || null,
+          originalOperationSeq: state.editingSetup?.operationSeq || null,
+          originalCharacteristicName: variable.originalCharacteristicName
         })
       });
     }
 
     $("inspectionSetupMessage").textContent = `${variables.length} variable${variables.length === 1 ? "" : "s"} saved for ${baseRequest.partNum}.`;
     $("inspectionSetupMessage").className = "message ok";
+    state.editingSetup = {
+      processCode: baseRequest.processCode,
+      operationSeq: baseRequest.operationSeq
+    };
     await loadSnapshot();
   } catch (error) {
     $("inspectionSetupMessage").textContent = readableError(error);

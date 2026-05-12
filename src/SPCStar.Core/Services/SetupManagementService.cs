@@ -26,7 +26,10 @@ public sealed record UpsertInspectionSetupRequest(
     int FrequencyValue,
     FrequencyUnit FrequencyUnit,
     string AlertRuleSet,
-    bool IsRequiredForCoa);
+    bool IsRequiredForCoa,
+    string? OriginalProcessCode = null,
+    int? OriginalOperationSeq = null,
+    string? OriginalCharacteristicName = null);
 
 public sealed class SetupManagementService(ISpcRepository repository)
 {
@@ -99,7 +102,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
             part.Description = request.PartDescription.Trim();
         }
 
-        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase));
+        var originalProcessCode = string.IsNullOrWhiteSpace(request.OriginalProcessCode)
+            ? request.ProcessCode.Trim()
+            : request.OriginalProcessCode.Trim();
+        var originalOperationSeq = request.OriginalOperationSeq.GetValueOrDefault(request.OperationSeq);
+
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(originalProcessCode, StringComparison.OrdinalIgnoreCase))
+            ?? repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase));
         if (process is null)
         {
             process = new ManufacturingProcess { ProcessCode = request.ProcessCode.Trim(), Description = request.ProcessDescription.Trim() };
@@ -107,22 +116,32 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
         else
         {
+            var oldProcessCode = process.ProcessCode;
             process.Description = request.ProcessDescription.Trim();
+            process.ProcessCode = request.ProcessCode.Trim();
+            RenameControlLimitProcess(request, oldProcessCode, originalOperationSeq);
         }
 
         var operation = repository.Operations.FirstOrDefault(item =>
             item.PartId == part.Id &&
             item.ProcessId == process.Id &&
-            item.OperationSeq == request.OperationSeq);
+            item.OperationSeq == originalOperationSeq);
         if (operation is null)
         {
             operation = new Operation { PartId = part.Id, ProcessId = process.Id, OperationSeq = request.OperationSeq };
             repository.Operations.Add(operation);
         }
+        else
+        {
+            operation.OperationSeq = request.OperationSeq;
+        }
 
+        var originalCharacteristicName = string.IsNullOrWhiteSpace(request.OriginalCharacteristicName)
+            ? request.CharacteristicName.Trim()
+            : request.OriginalCharacteristicName.Trim();
         var characteristic = repository.Characteristics.FirstOrDefault(item =>
             item.OperationId == operation.Id &&
-            item.Name.Equals(request.CharacteristicName.Trim(), StringComparison.OrdinalIgnoreCase));
+            item.Name.Equals(originalCharacteristicName, StringComparison.OrdinalIgnoreCase));
         if (characteristic is null)
         {
             characteristic = new Characteristic
@@ -137,9 +156,12 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
         else
         {
+            var oldCharacteristicName = characteristic.Name;
+            characteristic.Name = request.CharacteristicName.Trim();
             characteristic.Type = request.CharacteristicType;
             characteristic.UnitOfMeasure = request.UnitOfMeasure.Trim();
             characteristic.IsRequiredForCoa = request.IsRequiredForCoa;
+            RenameControlLimitCharacteristic(request, oldCharacteristicName);
         }
 
         var spec = repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
@@ -207,6 +229,30 @@ public sealed class SetupManagementService(ISpcRepository repository)
         limit.CenterLine = request.Nominal;
         limit.Lcl = lcl;
         limit.Ucl = ucl;
+    }
+
+    private void RenameControlLimitProcess(UpsertInspectionSetupRequest request, string oldProcessCode, int originalOperationSeq)
+    {
+        foreach (var limit in repository.ControlLimits.Where(item =>
+            item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(oldProcessCode, StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == originalOperationSeq))
+        {
+            limit.ProcessCode = request.ProcessCode.Trim();
+            limit.OperationSeq = request.OperationSeq;
+        }
+    }
+
+    private void RenameControlLimitCharacteristic(UpsertInspectionSetupRequest request, string oldCharacteristicName)
+    {
+        foreach (var limit in repository.ControlLimits.Where(item =>
+            item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == request.OperationSeq &&
+            item.CharacteristicName.Equals(oldCharacteristicName, StringComparison.OrdinalIgnoreCase)))
+        {
+            limit.CharacteristicName = request.CharacteristicName.Trim();
+        }
     }
 
     private void RemoveControlLimit(UpsertInspectionSetupRequest request)

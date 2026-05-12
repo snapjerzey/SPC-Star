@@ -19,7 +19,8 @@ public sealed class InspectionAndOverrideTests
         Assert.True(ok.Succeeded);
         Assert.Single(repository.Alerts);
         Assert.False(locked.Succeeded);
-        Assert.Contains(locked.Errors, error => error.Contains("locked", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(locked.Errors, error => error.Contains("Diameter is locked", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(locked.Errors, error => error.Contains("control limit", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -242,6 +243,7 @@ public sealed class InspectionAndOverrideTests
         Assert.True(result.Succeeded);
         Assert.Equal(AlertStatus.Overridden, alert.Status);
         Assert.Single(repository.AlertOverrides);
+        Assert.Equal("Unspecified", result.Value!.CauseCategory);
     }
 
     [Fact]
@@ -311,6 +313,48 @@ public sealed class InspectionAndOverrideTests
         Assert.Equal(first.Value!.Id, retry.Value!.Id);
         Assert.Equal("tablet-qa1", retry.Value.DeviceId);
         Assert.Equal("override-001", retry.Value.ClientRecordId);
+    }
+
+    [Fact]
+    public void Override_SavesCauseCategory()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var service = OverrideService(repository);
+
+        var result = service.Override(new AlertOverrideRequest(
+            alert.Id,
+            "qa1",
+            "qa1",
+            "Tool wear",
+            "Changed tool",
+            null,
+            DateTimeOffset.UtcNow,
+            CauseCategory: "Tooling"));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Tooling", result.Value!.CauseCategory);
+    }
+
+    [Fact]
+    public void Override_RejectsUnsupportedCauseCategory()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var service = OverrideService(repository);
+
+        var result = service.Override(new AlertOverrideRequest(
+            alert.Id,
+            "qa1",
+            "qa1",
+            "Tool wear",
+            "Changed tool",
+            null,
+            DateTimeOffset.UtcNow,
+            CauseCategory: "Bad Category"));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("CauseCategory is not supported", StringComparison.OrdinalIgnoreCase));
     }
 
     private static InMemorySpcRepository RepositoryWithSecurityAndLimits()

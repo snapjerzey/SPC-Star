@@ -13,7 +13,8 @@ public sealed record AlertOverrideRequest(
     DateTimeOffset UnlockedAt,
     string? DeviceId = null,
     string? ClientRecordId = null,
-    DateTimeOffset? SubmittedAt = null);
+    DateTimeOffset? SubmittedAt = null,
+    string? CauseCategory = null);
 
 public sealed class AlertOverrideService(
     ISpcRepository repository,
@@ -50,6 +51,11 @@ public sealed class AlertOverrideService(
         }
 
         var overrideRole = permissionService.HighestOverrideRole(request.OverrideUserName);
+        if (!IsSupportedCauseCategory(request.CauseCategory))
+        {
+            return ServiceResult<AlertOverride>.Fail("CauseCategory is not supported.");
+        }
+
         if (string.IsNullOrWhiteSpace(request.CauseText))
         {
             return ServiceResult<AlertOverride>.Fail("CauseText is required.");
@@ -78,6 +84,7 @@ public sealed class AlertOverrideService(
             ResourceId = alert.ResourceId,
             CharacteristicName = alert.CharacteristicName,
             RuleTriggered = alert.RuleTriggered,
+            CauseCategory = NormalizeCauseCategory(request.CauseCategory),
             CauseText = request.CauseText.Trim(),
             SolutionText = request.SolutionText.Trim(),
             WhyStandardProcessWasBypassed = request.WhyStandardProcessWasBypassed?.Trim(),
@@ -107,5 +114,28 @@ public sealed class AlertOverrideService(
     private static string? CleanOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string NormalizeCauseCategory(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "Unspecified" : value.Trim();
+    }
+
+    private static bool IsSupportedCauseCategory(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        return NormalizeCauseCategory(value) is
+            "Machine" or
+            "Tooling" or
+            "Material" or
+            "User Error" or
+            "Measurement Method" or
+            "Process Drift" or
+            "Other" or
+            "Unspecified";
     }
 }

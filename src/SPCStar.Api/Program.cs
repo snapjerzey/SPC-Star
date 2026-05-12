@@ -198,7 +198,8 @@ app.MapPost("/alerts/{alertId:guid}/override", (
         request.CauseText,
         request.SolutionText,
         request.WhyStandardProcessWasBypassed,
-        request.UnlockedAt ?? DateTimeOffset.UtcNow));
+        request.UnlockedAt ?? DateTimeOffset.UtcNow,
+        CauseCategory: request.CauseCategory));
     if (result.Succeeded)
     {
         persistence.SaveChanges();
@@ -356,6 +357,7 @@ public sealed record CsvImportRequest(string Csv);
 public sealed record AlertOverrideApiRequest(
     string OverrideUserName,
     string OverridePassword,
+    string? CauseCategory,
     string CauseText,
     string SolutionText,
     string? WhyStandardProcessWasBypassed,

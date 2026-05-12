@@ -196,6 +196,7 @@ public sealed class AlertOverride
     public required string ResourceId { get; set; }
     public required string CharacteristicName { get; set; }
     public RuleTriggered RuleTriggered { get; set; }
+    public string CauseCategory { get; set; } = "Unspecified";
     public required string CauseText { get; set; }
     public required string SolutionText { get; set; }
     public string? WhyStandardProcessWasBypassed { get; set; }

@@ -129,7 +129,19 @@
               <input id="overridePassword" type="password" autocomplete="current-password">
             </label>
             <label>
-              Cause
+              Cause category
+              <select id="causeCategory">
+                <option value="Machine">Machine</option>
+                <option value="Tooling">Tooling</option>
+                <option value="Material">Material</option>
+                <option value="User Error">User Error</option>
+                <option value="Measurement Method">Measurement Method</option>
+                <option value="Process Drift">Process Drift</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            <label>
+              Cause details
               <textarea id="causeText" rows="3"></textarea>
             </label>
             <label>

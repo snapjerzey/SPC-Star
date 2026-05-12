@@ -46,9 +46,10 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Fail("User is not authorized to enter inspections.");
         }
 
-        if (HasActiveLock(entry))
+        var activeLock = FindActiveLock(entry);
+        if (activeLock is not null)
         {
-            return ServiceResult<InspectionMeasurement>.Fail("Inspection entry is locked for this job/resource/characteristic due to an active drift alert.");
+            return ServiceResult<InspectionMeasurement>.Fail(ActiveLockMessage(activeLock));
         }
 
         var jobResult = UpsertJob(entry);
@@ -111,14 +112,17 @@ public sealed class InspectionMeasurementService(
             item.ClientRecordId?.Equals(clientRecordId.Trim(), StringComparison.OrdinalIgnoreCase) == true);
     }
 
-    private bool HasActiveLock(InspectionMeasurementEntry entry)
+    private ProcessAlert? FindActiveLock(InspectionMeasurementEntry entry)
     {
-        return repository.Alerts.Any(alert =>
+        return repository.Alerts
+            .Where(alert =>
             alert.Status == AlertStatus.Active &&
             alert.JobNum.Equals(entry.JobNum, StringComparison.OrdinalIgnoreCase) &&
             alert.PartNum.Equals(entry.PartNum, StringComparison.OrdinalIgnoreCase) &&
             alert.ResourceId.Equals(entry.ResourceId, StringComparison.OrdinalIgnoreCase) &&
-            alert.CharacteristicName.Equals(entry.CharacteristicName, StringComparison.OrdinalIgnoreCase));
+            alert.CharacteristicName.Equals(entry.CharacteristicName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(alert => alert.LockedAt)
+            .FirstOrDefault();
     }
 
     private bool InspectionTargetExists(InspectionMeasurementEntry entry)
@@ -578,6 +582,31 @@ public sealed class InspectionMeasurementService(
         return value?.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) == true
             ? "Set Up"
             : "In Process";
+    }
+
+    private static string ActiveLockMessage(ProcessAlert alert)
+    {
+        return $"{alert.CharacteristicName} is locked for job {alert.JobNum} on {alert.ResourceId} due to {RuleText(alert.RuleTriggered)} at {alert.LockedAt:MM/dd/yyyy HH:mm}. Clear that lock before entering more {alert.CharacteristicName} measurements.";
+    }
+
+    private static string RuleText(RuleTriggered rule)
+    {
+        return rule switch
+        {
+            RuleTriggered.OnePointBeyondControlLimit => "one point beyond the control limit",
+            RuleTriggered.TwoOfThreeNearControlLimit => "two of three points near the control limit",
+            RuleTriggered.FourOfFiveApproachingLimit => "four of five points approaching the limit",
+            RuleTriggered.EightConsecutiveOneSideOfCenterline => "eight consecutive points on one side of center",
+            RuleTriggered.SpecLimitViolation => "a spec limit violation",
+            RuleTriggered.NelsonTrend => "a Nelson trend signal",
+            RuleTriggered.CusumShift => "a CUSUM shift",
+            RuleTriggered.EwmaShift => "an EWMA shift",
+            RuleTriggered.MovingAverageTrend => "a moving average trend",
+            RuleTriggered.LinearTrendSlope => "a linear trend/slope signal",
+            RuleTriggered.CustomRuleTriggered => "a custom rule trigger",
+            RuleTriggered.AttributeRejected => "an accept/reject failure",
+            _ => rule.ToString()
+        };
     }
 
     private static bool IsValidInspectionPhase(string? value)

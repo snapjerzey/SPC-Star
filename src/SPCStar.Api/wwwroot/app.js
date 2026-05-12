@@ -212,7 +212,7 @@ function renderLock(activeLock) {
     return;
   }
   banner.classList.remove("hidden");
-  banner.textContent = `LOCKED: ${ruleLabel(activeLock.ruleTriggered)} at ${formatTime(activeLock.lockedAt)}`;
+  banner.textContent = `LOCKED: ${activeLock.characteristicName} - ${ruleLabel(activeLock.ruleTriggered)} at ${formatTime(activeLock.lockedAt)}`;
   panel.classList.remove("hidden");
   $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
   $("godReasonLabel").classList.toggle("hidden", !state.user?.roles?.includes("GOD"));
@@ -693,6 +693,7 @@ async function clearLock(event) {
       body: JSON.stringify({
         overrideUserName: $("overrideUserName").value.trim(),
         overridePassword: $("overridePassword").value,
+        causeCategory: $("causeCategory").value,
         causeText: $("causeText").value.trim(),
         solutionText: $("solutionText").value.trim(),
         whyStandardProcessWasBypassed: $("bypassReason").value.trim() || null,
@@ -700,6 +701,7 @@ async function clearLock(event) {
       })
     });
     $("overridePassword").value = "";
+    $("causeCategory").value = "Machine";
     $("causeText").value = "";
     $("solutionText").value = "";
     $("bypassReason").value = "";

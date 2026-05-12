@@ -164,7 +164,16 @@
         <section id="trendPanel" class="panel hidden">
           <div class="panel-heading horizontal">
             <h2>Trend</h2>
-            <select id="trendCharacteristic" class="compact-select"></select>
+            <div class="chart-controls">
+              <select id="trendCharacteristic" class="compact-select"></select>
+              <select id="trendChartType" class="compact-select">
+                <option value="Individuals">Individuals</option>
+                <option value="MovingRange">Moving Range</option>
+                <option value="Run">Run Chart</option>
+                <option value="Histogram">Histogram</option>
+                <option value="ControlLimits">Control / Spec Limits</option>
+              </select>
+            </div>
           </div>
           <canvas id="trendCanvas" class="trend-canvas" width="760" height="220"></canvas>
           <p id="trendMessage" class="message">No trend data yet.</p>
@@ -439,6 +448,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-inspection-phase"></script>
+  <script src="/app.js?v=20260512-chart-types"></script>
 </body>
 </html>

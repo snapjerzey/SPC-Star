@@ -4,6 +4,7 @@ const state = {
   contexts: [],
   selectedPlans: [],
   trendCharacteristic: "",
+  trendChartType: "Individuals",
   activeLock: null,
   users: [],
   roles: [],
@@ -368,6 +369,7 @@ function renderTrendChoices() {
     select.value = previous;
   }
   state.trendCharacteristic = select.value;
+  state.trendChartType = $("trendChartType").value;
 }
 
 async function loadTrend() {
@@ -416,7 +418,8 @@ function drawTrend(points, data = {}) {
     return;
   }
 
-  $("trendMessage").textContent = `${points.length} point${points.length === 1 ? "" : "s"} for ${state.trendCharacteristic}`;
+  const chartType = state.trendChartType || "Individuals";
+  $("trendMessage").textContent = `${points.length} point${points.length === 1 ? "" : "s"} for ${state.trendCharacteristic} / ${chartTypeLabel(chartType)}`;
   const min = Math.min(...values, ...limitValues);
   const max = Math.max(...values, ...limitValues);
   const spread = max === min ? 1 : max - min;
@@ -426,31 +429,89 @@ function drawTrend(points, data = {}) {
   const y = (value) => padding.top + (1 - ((Number(value) - low) / (high - low))) * plotHeight;
 
   drawChartFrame(ctx, padding, plotWidth, plotHeight);
-  drawLimitLine(ctx, y, data.upperControlLimit, "UCL", "#c76508", width, padding);
-  drawLimitLine(ctx, y, data.lowerControlLimit, "LCL", "#c76508", width, padding);
-  drawLimitLine(ctx, y, data.upperSpecLimit, "USL", "#b42318", width, padding);
-  drawLimitLine(ctx, y, data.lowerSpecLimit, "LSL", "#b42318", width, padding);
+  if (chartType === "Histogram") {
+    drawHistogram(ctx, points, padding, plotWidth, plotHeight, low, high);
+  } else if (chartType === "MovingRange") {
+    drawMovingRange(ctx, points, padding, plotWidth, plotHeight);
+  } else {
+    if (chartType === "ControlLimits") {
+      drawLimitLine(ctx, y, data.upperControlLimit, "UCL", "#c76508", width, padding);
+      drawLimitLine(ctx, y, data.lowerControlLimit, "LCL", "#c76508", width, padding);
+      drawLimitLine(ctx, y, data.upperSpecLimit, "USL", "#b42318", width, padding);
+      drawLimitLine(ctx, y, data.lowerSpecLimit, "LSL", "#b42318", width, padding);
+    }
+    if (chartType === "Run") {
+      drawLimitLine(ctx, y, data.mean, "Mean", "#067647", width, padding);
+    }
+    drawLineSeries(ctx, points, (point, index) => x(index), (point) => y(point.value));
+  }
 
+  ctx.fillStyle = "#5f6f82";
+  ctx.font = "12px Segoe UI, Arial";
+  ctx.fillText(formatNumber(low), 6, padding.top + plotHeight);
+  ctx.fillText(formatNumber(high), 6, padding.top + 8);
+}
+
+function drawLineSeries(ctx, points, xOf, yOf) {
   ctx.strokeStyle = "#0f63b8";
   ctx.lineWidth = 2;
   ctx.beginPath();
   points.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(x(index), y(point.value));
-    else ctx.lineTo(x(index), y(point.value));
+    const x = xOf(point, index);
+    const y = yOf(point, index);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
   });
   ctx.stroke();
 
   points.forEach((point, index) => {
     ctx.beginPath();
     ctx.fillStyle = point.hasRuleViolation ? "#b42318" : "#0f63b8";
-    ctx.arc(x(index), y(point.value), 4, 0, Math.PI * 2);
+    ctx.arc(xOf(point, index), yOf(point, index), 4, 0, Math.PI * 2);
     ctx.fill();
   });
+}
 
-  ctx.fillStyle = "#5f6f82";
-  ctx.font = "12px Segoe UI, Arial";
-  ctx.fillText(formatNumber(low), 6, padding.top + plotHeight);
-  ctx.fillText(formatNumber(high), 6, padding.top + 8);
+function drawMovingRange(ctx, points, padding, plotWidth, plotHeight) {
+  const rangePoints = points
+    .map((point) => ({ ...point, rangeValue: Number(point.movingRange) }))
+    .filter((point) => Number.isFinite(point.rangeValue));
+  if (!rangePoints.length) return;
+  const maxRange = Math.max(...rangePoints.map((point) => point.rangeValue), 1);
+  const x = (_, index) => padding.left + (rangePoints.length === 1 ? plotWidth / 2 : (index / (rangePoints.length - 1)) * plotWidth);
+  const y = (point) => padding.top + (1 - (point.rangeValue / (maxRange * 1.1))) * plotHeight;
+  drawLineSeries(ctx, rangePoints, x, y);
+}
+
+function drawHistogram(ctx, points, padding, plotWidth, plotHeight, low, high) {
+  const values = points.map((point) => Number(point.value));
+  const binCount = Math.min(8, Math.max(4, Math.ceil(Math.sqrt(values.length))));
+  const binWidth = (high - low) / binCount || 1;
+  const bins = Array.from({ length: binCount }, () => 0);
+  values.forEach((value) => {
+    const index = Math.min(binCount - 1, Math.max(0, Math.floor((value - low) / binWidth)));
+    bins[index] += 1;
+  });
+  const maxBin = Math.max(...bins, 1);
+  const barGap = 5;
+  const barWidth = plotWidth / binCount - barGap;
+  bins.forEach((count, index) => {
+    const height = (count / maxBin) * plotHeight;
+    const x = padding.left + index * (plotWidth / binCount) + barGap / 2;
+    const y = padding.top + plotHeight - height;
+    ctx.fillStyle = "#0f63b8";
+    ctx.fillRect(x, y, Math.max(4, barWidth), height);
+  });
+}
+
+function chartTypeLabel(value) {
+  return {
+    Individuals: "Individuals",
+    MovingRange: "Moving range",
+    Run: "Run chart",
+    Histogram: "Histogram",
+    ControlLimits: "Control / spec limits"
+  }[value] || value;
 }
 
 function drawChartFrame(ctx, padding, plotWidth, plotHeight) {
@@ -1106,6 +1167,10 @@ $("overrideUserName").addEventListener("input", () => {
 });
 $("trendCharacteristic").addEventListener("change", () => {
   state.trendCharacteristic = $("trendCharacteristic").value;
+  loadTrend();
+});
+$("trendChartType").addEventListener("change", () => {
+  state.trendChartType = $("trendChartType").value;
   loadTrend();
 });
 $("inspectionTab").addEventListener("click", () => showPanel("inspect"));

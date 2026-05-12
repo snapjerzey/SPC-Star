@@ -553,6 +553,9 @@ textarea {
   padding: 10px 0;
   align-items: center;
 }
+.job-summary-table .data-row {
+  grid-template-columns: 1fr 1.4fr 1fr .9fr .9fr .9fr;
+}
 .data-row.header {
   color: #35516f;
   font-size: 12px;

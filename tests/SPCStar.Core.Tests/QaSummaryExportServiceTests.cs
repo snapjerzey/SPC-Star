@@ -28,7 +28,7 @@ public sealed class QaSummaryExportServiceTests
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Value);
         var csv = result.Value!;
-        Assert.Contains("PartNum,JobNum,CharacteristicName,Mean,Min,Max,StdDev,Count,LSL,USL,PassFailStatus", csv);
+        Assert.Contains("PartNum,JobNum,CharacteristicName,Mean,Min,Max,StdDev,Count,OutOfSpecExcluded,LSL,USL,PassFailStatus", csv);
         Assert.Contains("P100,J100,Diameter,5,4.9,5.1", csv);
         Assert.Contains("Pass", csv);
     }
@@ -48,6 +48,38 @@ public sealed class QaSummaryExportServiceTests
         Assert.Equal(3, row.Count);
         Assert.Equal(5.0m, row.Mean);
         Assert.Equal("Pass", row.Status);
+    }
+
+    [Fact]
+    public void BuildJobVariableMeans_ExcludesOutOfSpecMeasurementsFromCoaMean()
+    {
+        var repository = RepositoryWithMeasurements();
+        repository.Measurements.Add(Measurement(6.1m, 3));
+        repository.Measurements.Add(Measurement(3.9m, 4));
+        var service = new QaSummaryExportService(repository);
+
+        var result = service.BuildJobVariableMeans("J100");
+
+        Assert.True(result.Succeeded);
+        var row = Assert.Single(result.Value!);
+        Assert.Equal(3, row.Count);
+        Assert.Equal(2, row.OutOfSpecExcludedCount);
+        Assert.Equal(5.0m, row.Mean);
+        Assert.Equal("Pass", row.Status);
+    }
+
+    [Fact]
+    public void ExportCsv_ExcludesOutOfSpecMeasurementsFromCoaStats()
+    {
+        var repository = RepositoryWithMeasurements();
+        repository.Measurements.Add(Measurement(6.1m, 3));
+        var service = new QaSummaryExportService(repository);
+
+        var result = service.ExportCsv(new QaSummaryExportRequest(["P100"], ["J100"], ["Diameter"], null, null));
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("P100,J100,Diameter,5,4.9,5.1", result.Value);
+        Assert.Contains(",3,1,4.5,5.5,Pass", result.Value);
     }
 
     [Fact]

@@ -862,10 +862,10 @@ function renderJobSummary(rows) {
     return;
   }
 
-  container.className = "data-table";
+  container.className = "data-table job-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Job</span><span>Variable</span><span>Mean</span><span>Count</span><span>Status</span>
+      <span>Job</span><span>Variable</span><span>Mean</span><span>COA Count</span><span>Excluded</span><span>Status</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
@@ -875,6 +875,7 @@ function renderJobSummary(rows) {
       <span>${row.characteristicName} (${row.unitOfMeasure})</span>
       <span>${formatNumber(row.mean)}</span>
       <span>${row.count}</span>
+      <span>${row.outOfSpecExcludedCount || 0}</span>
       <span>${row.status}${row.isRequiredForCoa ? " / COA" : ""}</span>`;
     container.appendChild(item);
   });

@@ -14,11 +14,12 @@ public sealed record QaSummaryRow(
     string PartNum,
     string JobNum,
     string CharacteristicName,
-    decimal Mean,
-    decimal Min,
-    decimal Max,
-    decimal StdDev,
+    decimal? Mean,
+    decimal? Min,
+    decimal? Max,
+    decimal? StdDev,
     int Count,
+    int OutOfSpecExcludedCount,
     decimal? Lsl,
     decimal? Usl,
     PassFailStatus PassFailStatus);
@@ -36,6 +37,7 @@ public sealed record JobVariableMeanRow(
     decimal? Min,
     decimal? Max,
     int Count,
+    int OutOfSpecExcludedCount,
     string Status);
 
 public sealed class QaSummaryExportService(ISpcRepository repository)
@@ -50,6 +52,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         "Max",
         "StdDev",
         "Count",
+        "OutOfSpecExcluded",
         "LSL",
         "USL",
         "PassFailStatus"
@@ -147,6 +150,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             "Min",
             "Max",
             "Count",
+            "OutOfSpecExcluded",
             "Status"
         };
         var rows = summary.Value.Select(row => new Dictionary<string, string>
@@ -163,6 +167,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["Min"] = row.Min?.ToString("0.#####") ?? string.Empty,
             ["Max"] = row.Max?.ToString("0.#####") ?? string.Empty,
             ["Count"] = row.Count.ToString(),
+            ["OutOfSpecExcluded"] = row.OutOfSpecExcludedCount.ToString(),
             ["Status"] = row.Status
         });
 
@@ -190,8 +195,11 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
                     measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
                 .Select(measurement => measurement.Value)
                 .ToArray();
-            var mean = values.Length == 0 ? (decimal?)null : values.Average();
-            var passed = values.Length > 0 && values.All(value => value >= plan.Lsl && value <= plan.Usl);
+            var acceptedValues = values
+                .Where(value => value >= plan.Lsl && value <= plan.Usl)
+                .ToArray();
+            var outOfSpecCount = values.Length - acceptedValues.Length;
+            var mean = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Average();
 
             return new JobVariableMeanRow(
                 job.JobNum,
@@ -203,10 +211,11 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
                 plan.Lsl,
                 plan.Usl,
                 mean,
-                values.Length == 0 ? null : values.Min(),
-                values.Length == 0 ? null : values.Max(),
-                values.Length,
-                values.Length == 0 ? "NoData" : passed ? PassFailStatus.Pass.ToString() : PassFailStatus.Fail.ToString());
+                acceptedValues.Length == 0 ? null : acceptedValues.Min(),
+                acceptedValues.Length == 0 ? null : acceptedValues.Max(),
+                acceptedValues.Length,
+                outOfSpecCount,
+                values.Length == 0 ? "NoData" : acceptedValues.Length == 0 ? PassFailStatus.Fail.ToString() : PassFailStatus.Pass.ToString());
         });
     }
 
@@ -223,11 +232,12 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["PartNum"] = row.PartNum,
             ["JobNum"] = row.JobNum,
             ["CharacteristicName"] = row.CharacteristicName,
-            ["Mean"] = row.Mean.ToString("0.#####"),
-            ["Min"] = row.Min.ToString("0.#####"),
-            ["Max"] = row.Max.ToString("0.#####"),
-            ["StdDev"] = row.StdDev.ToString("0.#####"),
+            ["Mean"] = row.Mean?.ToString("0.#####") ?? string.Empty,
+            ["Min"] = row.Min?.ToString("0.#####") ?? string.Empty,
+            ["Max"] = row.Max?.ToString("0.#####") ?? string.Empty,
+            ["StdDev"] = row.StdDev?.ToString("0.#####") ?? string.Empty,
             ["Count"] = row.Count.ToString(),
+            ["OutOfSpecExcluded"] = row.OutOfSpecExcludedCount.ToString(),
             ["LSL"] = row.Lsl?.ToString("0.#####") ?? string.Empty,
             ["USL"] = row.Usl?.ToString("0.#####") ?? string.Empty,
             ["PassFailStatus"] = row.PassFailStatus.ToString()
@@ -239,14 +249,19 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
     private QaSummaryRow BuildRow(string partNum, string jobNum, string characteristicName, IReadOnlyList<decimal> values)
     {
         var spec = FindSpecLimit(partNum, characteristicName);
-        var mean = values.Average();
-        var min = values.Min();
-        var max = values.Max();
-        var stdDev = values.Count <= 1
-            ? 0m
-            : (decimal)Math.Sqrt(values.Select(value => Math.Pow((double)(value - mean), 2)).Sum() / (values.Count - 1));
+        var acceptedValues = spec is null
+            ? values.ToArray()
+            : values.Where(value => value >= spec.Lsl && value <= spec.Usl).ToArray();
+        var outOfSpecCount = values.Count - acceptedValues.Length;
+        var mean = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Average();
+        var min = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Min();
+        var max = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Max();
+        var stdDev = acceptedValues.Length == 0
+            ? (decimal?)null
+            : acceptedValues.Length == 1
+                ? 0m
+                : (decimal)Math.Sqrt(acceptedValues.Select(value => Math.Pow((double)(value - mean!.Value), 2)).Sum() / (acceptedValues.Length - 1));
 
-        var passed = spec is null || values.All(value => value >= spec.Lsl && value <= spec.Usl);
         return new QaSummaryRow(
             partNum,
             jobNum,
@@ -255,10 +270,11 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             min,
             max,
             stdDev,
-            values.Count,
+            acceptedValues.Length,
+            outOfSpecCount,
             spec?.Lsl,
             spec?.Usl,
-            passed ? PassFailStatus.Pass : PassFailStatus.Fail);
+            acceptedValues.Length > 0 ? PassFailStatus.Pass : PassFailStatus.Fail);
     }
 
     private SpecLimit? FindSpecLimit(string partNum, string characteristicName)

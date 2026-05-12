@@ -396,10 +396,10 @@ textarea {
 .variable-editor-header,
 .setup-variable-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.6fr) minmax(80px, .7fr) repeat(5, minmax(92px, 1fr)) minmax(86px, .7fr) minmax(86px, auto);
+  grid-template-columns: minmax(180px, 1.6fr) minmax(126px, .9fr) minmax(80px, .7fr) repeat(5, minmax(92px, 1fr)) minmax(86px, .7fr) minmax(86px, auto);
   gap: 8px;
   align-items: end;
-  min-width: 1060px;
+  min-width: 1190px;
   padding: 10px 12px;
 }
 .variable-editor-header {
@@ -411,6 +411,14 @@ textarea {
 }
 .setup-variable-row {
   border-top: 1px solid var(--line);
+}
+.setup-variable-row.attribute-row .setup-nominal,
+.setup-variable-row.attribute-row .setup-lsl,
+.setup-variable-row.attribute-row .setup-usl,
+.setup-variable-row.attribute-row .setup-lcl,
+.setup-variable-row.attribute-row .setup-ucl {
+  background: #f8fafc;
+  color: #94a3b8;
 }
 .setup-variable-row label span {
   display: none;
@@ -530,6 +538,15 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+.attribute-note {
+  border: 1px solid #fedf89;
+  border-radius: 999px;
+  color: #b35c00;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 4px 9px;
 }
 .sample-meta {
   display: flex;

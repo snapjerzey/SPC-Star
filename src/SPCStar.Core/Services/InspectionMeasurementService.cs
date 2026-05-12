@@ -74,7 +74,7 @@ public sealed class InspectionMeasurementService(
         };
 
         repository.Measurements.Add(measurement);
-        CreateAlertsForViolations(measurement);
+        CreateAlertsForViolations(measurement, entry);
         return ServiceResult<InspectionMeasurement>.Ok(measurement);
     }
 
@@ -149,8 +149,15 @@ public sealed class InspectionMeasurementService(
             ?.Roles.Any(role => role.Permissions.Contains(PermissionNames.CanEnterInspections)) == true;
     }
 
-    private void CreateAlertsForViolations(InspectionMeasurement measurement)
+    private void CreateAlertsForViolations(InspectionMeasurement measurement, InspectionMeasurementEntry entry)
     {
+        var characteristic = FindCharacteristic(entry);
+        if (characteristic?.Type == CharacteristicType.Attribute)
+        {
+            CreateAttributeRejectAlert(measurement);
+            return;
+        }
+
         var limits = repository.ControlLimits.FirstOrDefault(limit =>
             limit.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
             limit.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
@@ -206,6 +213,56 @@ public sealed class InspectionMeasurementService(
             ruleViolation.MeasurementIds.AddRange(violation.MeasurementIds);
             repository.RuleViolations.Add(ruleViolation);
         }
+    }
+
+    private Characteristic? FindCharacteristic(InspectionMeasurementEntry entry)
+    {
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(entry.PartNum, StringComparison.OrdinalIgnoreCase));
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(entry.ProcessCode, StringComparison.OrdinalIgnoreCase));
+        if (part is null || process is null)
+        {
+            return null;
+        }
+
+        var operation = repository.Operations.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.ProcessId == process.Id &&
+            item.OperationSeq == entry.OperationSeq);
+
+        return operation is null
+            ? null
+            : repository.Characteristics.FirstOrDefault(item =>
+                item.OperationId == operation.Id &&
+                item.Name.Equals(entry.CharacteristicName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void CreateAttributeRejectAlert(InspectionMeasurement measurement)
+    {
+        if (measurement.Value != 0m)
+        {
+            return;
+        }
+
+        var alert = new ProcessAlert
+        {
+            JobNum = measurement.JobNum,
+            PartNum = measurement.PartNum,
+            ResourceId = measurement.ResourceId,
+            CharacteristicName = measurement.CharacteristicName,
+            OperatorUserId = measurement.OperatorUserId,
+            RuleTriggered = RuleTriggered.AttributeRejected,
+            LockedAt = measurement.Timestamp
+        };
+
+        repository.Alerts.Add(alert);
+        var ruleViolation = new RuleViolation
+        {
+            AlertId = alert.Id,
+            RuleTriggered = RuleTriggered.AttributeRejected,
+            DetectedAt = measurement.Timestamp
+        };
+        ruleViolation.MeasurementIds.Add(measurement.Id);
+        repository.RuleViolations.Add(ruleViolation);
     }
 
     private static List<string> Validate(InspectionMeasurementEntry entry)

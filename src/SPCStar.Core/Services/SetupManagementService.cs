@@ -164,7 +164,14 @@ public sealed class SetupManagementService(ISpcRepository repository)
         plan.SampleSize = request.SampleSize;
         plan.AlertRuleSet = request.AlertRuleSet.Trim();
         plan.Frequency = new InspectionFrequency { Type = request.FrequencyType, Value = request.FrequencyValue, Unit = request.FrequencyUnit };
-        UpsertControlLimit(request);
+        if (request.CharacteristicType == CharacteristicType.Variable)
+        {
+            UpsertControlLimit(request);
+        }
+        else
+        {
+            RemoveControlLimit(request);
+        }
 
         return ServiceResult<InspectionPlanSetupDto>.Ok(new SetupQueryService(repository).GetInspectionPlans(request.PartNum).First(item =>
             item.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
@@ -200,6 +207,15 @@ public sealed class SetupManagementService(ISpcRepository repository)
         limit.CenterLine = request.Nominal;
         limit.Lcl = lcl;
         limit.Ucl = ucl;
+    }
+
+    private void RemoveControlLimit(UpsertInspectionSetupRequest request)
+    {
+        repository.ControlLimits.RemoveAll(item =>
+            item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == request.OperationSeq &&
+            item.CharacteristicName.Equals(request.CharacteristicName.Trim(), StringComparison.OrdinalIgnoreCase));
     }
 
     private List<string> ValidateUser(UpsertUserRequest request)
@@ -244,8 +260,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.AlertRuleSet, nameof(request.AlertRuleSet), errors);
 
         if (request.OperationSeq <= 0) errors.Add("OperationSeq must be greater than zero.");
-        if (request.Lsl >= request.Usl) errors.Add("LSL must be less than USL.");
-        if (request.Lcl.HasValue && request.Ucl.HasValue && request.Lcl.Value >= request.Ucl.Value) errors.Add("LCL must be less than UCL.");
+        if (request.CharacteristicType == CharacteristicType.Variable && request.Lsl >= request.Usl) errors.Add("LSL must be less than USL.");
+        if (request.CharacteristicType == CharacteristicType.Variable && request.Lcl.HasValue && request.Ucl.HasValue && request.Lcl.Value >= request.Ucl.Value) errors.Add("LCL must be less than UCL.");
         if (request.SampleSize <= 0) errors.Add("SampleSize must be greater than zero.");
         if (request.FrequencyValue <= 0) errors.Add("FrequencyValue must be greater than zero.");
         if (!string.Equals(request.AlertRuleSet, "WesternElectric", StringComparison.OrdinalIgnoreCase))

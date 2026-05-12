@@ -215,30 +215,39 @@ function renderVariables() {
     const context = state.contexts[index];
     const card = document.createElement("section");
     card.className = "variable-card";
+    const isAttribute = plan.characteristicType === "Attribute";
     card.innerHTML = `
       <div>
         <div class="variable-title">
           <strong>${plan.characteristicName}</strong>
-          <span>${plan.unitOfMeasure}</span>
+          <span>${isAttribute ? "Accept / Reject" : plan.unitOfMeasure}</span>
         </div>
         <div class="sample-meta">
           <span>Sample size ${plan.sampleSize}</span>
           <span>${formatFrequency(plan)}</span>
         </div>
-        <div class="limit-grid">
-          <div><span>LSL</span><strong>${formatNumber(context.lowerSpecLimit)}</strong></div>
-          <div><span>Target</span><strong>${formatNumber(plan.nominal)}</strong></div>
-          <div><span>USL</span><strong>${formatNumber(context.upperSpecLimit)}</strong></div>
-          <div><span>LCL</span><strong>${formatNumber(context.lowerControlLimit)}</strong></div>
-          <div><span>Center</span><strong>${formatNumber(plan.nominal)}</strong></div>
-          <div><span>UCL</span><strong>${formatNumber(context.upperControlLimit)}</strong></div>
-        </div>
+        ${isAttribute ? `
+          <div class="attribute-note">Comparator/template check</div>` : `
+          <div class="limit-grid">
+            <div><span>LSL</span><strong>${formatNumber(context.lowerSpecLimit)}</strong></div>
+            <div><span>Target</span><strong>${formatNumber(plan.nominal)}</strong></div>
+            <div><span>USL</span><strong>${formatNumber(context.upperSpecLimit)}</strong></div>
+            <div><span>LCL</span><strong>${formatNumber(context.lowerControlLimit)}</strong></div>
+            <div><span>Center</span><strong>${formatNumber(plan.nominal)}</strong></div>
+            <div><span>UCL</span><strong>${formatNumber(context.upperControlLimit)}</strong></div>
+          </div>`}
       </div>
       <div class="sample-inputs">
         ${Array.from({ length: plan.sampleSize }, (_, sampleIndex) => `
           <label>
             Sample ${sampleIndex + 1}
-            <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" type="number" step="0.0001" inputmode="decimal" placeholder="0.0000">
+            ${isAttribute ? `
+              <select class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Attribute">
+                <option value="">Select</option>
+                <option value="1">Accept</option>
+                <option value="0">Reject</option>
+              </select>` : `
+              <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="number" step="0.0001" inputmode="decimal" placeholder="0.0000">`}
           </label>`).join("")}
       </div>`;
     list.appendChild(card);
@@ -255,6 +264,15 @@ function renderMeanSummary() {
       : null;
     const item = document.createElement("div");
     item.className = "mean-item";
+    if (plan.characteristicType === "Attribute") {
+      const accepted = points.filter((point) => Number(point.value) === 1).length;
+      item.innerHTML = `
+        <span>${plan.characteristicName}</span>
+        <strong>${accepted}/${points.length || 0}</strong>
+        <small>accepted</small>`;
+      summary.appendChild(item);
+      return;
+    }
     item.innerHTML = `
       <span>${plan.characteristicName}</span>
       <strong>${formatNumber(mean)}</strong>
@@ -631,8 +649,8 @@ function renderPartReview() {
     row.innerHTML = `
       <span>${plan.partNum}</span>
       <span>${plan.processCode} ${plan.operationSeq}</span>
-      <span>${plan.characteristicName} (${plan.unitOfMeasure})</span>
-      <span>${formatNumber(plan.lsl)} / ${formatNumber(plan.nominal)} / ${formatNumber(plan.usl)}</span>
+      <span>${plan.characteristicName} (${plan.characteristicType === "Attribute" ? "Accept/Reject" : plan.unitOfMeasure})</span>
+      <span>${plan.characteristicType === "Attribute" ? "Attribute check" : `${formatNumber(plan.lsl)} / ${formatNumber(plan.nominal)} / ${formatNumber(plan.usl)}`}</span>
       <span>${plan.isRequiredForCoa ? "Required" : "No"}</span>`;
     container.appendChild(row);
   });
@@ -755,6 +773,13 @@ async function saveUser(event) {
 function setupVariableRowTemplate() {
   return `
     <label><span>Measurement</span><input class="setup-characteristic-name" required></label>
+    <label>
+      <span>Type</span>
+      <select class="setup-characteristic-type">
+        <option value="Variable">Measured</option>
+        <option value="Attribute">Accept / Reject</option>
+      </select>
+    </label>
     <label><span>Unit</span><input class="setup-unit" required></label>
     <label><span>Target</span><input class="setup-nominal" type="number" step="0.0001" required></label>
     <label><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
@@ -776,6 +801,7 @@ function addSetupVariableRow(values = {}) {
   row.className = "setup-variable-row";
   row.innerHTML = setupVariableRowTemplate();
   row.querySelector(".setup-characteristic-name").value = values.characteristicName || "";
+  row.querySelector(".setup-characteristic-type").value = values.characteristicType || "Variable";
   row.querySelector(".setup-unit").value = values.unitOfMeasure || "";
   row.querySelector(".setup-nominal").value = values.nominal ?? "";
   row.querySelector(".setup-lsl").value = values.lsl ?? "";
@@ -783,6 +809,7 @@ function addSetupVariableRow(values = {}) {
   row.querySelector(".setup-lcl").value = values.lcl ?? "";
   row.querySelector(".setup-ucl").value = values.ucl ?? "";
   row.querySelector(".setup-coa-required").value = String(values.isRequiredForCoa ?? true);
+  row.querySelector(".setup-characteristic-type").addEventListener("change", () => updateSetupVariableType(row));
   row.querySelector(".remove-variable-button").addEventListener("click", () => {
     if ($("setupVariableRows").children.length === 1) {
       row.querySelectorAll("input").forEach((input) => { input.value = ""; });
@@ -792,6 +819,30 @@ function addSetupVariableRow(values = {}) {
     row.remove();
   });
   $("setupVariableRows").appendChild(row);
+  updateSetupVariableType(row);
+}
+
+function updateSetupVariableType(row) {
+  const isAttribute = row.querySelector(".setup-characteristic-type").value === "Attribute";
+  const unit = row.querySelector(".setup-unit");
+  const nominal = row.querySelector(".setup-nominal");
+  const lsl = row.querySelector(".setup-lsl");
+  const usl = row.querySelector(".setup-usl");
+  const lcl = row.querySelector(".setup-lcl");
+  const ucl = row.querySelector(".setup-ucl");
+  row.classList.toggle("attribute-row", isAttribute);
+  unit.required = !isAttribute;
+  nominal.required = !isAttribute;
+  lsl.required = !isAttribute;
+  usl.required = !isAttribute;
+  if (isAttribute) {
+    unit.value = "Accept/Reject";
+    nominal.value = "1";
+    lsl.value = "0";
+    usl.value = "1";
+    lcl.value = "";
+    ucl.value = "";
+  }
 }
 
 function clearInspectionSetupForm() {
@@ -825,6 +876,7 @@ function updateSetupFrequencyUnits() {
 function setupVariableRows() {
   return [...document.querySelectorAll(".setup-variable-row")].map((row) => ({
     characteristicName: row.querySelector(".setup-characteristic-name").value.trim(),
+    characteristicType: row.querySelector(".setup-characteristic-type").value,
     unitOfMeasure: row.querySelector(".setup-unit").value.trim(),
     nominal: Number(row.querySelector(".setup-nominal").value),
     lsl: Number(row.querySelector(".setup-lsl").value),
@@ -869,7 +921,7 @@ async function saveInspectionSetup(event) {
         body: JSON.stringify({
           ...baseRequest,
           characteristicName: variable.characteristicName,
-          characteristicType: "Variable",
+          characteristicType: variable.characteristicType,
           nominal: variable.nominal,
           lsl: variable.lsl,
           usl: variable.usl,
@@ -952,7 +1004,8 @@ function ruleLabel(rule) {
     OnePointBeyondControlLimit: "One point beyond control limit",
     TwoOfThreeNearControlLimit: "Two of three near control limit",
     FourOfFiveApproachingLimit: "Four of five approaching limit",
-    EightConsecutiveOneSideOfCenterline: "Eight consecutive one side of centerline"
+    EightConsecutiveOneSideOfCenterline: "Eight consecutive one side of centerline",
+    AttributeRejected: "Attribute rejected"
   }[rule] || rule;
 }
 

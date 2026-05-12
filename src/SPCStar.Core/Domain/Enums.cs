@@ -35,7 +35,8 @@ public enum RuleTriggered
     OnePointBeyondControlLimit,
     TwoOfThreeNearControlLimit,
     FourOfFiveApproachingLimit,
-    EightConsecutiveOneSideOfCenterline
+    EightConsecutiveOneSideOfCenterline,
+    AttributeRejected
 }
 
 public enum PassFailStatus

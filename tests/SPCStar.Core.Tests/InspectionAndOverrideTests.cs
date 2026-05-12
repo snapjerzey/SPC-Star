@@ -113,6 +113,23 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_CreatesLock_WhenAttributeIsRejected()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        AddAttributeCharacteristic(repository);
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(0m) with { CharacteristicName = "Comparator profile" });
+        var locked = service.EnterMeasurement(Entry(1m, minutes: 1) with { CharacteristicName = "Comparator profile" });
+
+        Assert.True(result.Succeeded);
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(RuleTriggered.AttributeRejected, alert.RuleTriggered);
+        Assert.False(locked.Succeeded);
+        Assert.Contains(locked.Errors, error => error.Contains("locked", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Override_RejectsOperator()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -237,6 +254,33 @@ public sealed class InspectionAndOverrideTests
             value,
             DateTimeOffset.Parse("2026-01-01T00:00:00Z").AddMinutes(minutes),
             "operator1");
+    }
+
+    private static void AddAttributeCharacteristic(InMemorySpcRepository repository)
+    {
+        var part = repository.Parts.Single(part => part.PartNum == "P100");
+        var process = repository.Processes.Single(process => process.ProcessCode == "MOLD");
+        var operation = repository.Operations.Single(operation =>
+            operation.PartId == part.Id &&
+            operation.ProcessId == process.Id &&
+            operation.OperationSeq == 10);
+        var characteristic = new Characteristic
+        {
+            OperationId = operation.Id,
+            Name = "Comparator profile",
+            Type = CharacteristicType.Attribute,
+            UnitOfMeasure = "Accept/Reject",
+            IsRequiredForCoa = true
+        };
+        repository.Characteristics.Add(characteristic);
+        repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = 1m, Lsl = 0m, Usl = 1m });
+        repository.InspectionPlans.Add(new InspectionPlan
+        {
+            CharacteristicId = characteristic.Id,
+            SampleSize = 1,
+            AlertRuleSet = "WesternElectric",
+            Frequency = new InspectionFrequency { Type = FrequencyType.Quantity, Value = 10000, Unit = FrequencyUnit.Pieces }
+        });
     }
 
     private static ProcessAlert AddAlert(InMemorySpcRepository repository)

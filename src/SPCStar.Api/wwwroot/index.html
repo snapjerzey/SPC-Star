@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260506-reference-logo">
+  <link rel="stylesheet" href="/styles.css?v=20260512-setup-admin">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -167,93 +167,135 @@
     </section>
 
     <section id="setupPanel" class="hidden">
-      <section class="setup-grid">
-        <section class="panel">
-          <div class="panel-heading">
-            <h2>Users</h2>
-          </div>
-          <form id="userSetupForm" class="stacked-form">
-            <label>
-              User name
-              <input id="setupUserName" autocomplete="off">
-            </label>
-            <label>
-              Password
-              <input id="setupPassword" type="password" autocomplete="new-password">
-            </label>
-            <label>
-              Access level
-              <select id="setupRole"></select>
-            </label>
-            <button type="submit">Save User</button>
-          </form>
-          <p id="userSetupMessage" class="message"></p>
-          <div id="userList" class="setup-list empty">No users loaded.</div>
-        </section>
+      <div class="setup-nav">
+        <button id="setupInspectionSectionTab" type="button" class="setup-nav-button active">Parts & Inspections</button>
+        <button id="setupUsersSectionTab" type="button" class="setup-nav-button">Users</button>
+        <button id="setupImportSectionTab" type="button" class="setup-nav-button">Import</button>
+        <button id="setupReviewSectionTab" type="button" class="setup-nav-button">Review</button>
+        <button id="setupJobDataSectionTab" type="button" class="setup-nav-button">Job Data</button>
+      </div>
 
+      <section id="setupInspectionSection" class="setup-section">
         <section class="panel">
-          <div class="panel-heading">
-            <h2>Inspection Setup</h2>
+          <div class="panel-heading horizontal">
+            <div>
+              <h2>Part Inspection Setup</h2>
+              <p>Create the part, process, operation, sample size, frequency, and all variables together.</p>
+            </div>
           </div>
-          <form id="inspectionSetupForm" class="setup-form">
-            <label>Part number<input id="setupPartNum" required></label>
-            <label>Part description<input id="setupPartDescription" required></label>
-            <label>Process code<input id="setupProcessCode" required></label>
-            <label>Process description<input id="setupProcessDescription" required></label>
-            <label>Operation<input id="setupOperationSeq" type="number" min="1" value="10" required></label>
-            <label>Measurement name<input id="setupCharacteristicName" required></label>
-            <label>
-              Type
-              <select id="setupCharacteristicType">
-                <option value="Variable">Variable</option>
-                <option value="Attribute">Attribute</option>
-              </select>
-            </label>
-            <label>Unit<input id="setupUnitOfMeasure" required></label>
-            <label>Nominal<input id="setupNominal" type="number" step="0.0001" required></label>
-            <label>LSL<input id="setupLsl" type="number" step="0.0001" required></label>
-            <label>USL<input id="setupUsl" type="number" step="0.0001" required></label>
-            <label>LCL<input id="setupLcl" type="number" step="0.0001"></label>
-            <label>UCL<input id="setupUcl" type="number" step="0.0001"></label>
-            <label>Sample size<input id="setupSampleSize" type="number" min="1" value="1" required></label>
-            <label>
-              Frequency type
-              <select id="setupFrequencyType">
-                <option value="Time">Time</option>
-                <option value="Quantity">Quantity</option>
-                <option value="Event">Event</option>
-              </select>
-            </label>
-            <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" value="30" required></label>
-            <label>
-              Frequency unit
-              <select id="setupFrequencyUnit">
-                <option value="Minutes">Minutes</option>
-                <option value="Hours">Hours</option>
-                <option value="Pieces">Pieces</option>
-                <option value="StartOfJob">Start of job</option>
-                <option value="MaterialChange">Material change</option>
-                <option value="ToolChange">Tool change</option>
-                <option value="Restart">Restart</option>
-              </select>
-            </label>
-            <label>
-              COA required
-              <select id="setupIsRequiredForCoa">
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </label>
-            <button type="submit">Save Measurement</button>
+          <form id="inspectionSetupForm" class="inspection-builder">
+            <div class="setup-block">
+              <h3>Part</h3>
+              <div class="setup-fields">
+                <label>Part number<input id="setupPartNum" required></label>
+                <label>Part description<input id="setupPartDescription" required></label>
+              </div>
+            </div>
+
+            <div class="setup-block">
+              <h3>Process</h3>
+              <div class="setup-fields">
+                <label>Process code<input id="setupProcessCode" required></label>
+                <label>Process description<input id="setupProcessDescription" required></label>
+                <label>Operation<input id="setupOperationSeq" type="number" min="1" value="10" required></label>
+              </div>
+            </div>
+
+            <div class="setup-block">
+              <div class="panel-heading horizontal tight">
+                <div>
+                  <h3>Inspection Timing</h3>
+                </div>
+              </div>
+              <div class="setup-fields timing-fields">
+                <label>Sample size<input id="setupSampleSize" type="number" min="1" value="5" required></label>
+                <label>
+                  Frequency type
+                  <select id="setupFrequencyType">
+                    <option value="Quantity">Quantity</option>
+                    <option value="Time">Time</option>
+                    <option value="Event">Event</option>
+                  </select>
+                </label>
+                <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" value="10000" required></label>
+                <label>
+                  Frequency unit
+                  <select id="setupFrequencyUnit">
+                    <option value="Pieces">Pieces</option>
+                    <option value="Minutes">Minutes</option>
+                    <option value="Hours">Hours</option>
+                    <option value="StartOfJob">Start of job</option>
+                    <option value="MaterialChange">Material change</option>
+                    <option value="ToolChange">Tool change</option>
+                    <option value="Restart">Restart</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="setup-block variable-builder">
+              <div class="panel-heading horizontal tight">
+                <div>
+                  <h3>Variables</h3>
+                  <p>Add every required measurement for this part and operation.</p>
+                </div>
+                <button id="addSetupVariableButton" type="button" class="secondary">Add Variable</button>
+              </div>
+              <div class="variable-editor">
+                <div class="variable-editor-header">
+                  <span>Measurement</span><span>Unit</span><span>Target</span><span>LSL</span><span>USL</span><span>LCL</span><span>UCL</span><span>COA</span><span></span>
+                </div>
+                <div id="setupVariableRows" class="setup-variable-rows"></div>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit">Save Part Inspection</button>
+              <button id="clearInspectionSetupButton" type="button" class="secondary">Clear</button>
+            </div>
           </form>
           <p id="inspectionSetupMessage" class="message"></p>
         </section>
       </section>
 
+      <section id="setupUsersSection" class="setup-section hidden">
+        <section class="panel">
+          <div class="panel-heading horizontal">
+            <div>
+              <h2>Users</h2>
+              <p>Create accounts and assign access levels.</p>
+            </div>
+          </div>
+          <div class="user-admin-layout">
+            <form id="userSetupForm" class="stacked-form">
+              <label>
+                User name
+                <input id="setupUserName" autocomplete="off">
+              </label>
+              <label>
+                Password
+                <input id="setupPassword" type="password" autocomplete="new-password">
+              </label>
+              <label>
+                Access level
+                <select id="setupRole"></select>
+              </label>
+              <button type="submit">Save User</button>
+            </form>
+            <div>
+              <p id="userSetupMessage" class="message"></p>
+              <div id="userList" class="setup-list empty">No users loaded.</div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section id="setupImportSection" class="setup-section hidden">
       <section class="panel">
         <div class="panel-heading horizontal">
           <div>
             <h2>CSV Import</h2>
+            <p>Load many parts, processes, operations, and variables at once.</p>
           </div>
           <button id="csvTemplateButton" type="button" class="secondary">Template</button>
         </div>
@@ -266,7 +308,9 @@
         </form>
         <p id="csvImportMessage" class="message"></p>
       </section>
+      </section>
 
+      <section id="setupReviewSection" class="setup-section hidden">
       <section class="panel">
         <div class="panel-heading horizontal">
           <div>
@@ -276,7 +320,9 @@
         </div>
         <div id="partReviewList" class="data-table empty">No setup loaded.</div>
       </section>
+      </section>
 
+      <section id="setupJobDataSection" class="setup-section hidden">
       <section class="panel">
         <div class="panel-heading">
           <h2>Job Data</h2>
@@ -299,8 +345,9 @@
         <p id="jobSummaryMessage" class="message"></p>
         <div id="jobSummaryList" class="data-table empty">No job data loaded.</div>
       </section>
+      </section>
     </section>
   </main>
-  <script src="/app.js?v=20260506-reference-logo"></script>
+  <script src="/app.js?v=20260512-setup-admin"></script>
 </body>
 </html>

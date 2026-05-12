@@ -117,6 +117,7 @@ body.login-active .topbar {
 h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 0; font-size: 28px; }
 h2 { margin-bottom: 4px; font-size: 18px; }
+h3 { margin: 0 0 12px; font-size: 15px; }
 p { color: var(--muted); }
 hr {
   border: 0;
@@ -344,17 +345,91 @@ textarea {
   font-size: 13px;
 }
 
-.setup-grid {
-  display: grid;
-  grid-template-columns: minmax(280px, 360px) 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
+.setup-nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
 }
-.setup-form {
+.setup-nav-button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  background: #eaf1f8;
+  color: var(--text);
+}
+.setup-nav-button.active {
+  background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+  color: #ffffff;
+}
+.setup-section {
   display: grid;
-  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 16px;
+}
+.inspection-builder {
+  display: grid;
+  gap: 14px;
+}
+.setup-block {
+  border: 1px solid #dbe6f2;
+  border-radius: 6px;
+  background: #fbfdff;
+  padding: 14px;
+}
+.setup-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   align-items: end;
+}
+.timing-fields {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+.variable-builder {
+  background: #ffffff;
+}
+.variable-editor {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.variable-editor-header,
+.setup-variable-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) minmax(80px, .7fr) repeat(5, minmax(92px, 1fr)) minmax(86px, .7fr) minmax(86px, auto);
+  gap: 8px;
+  align-items: end;
+  min-width: 1060px;
+  padding: 10px 12px;
+}
+.variable-editor-header {
+  background: #f1f6fb;
+  color: #35516f;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.setup-variable-row {
+  border-top: 1px solid var(--line);
+}
+.setup-variable-row label span {
+  display: none;
+}
+.setup-variable-row input,
+.setup-variable-row select {
+  min-height: 38px;
+}
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.user-admin-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 18px;
+  align-items: start;
 }
 .job-summary-form {
   display: grid;
@@ -363,11 +438,12 @@ textarea {
   align-items: end;
   margin-bottom: 12px;
 }
-.setup-form button { grid-column: span 2; }
 .setup-list {
   display: grid;
   gap: 8px;
   margin-top: 14px;
+  max-height: 520px;
+  overflow-y: auto;
 }
 .setup-row {
   display: grid;
@@ -526,9 +602,28 @@ textarea {
   .login-wordmark { letter-spacing: -3px; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
-  .form-grid, .measurement-form, .setup-grid, .setup-form, .override-form, .job-summary-form { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .override-form, .job-summary-form, .timing-fields, .user-admin-layout { grid-template-columns: 1fr; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
-  .setup-form button { grid-column: span 1; }
+  .setup-nav { padding-bottom: 8px; }
+  .variable-editor {
+    border: 0;
+    overflow-x: visible;
+  }
+  .variable-editor-header { display: none; }
+  .setup-variable-row {
+    min-width: 0;
+    grid-template-columns: 1fr 1fr;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .setup-variable-row label:first-child,
+  .setup-variable-row .remove-variable-button {
+    grid-column: span 2;
+  }
+  .setup-variable-row label span {
+    display: block;
+  }
   .variable-card { grid-template-columns: 1fr; }
   .limit-grid { grid-template-columns: repeat(3, 1fr); }
 }

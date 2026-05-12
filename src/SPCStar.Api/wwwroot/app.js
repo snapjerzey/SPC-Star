@@ -551,6 +551,14 @@ function showPanel(panelName) {
   $("setupTab").classList.toggle("active", showSetup);
 }
 
+function showSetupSection(sectionName) {
+  const sections = ["Inspection", "Users", "Import", "Review", "JobData"];
+  sections.forEach((section) => {
+    $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
+    $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
+  });
+}
+
 function logout() {
   state.user = null;
   state.snapshot = null;
@@ -586,6 +594,9 @@ async function loadSetupAdmin() {
   state.users = await api("/setup/users");
   fillSelect($("setupRole"), state.roles, (role) => role, (role) => role);
   renderUsers();
+  if (!$("setupVariableRows").children.length) {
+    addSetupVariableRow();
+  }
 }
 
 function renderPartReviewControls() {
@@ -705,7 +716,12 @@ function renderUsers() {
   state.users.forEach((user) => {
     const row = document.createElement("div");
     row.className = "setup-row";
-    row.innerHTML = `<div><strong>${user.userName}</strong><span>${user.roles.join(", ")}</span></div><button type="button" class="secondary">Edit</button>`;
+    row.innerHTML = `
+      <div>
+        <strong>${user.userName}</strong>
+        <span>${user.roles.join(", ")}</span>
+      </div>
+      <button type="button" class="secondary compact-button">Edit</button>`;
     row.querySelector("button").addEventListener("click", () => {
       $("setupUserName").value = user.userName;
       $("setupPassword").value = "";
@@ -736,34 +752,136 @@ async function saveUser(event) {
   }
 }
 
+function setupVariableRowTemplate() {
+  return `
+    <label><span>Measurement</span><input class="setup-characteristic-name" required></label>
+    <label><span>Unit</span><input class="setup-unit" required></label>
+    <label><span>Target</span><input class="setup-nominal" type="number" step="0.0001" required></label>
+    <label><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
+    <label><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
+    <label><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
+    <label><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
+    <label>
+      <span>COA</span>
+      <select class="setup-coa-required">
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    </label>
+    <button type="button" class="secondary compact-button remove-variable-button">Remove</button>`;
+}
+
+function addSetupVariableRow(values = {}) {
+  const row = document.createElement("div");
+  row.className = "setup-variable-row";
+  row.innerHTML = setupVariableRowTemplate();
+  row.querySelector(".setup-characteristic-name").value = values.characteristicName || "";
+  row.querySelector(".setup-unit").value = values.unitOfMeasure || "";
+  row.querySelector(".setup-nominal").value = values.nominal ?? "";
+  row.querySelector(".setup-lsl").value = values.lsl ?? "";
+  row.querySelector(".setup-usl").value = values.usl ?? "";
+  row.querySelector(".setup-lcl").value = values.lcl ?? "";
+  row.querySelector(".setup-ucl").value = values.ucl ?? "";
+  row.querySelector(".setup-coa-required").value = String(values.isRequiredForCoa ?? true);
+  row.querySelector(".remove-variable-button").addEventListener("click", () => {
+    if ($("setupVariableRows").children.length === 1) {
+      row.querySelectorAll("input").forEach((input) => { input.value = ""; });
+      row.querySelector(".setup-coa-required").value = "true";
+      return;
+    }
+    row.remove();
+  });
+  $("setupVariableRows").appendChild(row);
+}
+
+function clearInspectionSetupForm() {
+  $("inspectionSetupForm").reset();
+  $("setupOperationSeq").value = "10";
+  $("setupSampleSize").value = "5";
+  $("setupFrequencyType").value = "Quantity";
+  $("setupFrequencyValue").value = "10000";
+  $("setupFrequencyUnit").value = "Pieces";
+  updateSetupFrequencyUnits();
+  $("setupVariableRows").innerHTML = "";
+  addSetupVariableRow();
+  $("inspectionSetupMessage").textContent = "";
+  $("inspectionSetupMessage").className = "message";
+}
+
+function updateSetupFrequencyUnits() {
+  const unitsByType = {
+    Quantity: [["Pieces", "Pieces"]],
+    Time: [["Minutes", "Minutes"], ["Hours", "Hours"]],
+    Event: [["StartOfJob", "Start of job"], ["MaterialChange", "Material change"], ["ToolChange", "Tool change"], ["Restart", "Restart"]]
+  };
+  const current = $("setupFrequencyUnit").value;
+  const units = unitsByType[$("setupFrequencyType").value] || unitsByType.Quantity;
+  fillSelect($("setupFrequencyUnit"), units, (unit) => unit[0], (unit) => unit[1]);
+  if (units.some((unit) => unit[0] === current)) {
+    $("setupFrequencyUnit").value = current;
+  }
+}
+
+function setupVariableRows() {
+  return [...document.querySelectorAll(".setup-variable-row")].map((row) => ({
+    characteristicName: row.querySelector(".setup-characteristic-name").value.trim(),
+    unitOfMeasure: row.querySelector(".setup-unit").value.trim(),
+    nominal: Number(row.querySelector(".setup-nominal").value),
+    lsl: Number(row.querySelector(".setup-lsl").value),
+    usl: Number(row.querySelector(".setup-usl").value),
+    lcl: optionalInputNumber(row.querySelector(".setup-lcl")),
+    ucl: optionalInputNumber(row.querySelector(".setup-ucl")),
+    isRequiredForCoa: row.querySelector(".setup-coa-required").value === "true"
+  }));
+}
+
+function optionalInputNumber(input) {
+  const value = input.value.trim();
+  return value ? Number(value) : null;
+}
+
 async function saveInspectionSetup(event) {
   event.preventDefault();
+  const variables = setupVariableRows();
+  if (!variables.length || variables.some((variable) => !variable.characteristicName)) {
+    $("inspectionSetupMessage").textContent = "Add at least one measurement name.";
+    $("inspectionSetupMessage").className = "message error";
+    return;
+  }
+
   try {
-    await api("/setup/inspection-plans", {
-      method: "POST",
-      body: JSON.stringify({
-        partNum: $("setupPartNum").value.trim(),
-        partDescription: $("setupPartDescription").value.trim(),
-        processCode: $("setupProcessCode").value.trim(),
-        processDescription: $("setupProcessDescription").value.trim(),
-        operationSeq: Number($("setupOperationSeq").value),
-        characteristicName: $("setupCharacteristicName").value.trim(),
-        characteristicType: $("setupCharacteristicType").value,
-        nominal: Number($("setupNominal").value),
-        lsl: Number($("setupLsl").value),
-        usl: Number($("setupUsl").value),
-        lcl: optionalNumber("setupLcl"),
-        ucl: optionalNumber("setupUcl"),
-        unitOfMeasure: $("setupUnitOfMeasure").value.trim(),
-        sampleSize: Number($("setupSampleSize").value),
-        frequencyType: $("setupFrequencyType").value,
-        frequencyValue: Number($("setupFrequencyValue").value),
-        frequencyUnit: $("setupFrequencyUnit").value,
-        alertRuleSet: "WesternElectric",
-        isRequiredForCoa: $("setupIsRequiredForCoa").value === "true"
-      })
-    });
-    $("inspectionSetupMessage").textContent = "Measurement setup saved.";
+    const baseRequest = {
+      partNum: $("setupPartNum").value.trim(),
+      partDescription: $("setupPartDescription").value.trim(),
+      processCode: $("setupProcessCode").value.trim(),
+      processDescription: $("setupProcessDescription").value.trim(),
+      operationSeq: Number($("setupOperationSeq").value),
+      sampleSize: Number($("setupSampleSize").value),
+      frequencyType: $("setupFrequencyType").value,
+      frequencyValue: Number($("setupFrequencyValue").value),
+      frequencyUnit: $("setupFrequencyUnit").value,
+      alertRuleSet: "WesternElectric"
+    };
+
+    for (const variable of variables) {
+      await api("/setup/inspection-plans", {
+        method: "POST",
+        body: JSON.stringify({
+          ...baseRequest,
+          characteristicName: variable.characteristicName,
+          characteristicType: "Variable",
+          nominal: variable.nominal,
+          lsl: variable.lsl,
+          usl: variable.usl,
+          lcl: variable.lcl,
+          ucl: variable.ucl,
+          unitOfMeasure: variable.unitOfMeasure,
+          isRequiredForCoa: variable.isRequiredForCoa
+        })
+      });
+    }
+
+    $("inspectionSetupMessage").textContent = `${variables.length} variable${variables.length === 1 ? "" : "s"} saved for ${baseRequest.partNum}.`;
     $("inspectionSetupMessage").className = "message ok";
     await loadSnapshot();
   } catch (error) {
@@ -858,14 +976,23 @@ $("trendCharacteristic").addEventListener("change", () => {
 });
 $("inspectionTab").addEventListener("click", () => showPanel("inspect"));
 $("setupTab").addEventListener("click", () => showPanel("setup"));
+$("setupInspectionSectionTab").addEventListener("click", () => showSetupSection("Inspection"));
+$("setupUsersSectionTab").addEventListener("click", () => showSetupSection("Users"));
+$("setupImportSectionTab").addEventListener("click", () => showSetupSection("Import"));
+$("setupReviewSectionTab").addEventListener("click", () => showSetupSection("Review"));
+$("setupJobDataSectionTab").addEventListener("click", () => showSetupSection("JobData"));
 $("userSetupForm").addEventListener("submit", saveUser);
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
+$("addSetupVariableButton").addEventListener("click", () => addSetupVariableRow());
+$("clearInspectionSetupButton").addEventListener("click", clearInspectionSetupForm);
+$("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
 $("partReviewFilter").addEventListener("change", renderPartReview);
 $("jobSummaryForm").addEventListener("submit", loadJobSummary);
 $("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
 setStatus($("syncStatus"), navigator.onLine ? "Online" : "Offline", navigator.onLine ? "ok" : "warn");
+clearInspectionSetupForm();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/service-worker.js").catch(() => {});

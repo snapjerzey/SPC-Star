@@ -385,6 +385,9 @@ textarea {
 .timing-fields {
   grid-template-columns: repeat(4, minmax(150px, 1fr));
 }
+.edit-setup-fields {
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
 .variable-builder {
   background: #ffffff;
 }
@@ -395,7 +398,7 @@ textarea {
 .variable-editor-header,
 .setup-variable-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(140px, .9fr) minmax(96px, .7fr) repeat(5, minmax(96px, .8fr)) minmax(86px, .6fr) minmax(86px, auto);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 8px;
   align-items: end;
 }
@@ -412,6 +415,18 @@ textarea {
   border-radius: 6px;
   padding: 12px;
   background: #ffffff;
+}
+.setup-name-field { grid-column: span 4; }
+.setup-type-field { grid-column: span 3; }
+.setup-unit-field { grid-column: span 2; }
+.numeric-setup-field { grid-column: span 2; }
+.setup-coa-field { grid-column: span 1; }
+.remove-variable-button { grid-column: span 2; }
+.setup-type-field select {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #083e7a;
+  font-weight: 800;
 }
 .setup-variable-row.attribute-row .setup-nominal,
 .setup-variable-row.attribute-row .setup-lsl,
@@ -623,14 +638,18 @@ textarea {
   .login-wordmark { letter-spacing: -3px; }
   .status-row { justify-content: flex-start; }
   .workspace { grid-template-columns: 1fr; }
-  .form-grid, .measurement-form, .override-form, .job-summary-form, .timing-fields, .user-admin-layout { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .override-form, .job-summary-form, .timing-fields, .edit-setup-fields, .user-admin-layout { grid-template-columns: 1fr; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-nav { padding-bottom: 8px; }
   .setup-variable-row {
     grid-template-columns: 1fr 1fr;
     margin-bottom: 10px;
   }
-  .setup-variable-row label:first-child,
+  .setup-name-field,
+  .setup-type-field,
+  .setup-unit-field,
+  .numeric-setup-field,
+  .setup-coa-field,
   .setup-variable-row .remove-variable-button {
     grid-column: span 2;
   }

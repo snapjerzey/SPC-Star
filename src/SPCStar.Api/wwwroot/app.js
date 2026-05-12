@@ -92,6 +92,7 @@ async function loadSnapshot() {
   $("partNum").value = "";
   if (canManageSetup()) {
     renderPartReviewControls();
+    renderSetupEditChoices();
     renderPartReview();
   }
   clearWorkContext();
@@ -622,6 +623,14 @@ function renderPartReviewControls() {
   fillSelect($("partReviewFilter"), parts, (part) => part.partNum, (part) => part.partNum || part.description);
 }
 
+function renderSetupEditChoices() {
+  const sets = [{ key: "", label: "Create new part setup" }, ...inspectionSets().map((set) => ({
+    key: set.key,
+    label: `${set.partNum} / ${set.processCode}`
+  }))];
+  fillSelect($("setupEditPartSelect"), sets, (set) => set.key, (set) => set.label);
+}
+
 function renderPartReview() {
   const container = $("partReviewList");
   const selectedPart = $("partReviewFilter").value;
@@ -772,21 +781,21 @@ async function saveUser(event) {
 
 function setupVariableRowTemplate() {
   return `
-    <label><span>Measurement</span><input class="setup-characteristic-name" required></label>
-    <label>
-      <span>Type</span>
+    <label class="setup-name-field"><span>Measurement</span><input class="setup-characteristic-name" required></label>
+    <label class="setup-type-field">
+      <span>Inspection type</span>
       <select class="setup-characteristic-type">
         <option value="Variable">Measured</option>
         <option value="Attribute">Accept / Reject</option>
       </select>
     </label>
-    <label><span>Unit</span><input class="setup-unit" required></label>
+    <label class="setup-unit-field"><span>Unit</span><input class="setup-unit" required></label>
     <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
     <label class="numeric-setup-field"><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
-    <label>
+    <label class="setup-coa-field">
       <span>COA</span>
       <select class="setup-coa-required">
         <option value="true">Yes</option>
@@ -845,9 +854,40 @@ function updateSetupVariableType(row) {
   }
 }
 
+function loadSelectedPartSetup() {
+  const key = $("setupEditPartSelect").value;
+  if (!key) {
+    clearInspectionSetupForm();
+    return;
+  }
+
+  const set = inspectionSets().find((item) => item.key === key);
+  if (!set) {
+    return;
+  }
+
+  $("setupPartNum").value = set.partNum;
+  $("setupPartDescription").value = set.partDescription;
+  $("setupProcessCode").value = set.processCode;
+  $("setupProcessDescription").value = set.processDescription || set.processCode;
+  $("setupOperationSeq").value = String(set.operationSeq || 10);
+  const firstPlan = set.plans[0];
+  $("setupSampleSize").value = String(firstPlan.sampleSize || 1);
+  $("setupFrequencyType").value = firstPlan.frequencyType;
+  updateSetupFrequencyUnits();
+  $("setupFrequencyValue").value = String(firstPlan.frequencyValue || 1);
+  $("setupFrequencyUnit").value = firstPlan.frequencyUnit;
+  $("setupVariableRows").innerHTML = "";
+  set.plans.forEach((plan) => addSetupVariableRow(plan));
+  $("inspectionSetupMessage").textContent = `${set.partNum} loaded for editing.`;
+  $("inspectionSetupMessage").className = "message ok";
+}
+
 function clearInspectionSetupForm() {
   $("inspectionSetupForm").reset();
+  $("setupEditPartSelect").value = "";
   $("setupOperationSeq").value = "10";
+  $("setupProcessDescription").value = "";
   $("setupSampleSize").value = "5";
   $("setupFrequencyType").value = "Quantity";
   $("setupFrequencyValue").value = "10000";
@@ -906,7 +946,7 @@ async function saveInspectionSetup(event) {
       partNum: $("setupPartNum").value.trim(),
       partDescription: $("setupPartDescription").value.trim(),
       processCode: $("setupProcessCode").value.trim(),
-      processDescription: $("setupProcessDescription").value.trim(),
+      processDescription: $("setupProcessCode").value.trim(),
       operationSeq: Number($("setupOperationSeq").value),
       sampleSize: Number($("setupSampleSize").value),
       frequencyType: $("setupFrequencyType").value,
@@ -1038,6 +1078,7 @@ $("userSetupForm").addEventListener("submit", saveUser);
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
 $("addSetupVariableButton").addEventListener("click", () => addSetupVariableRow());
 $("clearInspectionSetupButton").addEventListener("click", clearInspectionSetupForm);
+$("loadPartSetupButton").addEventListener("click", loadSelectedPartSetup);
 $("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);

@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260512-operation-variable-type">
+  <link rel="stylesheet" href="/styles.css?v=20260512-edit-part-setup">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -185,6 +185,17 @@
           </div>
           <form id="inspectionSetupForm" class="inspection-builder">
             <div class="setup-block">
+              <h3>Edit Existing Part</h3>
+              <div class="setup-fields edit-setup-fields">
+                <label>
+                  Part setup
+                  <select id="setupEditPartSelect"></select>
+                </label>
+                <button id="loadPartSetupButton" type="button" class="secondary">Load Part</button>
+              </div>
+            </div>
+
+            <div class="setup-block">
               <h3>Part</h3>
               <div class="setup-fields">
                 <label>Part number<input id="setupPartNum" required></label>
@@ -195,9 +206,9 @@
             <div class="setup-block">
               <h3>Operation</h3>
               <div class="setup-fields">
-                <label>Operation name<input id="setupProcessCode" required></label>
-                <label>Operation description<input id="setupProcessDescription" required></label>
-                <label>Operation step<input id="setupOperationSeq" type="number" min="1" value="10" required></label>
+                <label>Operation<input id="setupProcessCode" required></label>
+                <input id="setupProcessDescription" type="hidden">
+                <input id="setupOperationSeq" type="hidden" value="10">
               </div>
             </div>
 
@@ -243,7 +254,7 @@
               </div>
               <div class="variable-editor">
                 <div class="variable-editor-header">
-                  <span>Measurement</span><span>Type</span><span>Unit</span><span>Target</span><span>LSL</span><span>USL</span><span>LCL</span><span>UCL</span><span>COA</span><span></span>
+                  <span>Measurement</span><span>Inspection type</span><span>Unit</span><span>Target</span><span>LSL</span><span>USL</span><span>LCL</span><span>UCL</span><span>COA</span><span></span>
                 </div>
                 <div id="setupVariableRows" class="setup-variable-rows"></div>
               </div>
@@ -348,6 +359,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-operation-variable-type"></script>
+  <script src="/app.js?v=20260512-edit-part-setup"></script>
 </body>
 </html>

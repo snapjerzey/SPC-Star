@@ -856,9 +856,9 @@ function renderPartReviewControls() {
 }
 
 async function loadReview() {
-  renderPartReview();
   const partNum = $("partReviewFilter").value;
   const jobNum = $("reviewJobNum").value.trim();
+  await renderPartReview();
   if (!jobNum) {
     $("jobReviewPanel").classList.add("hidden");
     $("reviewMessage").textContent = "";
@@ -898,54 +898,35 @@ function renderGlobalRuleSetting() {
   updateRuleDescription();
 }
 
-function renderPartReview() {
+async function renderPartReview() {
   const container = $("partReviewList");
   const selectedPart = $("partReviewFilter").value;
-  const plans = state.snapshot.inspectionPlans
-    .filter((plan) => !selectedPart || plan.partNum === selectedPart)
-    .sort((a, b) =>
-      a.partNum.localeCompare(b.partNum) ||
-      a.operationSeq - b.operationSeq ||
-      (a.inspectionPhase || "").localeCompare(b.inspectionPhase || "") ||
-      a.characteristicName.localeCompare(b.characteristicName));
-
-  if (!plans.length) {
+  if (!selectedPart) {
     container.className = "data-table empty";
-    container.textContent = "No variables configured.";
+    container.textContent = "Select a part to review capability across all jobs.";
     return;
   }
 
-  container.className = "data-table";
-  container.innerHTML = `
-    <div class="data-row header">
-      <span>Part</span><span>Operation</span><span>Phase</span><span>Variable</span><span>Spec</span><span>COA</span>
-    </div>`;
-  plans.forEach((plan) => {
-    const row = document.createElement("div");
-    row.className = "data-row";
-    row.innerHTML = `
-      <span>${plan.partNum}</span>
-      <span>${plan.processCode} ${plan.operationSeq}</span>
-      <span>${plan.inspectionPhase || "In Process"}</span>
-      <span>${plan.characteristicName} (${plan.characteristicType === "Attribute" ? "Accept/Reject" : plan.unitOfMeasure})</span>
-      <span>${plan.characteristicType === "Attribute" ? "Attribute check" : `${formatNumber(plan.lsl)} / ${formatNumber(plan.nominal)} / ${formatNumber(plan.usl)}`}</span>
-      <span>${plan.isRequiredForCoa ? "Required" : "No"}</span>`;
-    container.appendChild(row);
-  });
+  try {
+    const rows = await api(`/review/part?partNum=${encodeURIComponent(selectedPart)}`);
+    renderReviewSummary(rows, container, "No measured-variable data for this part.");
+  } catch (error) {
+    container.className = "data-table empty";
+    container.textContent = readableError(error);
+  }
 }
 
 function renderJobReview(review) {
   $("jobReviewPanel").classList.remove("hidden");
-  renderReviewSummary(review.variableSummary || []);
+  renderReviewSummary(review.variableSummary || [], $("jobReviewSummary"), "No summary data for this job.");
   renderReviewMeasurements(review.measurements || []);
   renderHistoryList($("jobReviewHistory"), review.history || []);
 }
 
-function renderReviewSummary(rows) {
-  const container = $("jobReviewSummary");
+function renderReviewSummary(rows, container, emptyMessage) {
   if (!rows.length) {
     container.className = "data-table empty";
-    container.textContent = "No summary data for this job.";
+    container.textContent = emptyMessage;
     return;
   }
 
@@ -973,6 +954,30 @@ function renderReviewSummary(rows) {
   });
 }
 
+async function saveReviewMeasurement(id, item) {
+  const row = item.closest(".data-row");
+  const value = Number(row.querySelector(".review-measurement-value").value);
+  const inspectionPhase = row.querySelector(".review-measurement-phase").value;
+  if (!Number.isFinite(value)) {
+    $("reviewMessage").textContent = "Measurement value must be numeric.";
+    $("reviewMessage").className = "message error";
+    return;
+  }
+
+  try {
+    await api(`/review/measurements/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ value, inspectionPhase })
+    });
+    $("reviewMessage").textContent = "Inspection entry updated.";
+    $("reviewMessage").className = "message ok";
+    await loadReview();
+  } catch (error) {
+    $("reviewMessage").textContent = readableError(error);
+    $("reviewMessage").className = "message error";
+  }
+}
+
 function renderReviewMeasurements(rows) {
   const container = $("jobReviewMeasurements");
   if (!rows.length) {
@@ -984,19 +989,27 @@ function renderReviewMeasurements(rows) {
   container.className = "data-table review-measurement-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Time</span><span>Phase</span><span>Variable</span><span>Value</span><span>Machine</span><span>Operation</span><span>User</span>
+      <span>Time</span><span>Phase</span><span>Variable</span><span>Value</span><span>Machine</span><span>Operation</span><span>User</span><span></span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
     item.className = "data-row";
     item.innerHTML = `
       <span>${formatDateTime(row.timestamp)}</span>
-      <span>${row.inspectionPhase}</span>
+      <span>
+        <select class="review-measurement-phase">
+          <option value="Startup" ${row.inspectionPhase === "Startup" ? "selected" : ""}>Startup</option>
+          <option value="Setup" ${row.inspectionPhase === "Setup" ? "selected" : ""}>Setup</option>
+          <option value="In Process" ${row.inspectionPhase === "In Process" ? "selected" : ""}>In Process</option>
+        </select>
+      </span>
       <span>${row.characteristicName}</span>
-      <span>${formatNumber(row.value)}</span>
+      <span><input class="review-measurement-value" type="number" step="0.0001" value="${Number(row.value)}"></span>
       <span>${row.resourceId}</span>
       <span>${row.processCode} ${row.operationSeq}</span>
-      <span>${row.operatorUserId}</span>`;
+      <span>${row.operatorUserId}</span>
+      <span><button type="button" class="secondary compact-button">Save</button></span>`;
+    item.querySelector("button").addEventListener("click", () => saveReviewMeasurement(row.id, item));
     container.appendChild(item);
   });
 }

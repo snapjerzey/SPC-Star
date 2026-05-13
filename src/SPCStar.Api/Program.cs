@@ -304,6 +304,31 @@ app.MapGet("/review/job", (string partNum, string jobNum, JobReviewService servi
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapGet("/review/part", (string partNum, QaSummaryExportService service) =>
+{
+    var result = service.BuildPartCapability(partNum);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
+app.MapPatch("/review/measurements/{measurementId:guid}", (
+    Guid measurementId,
+    UpdateInspectionMeasurementRequest request,
+    JobReviewService service,
+    IRepositoryPersistence persistence) =>
+{
+    var result = service.UpdateMeasurement(measurementId, request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/exports/inspection-data.csv", (InspectionHistoryExportRequest request, HistoryExportService service) =>
 {
     return Results.Text(service.ExportInspectionCsv(request), "text/csv");

@@ -504,8 +504,8 @@ textarea {
 }
 .job-review-panel {
   display: grid;
-  gap: 14px;
-  margin-top: 18px;
+  gap: 10px;
+  margin-top: 12px;
 }
 .rule-card-grid {
   display: grid;
@@ -576,8 +576,24 @@ textarea {
   min-width: 1120px;
 }
 .review-measurement-table .data-row {
-  grid-template-columns: .9fr .9fr 1.1fr .8fr .8fr .8fr .9fr;
-  min-width: 920px;
+  grid-template-columns: 1fr .85fr 1.1fr .75fr .75fr .8fr .8fr auto;
+  min-width: 980px;
+}
+.review-summary-table .data-row,
+.review-measurement-table .data-row {
+  padding: 5px 0;
+  gap: 8px;
+  font-size: 12px;
+}
+.review-summary-table .data-row.header,
+.review-measurement-table .data-row.header {
+  font-size: 11px;
+}
+.review-measurement-table input,
+.review-measurement-table select {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
 }
 .data-row.header {
   color: #35516f;

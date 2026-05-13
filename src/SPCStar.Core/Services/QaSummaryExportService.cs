@@ -105,6 +105,40 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         return BuildJobVariableMeans([jobNum], requiredOnly);
     }
 
+    public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildPartCapability(string partNum)
+    {
+        if (string.IsNullOrWhiteSpace(partNum))
+        {
+            return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Fail("PartNum is required.");
+        }
+
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(partNum.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (part is null)
+        {
+            return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Fail($"Part was not found: {partNum}.");
+        }
+
+        var plans =
+            from operation in repository.Operations
+            join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
+            join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
+            where operation.PartId == part.Id && characteristic.Type == CharacteristicType.Variable
+            orderby operation.OperationSeq, characteristic.Name
+            select new { part.PartNum, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
+
+        var rows = plans
+            .Select(plan => BuildCapabilityRow("All Jobs", plan.PartNum, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
+                repository.Measurements
+                    .Where(measurement =>
+                        measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                        measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
+                    .Select(measurement => measurement.Value)
+                    .ToArray()))
+            .ToArray();
+
+        return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Ok(rows);
+    }
+
     public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildJobVariableMeans(IReadOnlyCollection<string> jobNums, bool requiredOnly = true)
     {
         var requestedJobs = jobNums
@@ -218,50 +252,64 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             select new { part.PartNum, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         return plans.Select(plan =>
-        {
-            var values = repository.Measurements
+            BuildCapabilityRow(job.JobNum, plan.PartNum, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
+                repository.Measurements
                 .Where(measurement =>
                     measurement.JobNum.Equals(job.JobNum, StringComparison.OrdinalIgnoreCase) &&
                     measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
                     measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
                 .Select(measurement => measurement.Value)
-                .ToArray();
-            var acceptedValues = values
-                .Where(value => value >= plan.Lsl && value <= plan.Usl)
-                .ToArray();
-            var outOfSpecCount = values.Length - acceptedValues.Length;
-            var mean = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Average();
-            var stdDev = StandardDeviation(acceptedValues);
-            var coaValue = CoaValue(plan.CoaStatisticType, mean, stdDev);
-            var capability = plan.Type == CharacteristicType.Variable
-                ? Capability(acceptedValues, plan.Lsl, plan.Usl)
-                : new CapabilityMetrics(null, null, null, null, null, null);
+                .ToArray()));
+    }
 
-            return new JobVariableMeanRow(
-                job.JobNum,
-                plan.PartNum,
-                plan.Name,
-                plan.Type,
-                plan.UnitOfMeasure,
-                plan.IsRequiredForCoa,
-                plan.CoaStatisticType,
-                coaValue,
-                plan.Nominal,
-                plan.Lsl,
-                plan.Usl,
-                mean,
-                acceptedValues.Length == 0 ? null : acceptedValues.Min(),
-                acceptedValues.Length == 0 ? null : acceptedValues.Max(),
-                stdDev,
-                capability.Cp,
-                capability.Cpk,
-                capability.Pp,
-                capability.Ppk,
-                capability.Pk,
-                acceptedValues.Length,
-                outOfSpecCount,
-                values.Length == 0 ? "NoData" : acceptedValues.Length == 0 ? PassFailStatus.Fail.ToString() : PassFailStatus.Pass.ToString());
-        });
+    private static JobVariableMeanRow BuildCapabilityRow(
+        string jobNum,
+        string partNum,
+        string characteristicName,
+        CharacteristicType characteristicType,
+        string unitOfMeasure,
+        bool isRequiredForCoa,
+        CoaStatisticType coaStatisticType,
+        decimal nominal,
+        decimal lsl,
+        decimal usl,
+        IReadOnlyCollection<decimal> values)
+    {
+        var acceptedValues = values
+            .Where(value => value >= lsl && value <= usl)
+            .ToArray();
+        var outOfSpecCount = values.Count - acceptedValues.Length;
+        var mean = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Average();
+        var stdDev = StandardDeviation(acceptedValues);
+        var coaValue = CoaValue(coaStatisticType, mean, stdDev);
+        var capability = characteristicType == CharacteristicType.Variable
+            ? Capability(acceptedValues, lsl, usl)
+            : new CapabilityMetrics(null, null, null, null, null, null);
+
+        return new JobVariableMeanRow(
+            jobNum,
+            partNum,
+            characteristicName,
+            characteristicType,
+            unitOfMeasure,
+            isRequiredForCoa,
+            coaStatisticType,
+            coaValue,
+            nominal,
+            lsl,
+            usl,
+            mean,
+            acceptedValues.Length == 0 ? null : acceptedValues.Min(),
+            acceptedValues.Length == 0 ? null : acceptedValues.Max(),
+            stdDev,
+            capability.Cp,
+            capability.Cpk,
+            capability.Pp,
+            capability.Ppk,
+            capability.Pk,
+            acceptedValues.Length,
+            outOfSpecCount,
+            values.Count == 0 ? "NoData" : acceptedValues.Length == 0 ? PassFailStatus.Fail.ToString() : PassFailStatus.Pass.ToString());
     }
 
     public ServiceResult<string> ExportCsv(QaSummaryExportRequest request)

@@ -133,6 +133,24 @@ public sealed class QaSummaryExportServiceTests
         Assert.Contains(result.Value, row => row.JobNum == "J200" && row.Mean == 5.2m);
     }
 
+    [Fact]
+    public void BuildPartCapability_CalculatesAcrossAllJobs()
+    {
+        var repository = RepositoryWithMeasurements();
+        repository.Jobs.Add(new Job { JobNum = "J200", PartNum = "P100" });
+        repository.Measurements.Add(Measurement(5.2m, 3, "J200"));
+        var service = new QaSummaryExportService(repository);
+
+        var result = service.BuildPartCapability("P100");
+
+        Assert.True(result.Succeeded);
+        var row = Assert.Single(result.Value!);
+        Assert.Equal("All Jobs", row.JobNum);
+        Assert.Equal(4, row.Count);
+        Assert.Equal(5.05m, row.Mean);
+        Assert.NotNull(row.Cpk);
+    }
+
     private static InMemorySpcRepository RepositoryWithMeasurements(CoaStatisticType coaStatisticType = CoaStatisticType.Mean)
     {
         var repository = new InMemorySpcRepository();

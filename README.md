@@ -9,7 +9,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Core domain models for users, roles, permissions, setup data, jobs, inspection measurements, job notes, alerts, overrides, material traceability, and exports.
 - SQLite-oriented schema and seed scripts.
 - CSV setup import with validation and upsert behavior.
-- Manual setup screens for parts, operations, measured variables, accept/reject variables, sample size, frequency, and COA-required variables.
+- Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, frequency, and COA-required variables.
 - User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
 - Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, and Spool.
@@ -77,6 +77,7 @@ Initial endpoints include:
 - `POST /setup/users`
 - `DELETE /setup/users/{userName}`
 - `POST /setup/inspection-plans`
+- `POST /setup/job-data-fields`
 - `GET /setup/parts`
 - `GET /setup/inspection-plans`
 - `GET /sync/setup-snapshot`

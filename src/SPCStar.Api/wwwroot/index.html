@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260513-job-data-layout">
+  <link rel="stylesheet" href="/styles.css?v=20260513-setup-job-data-fields">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -299,11 +299,22 @@
               <p id="setupRuleDescription" class="rule-description"></p>
             </div>
 
+            <div class="setup-block">
+              <div class="panel-heading horizontal tight">
+                <div>
+                  <h3>Job Data Fields</h3>
+                  <p>Add extra part-specific fields that should appear with Job Number, Machine, Part Number, and Inspection Phase.</p>
+                </div>
+                <button id="addSetupJobDataFieldButton" type="button" class="secondary">Add Job Data Field</button>
+              </div>
+              <div id="setupJobDataFieldRows" class="setup-job-data-field-rows"></div>
+            </div>
+
             <div class="setup-block variable-builder">
               <div class="panel-heading horizontal tight">
                 <div>
                   <h3>Variables</h3>
-                  <p>Add every required measurement for this part and operation.</p>
+                  <p>Add measured values with limits, sample size, frequency, and COA requirements.</p>
                 </div>
                 <button id="addSetupVariableButton" type="button" class="secondary">Add Variable</button>
               </div>
@@ -312,6 +323,22 @@
                   <span>Measurement</span><span>Inspection type</span><span>Unit</span><span>Target</span><span>LSL</span><span>USL</span><span>LCL</span><span>UCL</span><span>COA</span><span>COA stat</span><span></span>
                 </div>
                 <div id="setupVariableRows" class="setup-variable-rows"></div>
+              </div>
+            </div>
+
+            <div class="setup-block variable-builder">
+              <div class="panel-heading horizontal tight">
+                <div>
+                  <h3>Attributes</h3>
+                  <p>Add accept/reject checks such as comparator or template inspections.</p>
+                </div>
+                <button id="addSetupAttributeButton" type="button" class="secondary">Add Attribute</button>
+              </div>
+              <div class="variable-editor">
+                <div class="variable-editor-header attribute-editor-header">
+                  <span>Attribute</span><span>Inspection type</span><span>COA</span><span></span>
+                </div>
+                <div id="setupAttributeRows" class="setup-variable-rows"></div>
               </div>
             </div>
 
@@ -506,6 +533,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260513-job-data-layout"></script>
+  <script src="/app.js?v=20260513-setup-job-data-fields"></script>
 </body>
 </html>

@@ -58,6 +58,13 @@ public sealed record ResourceSetupDto(string ResourceId, string? Description);
 
 public sealed record SettingsSetupDto(string GlobalAlertRuleSet);
 
+public sealed record PartJobDataFieldSetupDto(
+    string PartNum,
+    string InspectionPhase,
+    string FieldName,
+    bool IsRequired,
+    int DisplayOrder);
+
 public sealed record SetupSnapshotDto(
     DateTimeOffset GeneratedAt,
     string SetupVersion,
@@ -70,7 +77,8 @@ public sealed record SetupSnapshotDto(
     IReadOnlyList<InspectionPlanSetupDto> InspectionPlans,
     IReadOnlyList<ControlLimitSetupDto> ControlLimits,
     IReadOnlyList<JobSetupDto> Jobs,
-    IReadOnlyList<ResourceSetupDto> Resources);
+    IReadOnlyList<ResourceSetupDto> Resources,
+    IReadOnlyList<PartJobDataFieldSetupDto> PartJobDataFields);
 
 public sealed class SetupQueryService(ISpcRepository repository)
 {
@@ -169,10 +177,16 @@ public sealed class SetupQueryService(ISpcRepository repository)
             .OrderBy(resource => resource.ResourceId)
             .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description))
             .ToArray();
+        var jobDataFields =
+            (from field in repository.PartJobDataFields
+             join part in repository.Parts on field.PartId equals part.Id
+             orderby part.PartNum, field.InspectionPhase, field.DisplayOrder, field.FieldName
+             select new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder))
+            .ToArray();
 
         return new SetupSnapshotDto(
             generatedAt ?? DateTimeOffset.UtcNow,
-            BuildSetupVersion(new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet), parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources),
+            BuildSetupVersion(new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet), parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources, jobDataFields),
             new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet),
             parts,
             processes,
@@ -182,7 +196,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
             inspectionPlans,
             controlLimits,
             jobs,
-            resources);
+            resources,
+            jobDataFields);
     }
 
     private static string BuildSetupVersion(
@@ -195,7 +210,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
         IReadOnlyList<InspectionPlanSetupDto> inspectionPlans,
         IReadOnlyList<ControlLimitSetupDto> controlLimits,
         IReadOnlyList<JobSetupDto> jobs,
-        IReadOnlyList<ResourceSetupDto> resources)
+        IReadOnlyList<ResourceSetupDto> resources,
+        IReadOnlyList<PartJobDataFieldSetupDto> jobDataFields)
     {
         var builder = new StringBuilder();
         builder.Append(nameof(SettingsSetupDto)).Append('|').Append(settings).AppendLine();
@@ -208,6 +224,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
         AppendRows(builder, controlLimits);
         AppendRows(builder, jobs);
         AppendRows(builder, resources);
+        AppendRows(builder, jobDataFields);
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexString(hash)[..16];

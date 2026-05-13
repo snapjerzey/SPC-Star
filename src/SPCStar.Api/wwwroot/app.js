@@ -181,6 +181,8 @@ function renderEmptyContext(message = "") {
   $("trendCharacteristic").innerHTML = "";
   $("entryMessage").textContent = message;
   $("entryMessage").className = message ? "message error" : "message";
+  $("jobTagsForm").innerHTML = "";
+  $("jobTagsForm").classList.add("hidden");
   $("tagMessage").textContent = "";
   $("jobNoteText").value = "";
   $("jobNoteMessage").textContent = "";
@@ -208,9 +210,11 @@ function renderContext() {
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
   $("jobNotesPanel").classList.remove("hidden");
+  renderConfiguredJobDataFields(set);
   const hasConfiguredTags = document.querySelectorAll(".job-tag-input").length > 0;
   $("tagsDivider").classList.toggle("hidden", !hasConfiguredTags);
   $("tagsSection").classList.toggle("hidden", !hasConfiguredTags);
+  $("jobTagsForm").classList.toggle("hidden", !hasConfiguredTags);
   state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderVariables();
@@ -219,6 +223,20 @@ function renderContext() {
   loadTrend();
   loadJobNotes(jobNum);
   loadJobTags(jobNum);
+}
+
+function renderConfiguredJobDataFields(set) {
+  const fields = (state.snapshot.partJobDataFields || [])
+    .filter((field) =>
+      field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
+      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase))
+    .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+  const form = $("jobTagsForm");
+  form.innerHTML = fields.map((field) => `
+    <label>
+      ${escapeHtml(field.fieldName)}
+      <input class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" autocomplete="off" ${field.isRequired ? "required" : ""}>
+    </label>`).join("") + (fields.length ? `<button type="submit" class="secondary">Save Job Data</button>` : "");
 }
 
 function renderLock(activeLock) {
@@ -324,7 +342,6 @@ function renderMeanSummary() {
       <span>Cpk</span>
       <span>Pp</span>
       <span>Ppk</span>
-      <span>Points</span>
     </div>`;
   state.selectedPlans.forEach((plan, index) => {
     const points = state.contexts[index]?.recentMeasurements || [];
@@ -343,8 +360,7 @@ function renderMeanSummary() {
         <span class="muted-cell">Accept/Reject</span>
         <span class="muted-cell">-</span>
         <span class="muted-cell">-</span>
-        <span class="muted-cell">-</span>
-        <span>${points.length}</span>`;
+        <span class="muted-cell">-</span>`;
       summary.appendChild(item);
       return;
     }
@@ -359,8 +375,7 @@ function renderMeanSummary() {
       <span>${capabilityBadge(capability.cp)}</span>
       <span>${capabilityBadge(capability.cpk)}</span>
       <span>${capabilityBadge(capability.pp)}</span>
-      <span>${capabilityBadge(capability.ppk)}</span>
-      <span>${points.length}</span>`;
+      <span>${capabilityBadge(capability.ppk)}</span>`;
     summary.appendChild(item);
   });
 }
@@ -1188,7 +1203,7 @@ function renderJobSummary(rows) {
   container.className = "data-table job-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Job</span><span>Variable</span><span>COA Stat</span><span>COA Value</span><span>Mean</span><span>Std Dev</span><span>Cpk</span><span>Ppk</span>
+      <span>Job</span><span>Variable</span><span>COA Stat</span><span>COA Value</span><span>Mean</span><span>Min</span><span>Max</span><span>Std Dev</span><span>Cpk</span><span>Ppk</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
@@ -1199,6 +1214,8 @@ function renderJobSummary(rows) {
       <span>${coaStatisticLabel(row.coaStatisticType)}</span>
       <span>${formatNumber(row.coaValue)}</span>
       <span>${formatNumber(row.mean)}</span>
+      <span>${formatNumber(row.min)}</span>
+      <span>${formatNumber(row.max)}</span>
       <span>${formatNumber(row.stdDev)}</span>
       <span>${capabilityBadge(row.cpk)}</span>
       <span>${capabilityBadge(row.ppk)}</span>`;
@@ -1329,13 +1346,37 @@ function setupVariableRowTemplate() {
     <button type="button" class="secondary compact-button remove-variable-button">Remove</button>`;
 }
 
-function addSetupVariableRow(values = {}) {
+function setupJobDataFieldTemplate() {
+  return `
+    <label><span>Field name</span><input class="setup-job-data-field-name" required></label>
+    <label>
+      <span>Required</span>
+      <select class="setup-job-data-required">
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    </label>
+    <button type="button" class="secondary compact-button remove-job-data-field-button">Remove</button>`;
+}
+
+function addSetupJobDataFieldRow(values = {}) {
+  const row = document.createElement("div");
+  row.className = "setup-job-data-field-row";
+  row.dataset.originalFieldName = values.fieldName || "";
+  row.innerHTML = setupJobDataFieldTemplate();
+  row.querySelector(".setup-job-data-field-name").value = values.fieldName || "";
+  row.querySelector(".setup-job-data-required").value = String(values.isRequired ?? true);
+  row.querySelector(".remove-job-data-field-button").addEventListener("click", () => row.remove());
+  $("setupJobDataFieldRows").appendChild(row);
+}
+
+function addSetupVariableRow(values = {}, type = values.characteristicType || "Variable") {
   const row = document.createElement("div");
   row.className = "setup-variable-row";
   row.dataset.originalCharacteristicName = values.characteristicName || "";
   row.innerHTML = setupVariableRowTemplate();
   row.querySelector(".setup-characteristic-name").value = values.characteristicName || "";
-  row.querySelector(".setup-characteristic-type").value = values.characteristicType || "Variable";
+  row.querySelector(".setup-characteristic-type").value = type;
   row.querySelector(".setup-unit").value = values.unitOfMeasure || "";
   row.querySelector(".setup-nominal").value = values.nominal ?? "";
   row.querySelector(".setup-lsl").value = values.lsl ?? "";
@@ -1346,7 +1387,8 @@ function addSetupVariableRow(values = {}) {
   row.querySelector(".setup-coa-statistic").value = values.coaStatisticType || "Mean";
   row.querySelector(".setup-characteristic-type").addEventListener("change", () => updateSetupVariableType(row));
   row.querySelector(".remove-variable-button").addEventListener("click", () => {
-    if ($("setupVariableRows").children.length === 1) {
+    const container = row.parentElement;
+    if (container?.children.length === 1 && container.id === "setupVariableRows") {
       row.querySelectorAll("input").forEach((input) => { input.value = ""; });
       row.querySelector(".setup-coa-required").value = "true";
       row.querySelector(".setup-coa-statistic").value = "Mean";
@@ -1354,7 +1396,7 @@ function addSetupVariableRow(values = {}) {
     }
     row.remove();
   });
-  $("setupVariableRows").appendChild(row);
+  $(type === "Attribute" ? "setupAttributeRows" : "setupVariableRows").appendChild(row);
   updateSetupVariableType(row);
 }
 
@@ -1412,7 +1454,14 @@ function loadSelectedPartSetup() {
   $("setupAlertRuleSet").value = firstPlan.alertRuleSet || "WesternElectric";
   updateRuleDescription();
   $("setupVariableRows").innerHTML = "";
-  set.plans.forEach((plan) => addSetupVariableRow(plan));
+  $("setupAttributeRows").innerHTML = "";
+  set.plans.forEach((plan) => addSetupVariableRow(plan, plan.characteristicType));
+  $("setupJobDataFieldRows").innerHTML = "";
+  (state.snapshot.partJobDataFields || [])
+    .filter((field) =>
+      field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
+      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(firstPlan.inspectionPhase))
+    .forEach((field) => addSetupJobDataFieldRow(field));
   $("inspectionSetupMessage").textContent = `${set.partNum} loaded for editing.`;
   $("inspectionSetupMessage").className = "message ok";
 }
@@ -1432,6 +1481,8 @@ function clearInspectionSetupForm() {
   updateRuleDescription();
   updateSetupFrequencyUnits();
   $("setupVariableRows").innerHTML = "";
+  $("setupAttributeRows").innerHTML = "";
+  $("setupJobDataFieldRows").innerHTML = "";
   addSetupVariableRow();
   $("inspectionSetupMessage").textContent = "";
   $("inspectionSetupMessage").className = "message";
@@ -1501,6 +1552,17 @@ function setupVariableRows() {
   }));
 }
 
+function setupJobDataFieldRows() {
+  return [...document.querySelectorAll(".setup-job-data-field-row")]
+    .map((row, index) => ({
+      originalFieldName: row.dataset.originalFieldName || null,
+      fieldName: row.querySelector(".setup-job-data-field-name").value.trim(),
+      isRequired: row.querySelector(".setup-job-data-required").value === "true",
+      displayOrder: index
+    }))
+    .filter((row) => row.fieldName);
+}
+
 function optionalInputNumber(input) {
   const value = input.value.trim();
   return value ? Number(value) : null;
@@ -1509,6 +1571,7 @@ function optionalInputNumber(input) {
 async function saveInspectionSetup(event) {
   event.preventDefault();
   const variables = setupVariableRows();
+  const jobDataFields = setupJobDataFieldRows();
   if (!variables.length || variables.some((variable) => !variable.characteristicName)) {
     $("inspectionSetupMessage").textContent = "Add at least one measurement name.";
     $("inspectionSetupMessage").className = "message error";
@@ -1529,6 +1592,20 @@ async function saveInspectionSetup(event) {
       frequencyUnit: $("setupFrequencyUnit").value,
       alertRuleSet: $("setupAlertRuleSet").value
     };
+
+    for (const field of jobDataFields) {
+      await api("/setup/job-data-fields", {
+        method: "POST",
+        body: JSON.stringify({
+          partNum: baseRequest.partNum,
+          inspectionPhase: baseRequest.inspectionPhase,
+          fieldName: field.fieldName,
+          isRequired: field.isRequired,
+          displayOrder: field.displayOrder,
+          originalFieldName: field.originalFieldName
+        })
+      });
+    }
 
     for (const variable of variables) {
       await api("/setup/inspection-plans", {
@@ -1614,6 +1691,15 @@ function readableError(error) {
   }
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function formatNumber(value) {
   return value === null || value === undefined ? "-" : Number(value).toFixed(3);
 }
@@ -1683,6 +1769,8 @@ $("setupJobDataSectionTab").addEventListener("click", () => showSetupSection("Jo
 $("userSetupForm").addEventListener("submit", saveUser);
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
 $("addSetupVariableButton").addEventListener("click", () => addSetupVariableRow());
+$("addSetupAttributeButton").addEventListener("click", () => addSetupVariableRow({}, "Attribute"));
+$("addSetupJobDataFieldButton").addEventListener("click", () => addSetupJobDataFieldRow());
 $("clearInspectionSetupButton").addEventListener("click", clearInspectionSetupForm);
 $("loadPartSetupButton").addEventListener("click", loadSelectedPartSetup);
 $("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);

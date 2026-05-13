@@ -20,8 +20,8 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 ## Implemented services
 
 - `SetupImportService`: CSV setup validation and upsert.
-- `SetupManagementService`: users, global settings, and manual part/operation/inspection setup.
-- `SetupQueryService`: tablet setup snapshot, part lookup, inspection plan lookup, and setup review data.
+- `SetupManagementService`: users, global settings, manual part/operation/inspection setup, and part-specific job data field setup.
+- `SetupQueryService`: tablet setup snapshot, part lookup, job data field lookup, inspection plan lookup, and setup review data.
 - `AuthSessionService`: development login/session contract for role-aware UI flows.
 - `WorkContextService`: one-call inspection screen context for tablet entry, including live capability metrics.
 - `InspectionMeasurementService`: operator measurement entry, active lock enforcement, alert creation, inspection phase capture, and global/part-level drift rule resolution.

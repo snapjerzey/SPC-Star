@@ -161,6 +161,23 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertPartJobDataField_SavesFieldForPartAndPhase()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        Assert.True(service.UpsertInspectionSetup(Request("MOLD", "Diameter")).Succeeded);
+
+        var result = service.UpsertPartJobDataField(new UpsertPartJobDataFieldRequest("P200", "Spool", "Coil Number", true, 0));
+
+        Assert.True(result.Succeeded);
+        var field = Assert.Single(repository.PartJobDataFields);
+        Assert.Equal("Coil Number", field.FieldName);
+        Assert.Equal("Spool", field.InspectionPhase);
+        var snapshot = new SetupQueryService(repository).GetSetupSnapshot();
+        Assert.Contains(snapshot.PartJobDataFields, item => item.PartNum == "P200" && item.FieldName == "Coil Number");
+    }
+
+    [Fact]
     public void UpsertInspectionSetup_RenamesExistingOperationWithoutCreatingDuplicate()
     {
         var repository = new InMemorySpcRepository();

@@ -211,6 +211,19 @@ app.MapPost("/jobs/{jobNum}/tags", (string jobNum, SaveJobTagsRequest request, J
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapPost("/setup/job-data-fields", (UpsertPartJobDataFieldRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.UpsertPartJobDataField(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/jobs/{jobNum}/notes", (string jobNum, JobNoteEntry request, JobNoteService service, IRepositoryPersistence persistence) =>
 {
     var result = service.Add(request with { JobNum = jobNum });

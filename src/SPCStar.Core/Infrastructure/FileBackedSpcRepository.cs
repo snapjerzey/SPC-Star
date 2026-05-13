@@ -75,6 +75,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         List<InspectionMeasurement> Measurements,
         List<JobNote>? JobNotes,
         List<JobTag>? JobTags,
+        List<PartJobDataField>? PartJobDataFields,
         List<ControlLimitSet> ControlLimits,
         List<ProcessAlert> Alerts,
         List<RuleViolation> RuleViolations,
@@ -99,6 +100,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
                 [.. repository.Measurements],
                 [.. repository.JobNotes],
                 [.. repository.JobTags],
+                [.. repository.PartJobDataFields],
                 [.. repository.ControlLimits],
                 [.. repository.Alerts],
                 [.. repository.RuleViolations],
@@ -127,6 +129,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
             repository.Measurements.AddRange(Measurements);
             repository.JobNotes.AddRange(JobNotes ?? []);
             repository.JobTags.AddRange(JobTags ?? []);
+            repository.PartJobDataFields.AddRange(PartJobDataFields ?? []);
             repository.ControlLimits.AddRange(ControlLimits);
             repository.Alerts.AddRange(Alerts);
             repository.RuleViolations.AddRange(RuleViolations);

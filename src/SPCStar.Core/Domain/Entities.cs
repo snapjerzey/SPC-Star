@@ -109,6 +109,16 @@ public sealed class JobTag
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+public sealed class PartJobDataField
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public Guid PartId { get; set; }
+    public string InspectionPhase { get; set; } = "In Process";
+    public required string FieldName { get; set; }
+    public bool IsRequired { get; set; }
+    public int DisplayOrder { get; set; }
+}
+
 public sealed class ResourceMachine
 {
     public Guid Id { get; init; } = Guid.NewGuid();

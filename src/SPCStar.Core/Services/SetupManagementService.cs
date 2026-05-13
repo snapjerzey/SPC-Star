@@ -35,6 +35,14 @@ public sealed record UpsertInspectionSetupRequest(
     CoaStatisticType CoaStatisticType = CoaStatisticType.Mean,
     string InspectionPhase = "In Process");
 
+public sealed record UpsertPartJobDataFieldRequest(
+    string PartNum,
+    string InspectionPhase,
+    string FieldName,
+    bool IsRequired,
+    int DisplayOrder,
+    string? OriginalFieldName = null);
+
 public sealed class SetupManagementService(ISpcRepository repository)
 {
     public IReadOnlyList<UserSetupDto> GetUsers()
@@ -267,6 +275,50 @@ public sealed class SetupManagementService(ISpcRepository repository)
             item.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase)));
     }
 
+    public ServiceResult<PartJobDataFieldSetupDto> UpsertPartJobDataField(UpsertPartJobDataFieldRequest request)
+    {
+        var errors = ValidateJobDataField(request);
+        if (errors.Count > 0)
+        {
+            return ServiceResult<PartJobDataFieldSetupDto>.Fail(errors);
+        }
+
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (part is null)
+        {
+            part = new Part { PartNum = request.PartNum.Trim(), Description = request.PartNum.Trim() };
+            repository.Parts.Add(part);
+        }
+
+        var inspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
+        var originalName = string.IsNullOrWhiteSpace(request.OriginalFieldName) ? request.FieldName.Trim() : request.OriginalFieldName.Trim();
+        var field = repository.PartJobDataFields.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
+            item.FieldName.Equals(originalName, StringComparison.OrdinalIgnoreCase));
+        if (field is null)
+        {
+            field = new PartJobDataField
+            {
+                PartId = part.Id,
+                InspectionPhase = inspectionPhase,
+                FieldName = request.FieldName.Trim(),
+                IsRequired = request.IsRequired,
+                DisplayOrder = request.DisplayOrder
+            };
+            repository.PartJobDataFields.Add(field);
+        }
+        else
+        {
+            field.InspectionPhase = inspectionPhase;
+            field.FieldName = request.FieldName.Trim();
+            field.IsRequired = request.IsRequired;
+            field.DisplayOrder = request.DisplayOrder;
+        }
+
+        return ServiceResult<PartJobDataFieldSetupDto>.Ok(new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder));
+    }
+
     private void UpsertControlLimit(UpsertInspectionSetupRequest request)
     {
         var lcl = request.Lcl ?? request.Lsl;
@@ -388,6 +440,24 @@ public sealed class SetupManagementService(ISpcRepository repository)
         if (!IsValidFrequencyPair(request.FrequencyType, request.FrequencyUnit))
         {
             errors.Add("FrequencyType and FrequencyUnit are not compatible.");
+        }
+
+        return errors;
+    }
+
+    private static List<string> ValidateJobDataField(UpsertPartJobDataFieldRequest request)
+    {
+        var errors = new List<string>();
+        Required(request.PartNum, nameof(request.PartNum), errors);
+        Required(request.FieldName, nameof(request.FieldName), errors);
+        if (!IsValidInspectionPhase(request.InspectionPhase))
+        {
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, or Spool.");
+        }
+
+        if (request.DisplayOrder < 0)
+        {
+            errors.Add("DisplayOrder must be zero or greater.");
         }
 
         return errors;

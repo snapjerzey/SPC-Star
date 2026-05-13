@@ -20,6 +20,18 @@ Content-Type: application/json
   "csv": "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA\nP200,Demo part,MOLD,Molding,10,Diameter,Variable,5.0,4.5,5.5,mm,1,Time,30,Minutes,WesternElectric,true"
 }
 
+### Add part-specific job data field
+POST {{baseUrl}}/setup/job-data-fields
+Content-Type: application/json
+
+{
+  "partNum": "P100",
+  "inspectionPhase": "In Process",
+  "fieldName": "Example Tag",
+  "isRequired": true,
+  "displayOrder": 0
+}
+
 ### Enter inspection measurement
 POST {{baseUrl}}/inspections/measurements
 Content-Type: application/json

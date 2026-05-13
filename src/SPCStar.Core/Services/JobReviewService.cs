@@ -14,7 +14,9 @@ public sealed record JobInspectionMeasurementDto(
     string CharacteristicName,
     decimal Value,
     DateTimeOffset Timestamp,
-    string OperatorUserId);
+    string OperatorUserId,
+    bool IsOutOfSpec,
+    bool IsOutOfControl);
 
 public sealed record JobReviewDto(
     string PartNum,
@@ -70,18 +72,7 @@ public sealed class JobReviewService(
                 measurement.JobNum.Equals(job, StringComparison.OrdinalIgnoreCase) &&
                 measurement.PartNum.Equals(part, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(measurement => measurement.Timestamp)
-            .Select(measurement => new JobInspectionMeasurementDto(
-                measurement.Id,
-                measurement.JobNum,
-                measurement.PartNum,
-                measurement.ProcessCode,
-                measurement.OperationSeq,
-                measurement.InspectionPhase,
-                measurement.ResourceId,
-                measurement.CharacteristicName,
-                measurement.Value,
-                measurement.Timestamp,
-                measurement.OperatorUserId))
+            .Select(ToDto)
             .ToArray();
 
         return ServiceResult<JobReviewDto>.Ok(new JobReviewDto(
@@ -112,7 +103,17 @@ public sealed class JobReviewService(
             measurement.InspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
         }
 
-        return ServiceResult<JobInspectionMeasurementDto>.Ok(new JobInspectionMeasurementDto(
+        return ServiceResult<JobInspectionMeasurementDto>.Ok(ToDto(measurement));
+    }
+
+    private JobInspectionMeasurementDto ToDto(InspectionMeasurement measurement)
+    {
+        var spec = FindSpecLimit(measurement);
+        var control = FindControlLimit(measurement);
+        var isOutOfSpec = spec is not null && (measurement.Value < spec.Lsl || measurement.Value > spec.Usl);
+        var isOutOfControl = !isOutOfSpec && control is not null && (measurement.Value < control.Lcl || measurement.Value > control.Ucl);
+
+        return new JobInspectionMeasurementDto(
             measurement.Id,
             measurement.JobNum,
             measurement.PartNum,
@@ -123,7 +124,41 @@ public sealed class JobReviewService(
             measurement.CharacteristicName,
             measurement.Value,
             measurement.Timestamp,
-            measurement.OperatorUserId));
+            measurement.OperatorUserId,
+            isOutOfSpec,
+            isOutOfControl);
+    }
+
+    private SpecLimit? FindSpecLimit(InspectionMeasurement measurement)
+    {
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase));
+        if (part is null)
+        {
+            return null;
+        }
+
+        var operation = repository.Operations.FirstOrDefault(item => item.PartId == part.Id && item.OperationSeq == measurement.OperationSeq);
+        if (operation is null)
+        {
+            return null;
+        }
+
+        var characteristic = repository.Characteristics.FirstOrDefault(item =>
+            item.OperationId == operation.Id &&
+            item.Name.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase));
+
+        return characteristic is null
+            ? null
+            : repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
+    }
+
+    private ControlLimitSet? FindControlLimit(InspectionMeasurement measurement)
+    {
+        return repository.ControlLimits.FirstOrDefault(item =>
+            item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == measurement.OperationSeq &&
+            item.CharacteristicName.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string NormalizeInspectionPhase(string? value)

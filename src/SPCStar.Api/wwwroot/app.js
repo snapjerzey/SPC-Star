@@ -1032,7 +1032,7 @@ function renderReviewMeasurements(rows) {
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
-    item.className = "data-row";
+    item.className = `data-row ${row.isOutOfSpec ? "measurement-out-spec" : row.isOutOfControl ? "measurement-out-control" : ""}`;
     item.innerHTML = `
       <span>${formatDateTime(row.timestamp)}</span>
       <span>
@@ -1044,7 +1044,7 @@ function renderReviewMeasurements(rows) {
       </span>
       <span>${row.characteristicName}</span>
       <span><input class="review-measurement-value" type="number" step="0.0001" value="${Number(row.value)}"></span>
-      <span>${row.resourceId}</span>
+      <span>${row.resourceId}${row.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : row.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
       <span>${row.processCode} ${row.operationSeq}</span>
       <span>${row.operatorUserId}</span>
       <span><button type="button" class="secondary compact-button">Save</button></span>`;

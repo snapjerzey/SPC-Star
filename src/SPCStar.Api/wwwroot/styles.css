@@ -603,6 +603,27 @@ textarea {
   padding: 4px 8px;
   font-size: 12px;
 }
+.review-measurement-table .measurement-out-spec {
+  background: #fff1f0;
+  border-left: 4px solid #d92d20;
+  padding-left: 6px;
+}
+.review-measurement-table .measurement-out-control {
+  background: #fffaeb;
+  border-left: 4px solid #f79009;
+  padding-left: 6px;
+}
+.status-text {
+  display: block;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.status-text.bad {
+  color: #b42318;
+}
+.status-text.warn {
+  color: #b54708;
+}
 .data-row.header {
   color: #35516f;
   font-size: 12px;

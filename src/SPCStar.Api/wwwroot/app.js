@@ -244,14 +244,16 @@ function renderVariables() {
     const isAttribute = plan.characteristicType === "Attribute";
     card.innerHTML = `
       <div>
-        <div class="variable-title">
-          <strong>${plan.characteristicName}</strong>
-          <span>${isAttribute ? "Accept / Reject" : plan.unitOfMeasure}</span>
-        </div>
-        <div class="sample-meta">
-          <span>${plan.inspectionPhase || "In Process"}</span>
-          <span>Sample size ${plan.sampleSize}</span>
-          <span>${formatFrequency(plan)}</span>
+        <div class="variable-header">
+          <div class="variable-title">
+            <strong>${plan.characteristicName}</strong>
+            <span>${isAttribute ? "Accept / Reject" : plan.unitOfMeasure}</span>
+          </div>
+          <div class="sample-meta">
+            <span>${plan.inspectionPhase || "In Process"}</span>
+            <span>Sample size ${plan.sampleSize}</span>
+            <span>${formatFrequency(plan)}</span>
+          </div>
         </div>
         ${isAttribute ? `
           <div class="attribute-note">Comparator/template check</div>` : `

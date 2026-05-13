@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260513-inspection-context-tags">
+  <link rel="stylesheet" href="/styles.css?v=20260513-job-data-layout">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -52,59 +52,46 @@
     </div>
 
     <section id="workPanel" class="workspace hidden">
-      <aside class="panel">
-        <div class="panel-heading">
-          <h2>Work</h2>
-        </div>
-        <form id="contextForm" class="stacked-form">
-          <label>
-            Job Number
-            <input id="jobNum" list="jobOptions" autocomplete="off" inputmode="text" required>
-            <datalist id="jobOptions"></datalist>
-          </label>
-          <label>
-            Machine
-            <select id="resourceId" required></select>
-          </label>
-          <label>
-            Part Number
-            <input id="partNum" list="partOptions" autocomplete="off" inputmode="text" required>
-            <datalist id="partOptions"></datalist>
-          </label>
-          <label>
-            Inspection Phase
-            <select id="inspectionPhase" required>
-              <option value="Startup">Startup</option>
-              <option value="Setup">Setup</option>
-              <option value="In Process" selected>In Process</option>
-              <option value="Spool Start">Spool Start</option>
-              <option value="Spool End">Spool End</option>
-            </select>
-          </label>
-          <button type="submit">Start Inspecting</button>
-        </form>
-
-        <hr id="tagsDivider" class="hidden">
-
-        <div id="tagsSection" class="hidden">
-          <div class="panel-heading tight">
-            <h2>Tags</h2>
-          </div>
-          <form id="jobTagsForm" class="stacked-form">
-            <label>Wire shipment<input id="tagWireShipment" class="job-tag-input" data-tag-name="Wire Shipment" autocomplete="off"></label>
-            <label>Coil number<input id="tagCoilNumber" class="job-tag-input" data-tag-name="Coil Number" autocomplete="off"></label>
-            <label>Spool number<input id="tagSpoolNumber" class="job-tag-input" data-tag-name="Spool Number" autocomplete="off"></label>
-            <label>Box / Serial<input id="tagBoxSerial" class="job-tag-input" data-tag-name="Box Serial" autocomplete="off"></label>
-            <label>Polisher number<input id="tagPolisherNumber" class="job-tag-input" data-tag-name="Polisher Number" autocomplete="off"></label>
-            <label>Material part<input id="tagMaterialPart" class="job-tag-input" data-tag-name="Material Part" autocomplete="off"></label>
-            <label>Material lot<input id="tagMaterialLot" class="job-tag-input" data-tag-name="Material Lot" autocomplete="off"></label>
-            <button type="submit" class="secondary">Save Tags</button>
-          </form>
-          <p id="tagMessage" class="message"></p>
-        </div>
-      </aside>
-
       <section class="main-column">
+        <section id="jobDataPanel" class="panel">
+          <div class="panel-heading">
+            <h2>Job Data</h2>
+          </div>
+          <form id="contextForm" class="job-data-form">
+            <label>
+              Job Number
+              <input id="jobNum" list="jobOptions" autocomplete="off" inputmode="text" required>
+              <datalist id="jobOptions"></datalist>
+            </label>
+            <label>
+              Machine
+              <select id="resourceId" required></select>
+            </label>
+            <label>
+              Part Number
+              <input id="partNum" list="partOptions" autocomplete="off" inputmode="text" required>
+              <datalist id="partOptions"></datalist>
+            </label>
+            <label>
+              Inspection Phase
+              <select id="inspectionPhase" required>
+                <option value="Startup">Startup</option>
+                <option value="Setup">Setup</option>
+                <option value="In Process" selected>In Process</option>
+                <option value="Spool">Spool</option>
+              </select>
+            </label>
+            <button type="submit">Load</button>
+          </form>
+
+          <hr id="tagsDivider" class="hidden">
+          <div id="tagsSection" class="hidden">
+            <div id="jobTagsList" class="job-tag-list"></div>
+            <form id="jobTagsForm" class="job-data-form hidden"></form>
+            <p id="tagMessage" class="message"></p>
+          </div>
+        </section>
+
         <div id="lockBanner" class="lock-banner hidden"></div>
         <section id="overridePanel" class="panel lock-panel hidden">
           <div class="panel-heading">
@@ -150,7 +137,7 @@
         <section id="measurementPanel" class="panel">
           <div class="panel-heading horizontal">
             <div>
-              <h2 id="contextTitle">No context loaded</h2>
+              <h2 id="contextTitle">Variables</h2>
               <p id="contextSubtitle">Enter a job number, machine, and part number, then start inspecting.</p>
             </div>
           </div>
@@ -261,8 +248,7 @@
                     <option value="Startup">Startup</option>
                     <option value="Setup">Setup</option>
                     <option value="In Process" selected>In Process</option>
-                    <option value="Spool Start">Spool Start</option>
-                    <option value="Spool End">Spool End</option>
+                    <option value="Spool">Spool</option>
                   </select>
                 </label>
                 <label>Sample size<input id="setupSampleSize" type="number" min="1" value="5" required></label>
@@ -520,6 +506,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260513-inspection-context-tags"></script>
+  <script src="/app.js?v=20260513-job-data-layout"></script>
 </body>
 </html>

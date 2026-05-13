@@ -134,20 +134,15 @@ public sealed class SetupManagementServiceTests
         Assert.True(service.UpsertInspectionSetup(Request(
             processCode: "MOLD",
             characteristicName: "Diameter",
-            inspectionPhase: "Spool Start")).Succeeded);
-        Assert.True(service.UpsertInspectionSetup(Request(
-            processCode: "MOLD",
-            characteristicName: "Diameter",
-            inspectionPhase: "Spool End")).Succeeded);
+            inspectionPhase: "Spool")).Succeeded);
 
         var plans = new SetupQueryService(repository).GetInspectionPlans("P200");
 
-        Assert.Equal(5, plans.Count);
+        Assert.Equal(4, plans.Count);
         Assert.Contains(plans, plan => plan.InspectionPhase == "Startup");
         Assert.Contains(plans, plan => plan.InspectionPhase == "Setup");
         Assert.Contains(plans, plan => plan.InspectionPhase == "In Process");
-        Assert.Contains(plans, plan => plan.InspectionPhase == "Spool Start");
-        Assert.Contains(plans, plan => plan.InspectionPhase == "Spool End");
+        Assert.Contains(plans, plan => plan.InspectionPhase == "Spool");
     }
 
     [Fact]
@@ -240,3 +235,4 @@ public sealed class SetupManagementServiceTests
             inspectionPhase);
     }
 }
+

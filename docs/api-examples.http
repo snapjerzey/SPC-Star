@@ -71,11 +71,7 @@ Content-Type: application/json
   "resourceId": "PRESS1",
   "operatorUserId": "operator1",
   "tags": {
-    "Wire Shipment": "WIRE-123",
-    "Coil Number": "COIL-55",
-    "Spool Number": "SPOOL-8",
-    "Box Serial": "BOX-1001",
-    "Material Lot": "LOT2"
+    "Example Tag": "Example Value"
   },
   "updatedAt": "2026-05-01T12:18:00Z"
 }

@@ -281,7 +281,6 @@ hr {
 
 .workspace {
   display: grid;
-  grid-template-columns: 320px 1fr;
   gap: 16px;
 }
 .main-column {
@@ -299,6 +298,12 @@ hr {
 .measurement-form {
   display: grid;
   gap: 12px;
+}
+.job-data-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
 }
 .measurement-form { margin-top: 18px; }
 .override-form {
@@ -890,7 +895,8 @@ textarea {
   .login-logo { max-height: 240px; }
   .login-wordmark { letter-spacing: -3px; }
   .status-row { justify-content: flex-start; }
-  .workspace { grid-template-columns: 1fr; }
+  .job-data-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .job-data-form button { grid-column: span 2; }
   .form-grid, .measurement-form, .override-form, .job-summary-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form { grid-template-columns: 1fr; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-nav { padding-bottom: 8px; }
@@ -912,4 +918,9 @@ textarea {
   }
   .variable-card { grid-template-columns: 1fr; }
   .limit-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .job-data-form { grid-template-columns: 1fr; }
+  .job-data-form button { grid-column: auto; }
 }

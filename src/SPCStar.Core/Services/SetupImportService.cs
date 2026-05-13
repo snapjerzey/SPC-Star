@@ -131,7 +131,7 @@ public sealed class SetupImportService(ISpcRepository repository)
 
             if (!IsValidInspectionPhase(row.GetValueOrDefault("InspectionPhase")))
             {
-                errors.Add($"Row {rowNumber}: InspectionPhase must be Startup, Setup, In Process, Spool Start, or Spool End.");
+                errors.Add($"Row {rowNumber}: InspectionPhase must be Startup, Setup, In Process, or Spool.");
             }
 
             if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("COAStatistic")) &&
@@ -181,6 +181,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
@@ -323,15 +324,11 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             return "Startup";
         }
-
-        if (phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
+        if (phase.Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
         {
-            return "Spool Start";
-        }
-
-        if (phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Spool End";
+            return "Spool";
         }
 
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
@@ -388,3 +385,6 @@ public sealed class SetupImportService(ISpcRepository repository)
         return true;
     }
 }
+
+
+

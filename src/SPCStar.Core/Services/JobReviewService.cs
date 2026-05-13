@@ -173,15 +173,11 @@ public sealed class JobReviewService(
         {
             return "Startup";
         }
-
-        if (phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
+        if (phase.Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
         {
-            return "Spool Start";
-        }
-
-        if (phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Spool End";
+            return "Spool";
         }
 
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
@@ -190,3 +186,5 @@ public sealed class JobReviewService(
             : "In Process";
     }
 }
+
+

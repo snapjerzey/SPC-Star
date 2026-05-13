@@ -132,8 +132,7 @@ function normalizeInspectionPhase(value) {
   const phase = value.trim().toLowerCase();
   if (phase === "startup") return "Startup";
   if (phase === "set up" || phase === "setup") return "Setup";
-  if (phase === "spool start") return "Spool Start";
-  if (phase === "spool end") return "Spool End";
+  if (phase === "spool" || phase === "spool start" || phase === "spool end") return "Spool";
   return "In Process";
 }
 
@@ -168,7 +167,7 @@ async function loadContext(event) {
 }
 
 function renderEmptyContext(message = "") {
-  $("contextTitle").textContent = "Select work to begin";
+  $("contextTitle").textContent = "Variables";
   $("contextSubtitle").textContent = "Enter a job number, machine, and part number, then start inspecting.";
   renderLock(null);
   $("measurementForm").classList.add("hidden");
@@ -204,13 +203,14 @@ async function loadVariableContext(jobNum, resourceId, plan) {
 
 function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
-  $("contextTitle").textContent = `${jobNum} ${resourceId}`;
-  $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.inspectionPhase}`;
+  $("contextTitle").textContent = "Variables";
+  $("contextSubtitle").textContent = `${jobNum} / ${resourceId} / ${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.inspectionPhase}`;
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
   $("jobNotesPanel").classList.remove("hidden");
-  $("tagsDivider").classList.remove("hidden");
-  $("tagsSection").classList.remove("hidden");
+  const hasConfiguredTags = document.querySelectorAll(".job-tag-input").length > 0;
+  $("tagsDivider").classList.toggle("hidden", !hasConfiguredTags);
+  $("tagsSection").classList.toggle("hidden", !hasConfiguredTags);
   state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderVariables();
@@ -243,7 +243,7 @@ function renderVariables() {
   const attributeList = $("attributeVariableList");
   measurementList.innerHTML = "";
   attributeList.innerHTML = "";
-  measurementList.appendChild(sectionHeading("Measurements"));
+  measurementList.appendChild(sectionHeading("Variables"));
   attributeList.appendChild(sectionHeading("Attributes"));
   state.selectedPlans.forEach((plan, index) => {
     const context = state.contexts[index];
@@ -1142,8 +1142,7 @@ function renderReviewMeasurements(rows) {
           <option value="Startup" ${row.inspectionPhase === "Startup" ? "selected" : ""}>Startup</option>
           <option value="Setup" ${row.inspectionPhase === "Setup" ? "selected" : ""}>Setup</option>
           <option value="In Process" ${row.inspectionPhase === "In Process" ? "selected" : ""}>In Process</option>
-          <option value="Spool Start" ${row.inspectionPhase === "Spool Start" ? "selected" : ""}>Spool Start</option>
-          <option value="Spool End" ${row.inspectionPhase === "Spool End" ? "selected" : ""}>Spool End</option>
+          <option value="Spool" ${normalizeInspectionPhase(row.inspectionPhase) === "Spool" ? "selected" : ""}>Spool</option>
         </select>
       </span>
       <span>${row.characteristicName}</span>
@@ -1708,3 +1707,4 @@ clearInspectionSetupForm();
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/service-worker.js").catch(() => {});
 }
+

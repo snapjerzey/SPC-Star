@@ -12,8 +12,8 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Manual setup screens for parts, operations, measured variables, accept/reject variables, sample size, frequency, and COA-required variables.
 - User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
-- Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, Spool Start, and Spool End.
-- Persistent job tags for context such as wire shipment, coil, spool, box/serial, polisher, material part, and material lot.
+- Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, and Spool.
+- Persistent job tag storage for part-specific context fields that will be driven by inspection setup.
 - Multi-variable measurement entry with measured variables separated from accept/reject attribute checks.
 - Accept/Reject inspection support for comparator/template checks.
 - Live row-based min, max, mean, standard deviation, Cp, Cpk, Pp, and Ppk summary for every active measured variable.
@@ -132,3 +132,4 @@ The API seeds demo security users and one sample inspection plan:
 - Box-level traceability once the required production count/source logic is defined.
 - Native Web Serial/WebHID device profiles for gauges that do not behave like keyboard input.
 - Broader reporting/search screens for historical job notes, machine issues, drift events, and material events.
+

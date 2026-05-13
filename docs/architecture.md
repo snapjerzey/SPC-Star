@@ -28,7 +28,7 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 - `WesternElectricRuleService`: Western Electric drift rules used directly and as part of Nelson-style detection.
 - `AlertOverrideService`: permission-based lock override and audit creation.
 - `MaterialChangeLogService`: material lot traceability logging.
-- `JobTagService`: persistent job context tags such as wire shipment, coil, spool, box/serial, polisher, material part, and material lot.
+- `JobTagService`: persistent job context tags for part-specific inspection fields.
 - `JobNoteService`: timestamped operator/job notes for handoff and issue history.
 - `InspectionFrequencyService`: time, quantity, and event frequency evaluation.
 - `ChartDataService`: chart-ready measurement points with moving range, limits, specs, and violations.
@@ -39,10 +39,11 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 
 ## Inspection UI behavior
 
-Inspection entry is organized around job context tags, measured variables, and accept/reject attributes. The supported inspection phases are Startup, Setup, In Process, Spool Start, and Spool End. Material, coil, spool, and serial/box changes are captured as job tags rather than separate inspection phases.
+Inspection entry is organized around top-level job data, part-specific job tags, measured variables, and accept/reject attributes. The supported inspection phases are Startup, Setup, In Process, and Spool.
 
 The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. Devices that require direct serial or HID communication should be added through a dedicated Web Serial/WebHID profile layer so the inspection workflow does not need to change.
 
 ## Next architecture step
 
 Move from local JSON persistence to the production database layer, then harden auth/session behavior and offline queue handling. Keep the service APIs stable so tests continue to protect the manufacturing rules while storage changes underneath.
+

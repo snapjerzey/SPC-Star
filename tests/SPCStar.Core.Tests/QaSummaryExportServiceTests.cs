@@ -53,6 +53,24 @@ public sealed class QaSummaryExportServiceTests
     }
 
     [Fact]
+    public void BuildJobVariableMeans_CalculatesCapabilityForMeasuredVariables()
+    {
+        var repository = RepositoryWithMeasurements();
+        var service = new QaSummaryExportService(repository);
+
+        var result = service.BuildJobVariableMeans("J100");
+
+        Assert.True(result.Succeeded);
+        var row = Assert.Single(result.Value!);
+        Assert.Equal(CharacteristicType.Variable, row.CharacteristicType);
+        Assert.Equal(0.1m, decimal.Round(row.StdDev!.Value, 5));
+        Assert.Equal(1.66667m, decimal.Round(row.Cpk!.Value, 5));
+        Assert.Equal(row.Cpk, row.Ppk);
+        Assert.Equal(row.Cpk, row.Pk);
+    }
+
+
+    [Fact]
     public void BuildJobVariableMeans_ExcludesOutOfSpecMeasurementsFromCoaMean()
     {
         var repository = RepositoryWithMeasurements();

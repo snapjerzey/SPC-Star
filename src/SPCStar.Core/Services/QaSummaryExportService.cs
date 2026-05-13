@@ -30,6 +30,7 @@ public sealed record JobVariableMeanRow(
     string JobNum,
     string PartNum,
     string CharacteristicName,
+    CharacteristicType CharacteristicType,
     string UnitOfMeasure,
     bool IsRequiredForCoa,
     CoaStatisticType CoaStatisticType,
@@ -40,6 +41,12 @@ public sealed record JobVariableMeanRow(
     decimal? Mean,
     decimal? Min,
     decimal? Max,
+    decimal? StdDev,
+    decimal? Cp,
+    decimal? Cpk,
+    decimal? Pp,
+    decimal? Ppk,
+    decimal? Pk,
     int Count,
     int OutOfSpecExcludedCount,
     string Status);
@@ -147,6 +154,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             "JobNum",
             "PartNum",
             "CharacteristicName",
+            "CharacteristicType",
             "UnitOfMeasure",
             "IsRequiredForCOA",
             "COAStatistic",
@@ -157,6 +165,12 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             "Mean",
             "Min",
             "Max",
+            "StdDev",
+            "Cp",
+            "Cpk",
+            "Pp",
+            "Ppk",
+            "Pk",
             "Count",
             "OutOfSpecExcluded",
             "Status"
@@ -166,6 +180,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["JobNum"] = row.JobNum,
             ["PartNum"] = row.PartNum,
             ["CharacteristicName"] = row.CharacteristicName,
+            ["CharacteristicType"] = row.CharacteristicType.ToString(),
             ["UnitOfMeasure"] = row.UnitOfMeasure,
             ["IsRequiredForCOA"] = row.IsRequiredForCoa.ToString(),
             ["COAStatistic"] = row.CoaStatisticType.ToString(),
@@ -176,6 +191,12 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["Mean"] = row.Mean?.ToString("0.#####") ?? string.Empty,
             ["Min"] = row.Min?.ToString("0.#####") ?? string.Empty,
             ["Max"] = row.Max?.ToString("0.#####") ?? string.Empty,
+            ["StdDev"] = row.StdDev?.ToString("0.#####") ?? string.Empty,
+            ["Cp"] = row.Cp?.ToString("0.#####") ?? string.Empty,
+            ["Cpk"] = row.Cpk?.ToString("0.#####") ?? string.Empty,
+            ["Pp"] = row.Pp?.ToString("0.#####") ?? string.Empty,
+            ["Ppk"] = row.Ppk?.ToString("0.#####") ?? string.Empty,
+            ["Pk"] = row.Pk?.ToString("0.#####") ?? string.Empty,
             ["Count"] = row.Count.ToString(),
             ["OutOfSpecExcluded"] = row.OutOfSpecExcludedCount.ToString(),
             ["Status"] = row.Status
@@ -194,7 +215,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase) &&
                 (!requiredOnly || characteristic.IsRequiredForCoa)
             orderby operation.OperationSeq, characteristic.Name
-            select new { part.PartNum, characteristic.Name, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
+            select new { part.PartNum, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         return plans.Select(plan =>
         {
@@ -212,11 +233,15 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             var mean = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Average();
             var stdDev = StandardDeviation(acceptedValues);
             var coaValue = CoaValue(plan.CoaStatisticType, mean, stdDev);
+            var capability = plan.Type == CharacteristicType.Variable
+                ? Capability(acceptedValues, plan.Lsl, plan.Usl)
+                : new CapabilityMetrics(null, null, null, null, null, null);
 
             return new JobVariableMeanRow(
                 job.JobNum,
                 plan.PartNum,
                 plan.Name,
+                plan.Type,
                 plan.UnitOfMeasure,
                 plan.IsRequiredForCoa,
                 plan.CoaStatisticType,
@@ -227,6 +252,12 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
                 mean,
                 acceptedValues.Length == 0 ? null : acceptedValues.Min(),
                 acceptedValues.Length == 0 ? null : acceptedValues.Max(),
+                stdDev,
+                capability.Cp,
+                capability.Cpk,
+                capability.Pp,
+                capability.Ppk,
+                capability.Pk,
                 acceptedValues.Length,
                 outOfSpecCount,
                 values.Length == 0 ? "NoData" : acceptedValues.Length == 0 ? PassFailStatus.Fail.ToString() : PassFailStatus.Pass.ToString());
@@ -341,5 +372,24 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             CoaStatisticType.StandardDeviation => standardDeviation,
             _ => mean
         };
+    }
+
+    private sealed record CapabilityMetrics(decimal? StdDev, decimal? Cp, decimal? Cpk, decimal? Pp, decimal? Ppk, decimal? Pk);
+
+    private static CapabilityMetrics Capability(IReadOnlyCollection<decimal> values, decimal lsl, decimal usl)
+    {
+        var stdDev = StandardDeviation(values);
+        if (!stdDev.HasValue || stdDev.Value <= 0 || values.Count < 2)
+        {
+            return new CapabilityMetrics(stdDev, null, null, null, null, null);
+        }
+
+        var mean = values.Average();
+        var cp = (usl - lsl) / (6 * stdDev.Value);
+        var lowerCapability = (mean - lsl) / (3 * stdDev.Value);
+        var upperCapability = (usl - mean) / (3 * stdDev.Value);
+        var cpk = Math.Min(lowerCapability, upperCapability);
+
+        return new CapabilityMetrics(stdDev, cp, cpk, cp, cpk, cpk);
     }
 }

@@ -671,7 +671,10 @@ async function saveJobNote(event) {
 }
 
 function renderJobNotes(entries) {
-  const list = $("jobNoteList");
+  renderHistoryList($("jobNoteList"), entries);
+}
+
+function renderHistoryList(list, entries) {
   if (!entries.length) {
     list.className = "job-note-list empty";
     list.textContent = "No history for this job yet.";
@@ -852,6 +855,36 @@ function renderPartReviewControls() {
   fillSelect($("partReviewFilter"), parts, (part) => part.partNum, (part) => part.partNum || part.description);
 }
 
+async function loadReview() {
+  renderPartReview();
+  const partNum = $("partReviewFilter").value;
+  const jobNum = $("reviewJobNum").value.trim();
+  if (!jobNum) {
+    $("jobReviewPanel").classList.add("hidden");
+    $("reviewMessage").textContent = "";
+    $("reviewMessage").className = "message";
+    return;
+  }
+
+  if (!partNum) {
+    $("reviewMessage").textContent = "Select a part before reviewing a job.";
+    $("reviewMessage").className = "message error";
+    $("jobReviewPanel").classList.add("hidden");
+    return;
+  }
+
+  try {
+    const review = await api(`/review/job?partNum=${encodeURIComponent(partNum)}&jobNum=${encodeURIComponent(jobNum)}`);
+    renderJobReview(review);
+    $("reviewMessage").textContent = `${jobNum} review loaded.`;
+    $("reviewMessage").className = "message ok";
+  } catch (error) {
+    $("reviewMessage").textContent = readableError(error);
+    $("reviewMessage").className = "message error";
+    $("jobReviewPanel").classList.add("hidden");
+  }
+}
+
 function renderSetupEditChoices() {
   const sets = [{ key: "", label: "Create new part setup" }, ...inspectionSets().map((set) => ({
     key: set.key,
@@ -901,6 +934,73 @@ function renderPartReview() {
   });
 }
 
+function renderJobReview(review) {
+  $("jobReviewPanel").classList.remove("hidden");
+  renderReviewSummary(review.variableSummary || []);
+  renderReviewMeasurements(review.measurements || []);
+  renderHistoryList($("jobReviewHistory"), review.history || []);
+}
+
+function renderReviewSummary(rows) {
+  const container = $("jobReviewSummary");
+  if (!rows.length) {
+    container.className = "data-table empty";
+    container.textContent = "No summary data for this job.";
+    return;
+  }
+
+  container.className = "data-table review-summary-table";
+  container.innerHTML = `
+    <div class="data-row header">
+      <span>Job</span><span>Variable</span><span>Type</span><span>Mean</span><span>Std Dev</span><span>Cp</span><span>Cpk</span><span>Pp</span><span>Ppk</span><span>Pk</span><span>Count</span>
+    </div>`;
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "data-row";
+    item.innerHTML = `
+      <span>${row.jobNum}</span>
+      <span>${row.characteristicName}</span>
+      <span>${row.characteristicType === "Attribute" ? "Accept/Reject" : "Measured"}</span>
+      <span>${formatNumber(row.mean)}</span>
+      <span>${formatNumber(row.stdDev)}</span>
+      <span>${formatNumber(row.cp)}</span>
+      <span>${formatNumber(row.cpk)}</span>
+      <span>${formatNumber(row.pp)}</span>
+      <span>${formatNumber(row.ppk)}</span>
+      <span>${formatNumber(row.pk)}</span>
+      <span>${row.count}${row.outOfSpecExcludedCount ? ` / ${row.outOfSpecExcludedCount} excluded` : ""}</span>`;
+    container.appendChild(item);
+  });
+}
+
+function renderReviewMeasurements(rows) {
+  const container = $("jobReviewMeasurements");
+  if (!rows.length) {
+    container.className = "data-table empty";
+    container.textContent = "No measurements for this job.";
+    return;
+  }
+
+  container.className = "data-table review-measurement-table";
+  container.innerHTML = `
+    <div class="data-row header">
+      <span>Time</span><span>Phase</span><span>Variable</span><span>Value</span><span>Machine</span><span>Operation</span><span>User</span>
+    </div>`;
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "data-row";
+    item.innerHTML = `
+      <span>${formatDateTime(row.timestamp)}</span>
+      <span>${row.inspectionPhase}</span>
+      <span>${row.characteristicName}</span>
+      <span>${formatNumber(row.value)}</span>
+      <span>${row.resourceId}</span>
+      <span>${row.processCode} ${row.operationSeq}</span>
+      <span>${row.operatorUserId}</span>`;
+    container.appendChild(item);
+  });
+}
+
 async function loadJobSummary(event) {
   event?.preventDefault();
   const jobNums = parseJobNums();
@@ -933,7 +1033,7 @@ function renderJobSummary(rows) {
   container.className = "data-table job-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Job</span><span>Variable</span><span>COA Stat</span><span>COA Value</span><span>Mean</span><span>COA Count</span><span>Excluded</span><span>Status</span>
+      <span>Job</span><span>Variable</span><span>COA Stat</span><span>COA Value</span><span>Mean</span><span>Std Dev</span><span>Cpk</span><span>Ppk</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
@@ -944,9 +1044,9 @@ function renderJobSummary(rows) {
       <span>${coaStatisticLabel(row.coaStatisticType)}</span>
       <span>${formatNumber(row.coaValue)}</span>
       <span>${formatNumber(row.mean)}</span>
-      <span>${row.count}</span>
-      <span>${row.outOfSpecExcludedCount || 0}</span>
-      <span>${row.status}${row.isRequiredForCoa ? " / COA" : ""}</span>`;
+      <span>${formatNumber(row.stdDev)}</span>
+      <span>${formatNumber(row.cpk)}</span>
+      <span>${formatNumber(row.ppk)}</span>`;
     container.appendChild(item);
   });
 }
@@ -1328,9 +1428,9 @@ function newClientRecordId() {
 
 function loadCsvTemplate() {
   $("csvImportText").value = [
-    "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
-    "P200,Example part,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,5,Quantity,10000,Pieces,WesternElectric,true,Mean",
-    "P200,Example part,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,5,Quantity,10000,Pieces,NelsonRules,true,StandardDeviation"
+    "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,InspectionPhase,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
+    "P200,Example part,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,Startup,5,Event,1,StartOfJob,WesternElectric,true,Mean",
+    "P200,Example part,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,In Process,5,Quantity,10000,Pieces,NelsonRules,true,StandardDeviation"
   ].join("\n");
 }
 
@@ -1420,7 +1520,14 @@ $("globalAlertRuleSet").addEventListener("change", updateRuleDescription);
 $("globalRuleForm").addEventListener("submit", saveGlobalRule);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
-$("partReviewFilter").addEventListener("change", renderPartReview);
+$("partReviewFilter").addEventListener("change", loadReview);
+$("reviewLoadButton").addEventListener("click", loadReview);
+$("reviewJobNum").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    loadReview();
+  }
+});
 $("jobSummaryForm").addEventListener("submit", loadJobSummary);
 $("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
 setStatus($("syncStatus"), navigator.onLine ? "Online" : "Offline", navigator.onLine ? "ok" : "warn");

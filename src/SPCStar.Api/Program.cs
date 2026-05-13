@@ -33,6 +33,7 @@ builder.Services.AddSingleton<SetupManagementService>();
 builder.Services.AddSingleton<OfflineSyncService>();
 builder.Services.AddSingleton<AuthSessionService>();
 builder.Services.AddSingleton<WorkContextService>();
+builder.Services.AddSingleton<JobReviewService>();
 
 var app = builder.Build();
 
@@ -228,6 +229,7 @@ app.MapGet("/work-context", (
     int operationSeq,
     string resourceId,
     string characteristicName,
+    string? inspectionPhase,
     WorkContextService service) =>
 {
     return Results.Ok(service.Build(new WorkContextRequest(
@@ -237,7 +239,8 @@ app.MapGet("/work-context", (
         operationSeq,
         resourceId,
         characteristicName,
-        DateTimeOffset.UtcNow)));
+        DateTimeOffset.UtcNow,
+        inspectionPhase ?? "In Process")));
 });
 
 app.MapPost("/charts/data", (ChartDataRequest request, ChartDataService service) =>
@@ -290,6 +293,14 @@ app.MapGet("/qa/job-variable-means.csv", (string jobNums, bool? requiredOnly, Qa
     var result = service.ExportJobVariableMeansCsv(SplitCsv(jobNums), requiredOnly ?? true);
     return result.Succeeded
         ? Results.Text(result.Value!, "text/csv")
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
+app.MapGet("/review/job", (string partNum, string jobNum, JobReviewService service) =>
+{
+    var result = service.Build(partNum, jobNum);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 });
 

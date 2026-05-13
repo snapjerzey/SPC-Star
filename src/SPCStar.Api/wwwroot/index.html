@@ -474,11 +474,30 @@
       <section class="panel">
         <div class="panel-heading horizontal">
           <div>
-            <h2>Parts & Variables</h2>
+            <h2>Review</h2>
           </div>
-          <select id="partReviewFilter" class="compact-select"></select>
+          <div class="review-filter-bar">
+            <select id="partReviewFilter" class="compact-select"></select>
+            <input id="reviewJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="Optional job number">
+            <button id="reviewLoadButton" type="button" class="secondary">Review Job</button>
+          </div>
         </div>
+        <p id="reviewMessage" class="message"></p>
         <div id="partReviewList" class="data-table empty">No setup loaded.</div>
+        <div id="jobReviewPanel" class="job-review-panel hidden">
+          <div class="panel-heading tight">
+            <h3>Job Summary</h3>
+          </div>
+          <div id="jobReviewSummary" class="data-table empty">No job selected.</div>
+          <div class="panel-heading tight">
+            <h3>Inspection History</h3>
+          </div>
+          <div id="jobReviewMeasurements" class="data-table empty">No measurements loaded.</div>
+          <div class="panel-heading tight">
+            <h3>Notes & Lock History</h3>
+          </div>
+          <div id="jobReviewHistory" class="job-note-list empty">No job history loaded.</div>
+        </div>
       </section>
       </section>
 
@@ -508,6 +527,6 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260512-job-history"></script>
+  <script src="/app.js?v=20260513-review-capability"></script>
 </body>
 </html>

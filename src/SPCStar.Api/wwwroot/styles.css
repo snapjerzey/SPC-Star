@@ -634,7 +634,20 @@ textarea {
 
 .variable-list {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.attribute-list {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.inspection-section-heading {
+  color: #35516f;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .03em;
+  margin: 0;
+  text-transform: uppercase;
 }
 .variable-card {
   border: 1px solid #cddbea;
@@ -659,10 +672,10 @@ textarea {
 }
 .capability-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1.5fr) repeat(5, minmax(70px, .75fr)) minmax(58px, .45fr);
+  grid-template-columns: minmax(140px, 1.5fr) repeat(8, minmax(66px, .72fr)) minmax(58px, .45fr);
   gap: 8px;
   align-items: center;
-  min-width: 680px;
+  min-width: 960px;
   border-bottom: 1px solid #dbe6f1;
   padding: 7px 10px;
   font-size: 12px;

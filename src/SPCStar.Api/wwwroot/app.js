@@ -132,6 +132,8 @@ function normalizeInspectionPhase(value) {
   const phase = value.trim().toLowerCase();
   if (phase === "startup") return "Startup";
   if (phase === "set up" || phase === "setup") return "Setup";
+  if (phase === "spool start") return "Spool Start";
+  if (phase === "spool end") return "Spool End";
   return "In Process";
 }
 
@@ -172,14 +174,15 @@ function renderEmptyContext(message = "") {
   $("measurementForm").classList.add("hidden");
   $("trendPanel").classList.add("hidden");
   $("jobNotesPanel").classList.add("hidden");
-  $("materialDivider").classList.add("hidden");
-  $("materialSection").classList.add("hidden");
-  $("variableList").innerHTML = "";
+  $("tagsDivider").classList.add("hidden");
+  $("tagsSection").classList.add("hidden");
+  $("measurementVariableList").innerHTML = "";
+  $("attributeVariableList").innerHTML = "";
   $("meanSummary").innerHTML = "";
   $("trendCharacteristic").innerHTML = "";
   $("entryMessage").textContent = message;
   $("entryMessage").className = message ? "message error" : "message";
-  $("materialMessage").textContent = "";
+  $("tagMessage").textContent = "";
   $("jobNoteText").value = "";
   $("jobNoteMessage").textContent = "";
   renderJobNotes([]);
@@ -206,8 +209,8 @@ function renderContext() {
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
   $("jobNotesPanel").classList.remove("hidden");
-  $("materialDivider").classList.remove("hidden");
-  $("materialSection").classList.remove("hidden");
+  $("tagsDivider").classList.remove("hidden");
+  $("tagsSection").classList.remove("hidden");
   state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderVariables();
@@ -215,6 +218,7 @@ function renderContext() {
   renderTrendChoices();
   loadTrend();
   loadJobNotes(jobNum);
+  loadJobTags(jobNum);
 }
 
 function renderLock(activeLock) {
@@ -235,8 +239,12 @@ function renderLock(activeLock) {
 }
 
 function renderVariables() {
-  const list = $("variableList");
-  list.innerHTML = "";
+  const measurementList = $("measurementVariableList");
+  const attributeList = $("attributeVariableList");
+  measurementList.innerHTML = "";
+  attributeList.innerHTML = "";
+  measurementList.appendChild(sectionHeading("Measurements"));
+  attributeList.appendChild(sectionHeading("Attributes"));
   state.selectedPlans.forEach((plan, index) => {
     const context = state.contexts[index];
     const card = document.createElement("section");
@@ -279,9 +287,21 @@ function renderVariables() {
               <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0000">`}
           </label>`).join("")}
       </div>`;
-    list.appendChild(card);
+    (isAttribute ? attributeList : measurementList).appendChild(card);
   });
+  if (!attributeList.querySelector(".variable-card")) {
+    attributeList.classList.add("hidden");
+  } else {
+    attributeList.classList.remove("hidden");
+  }
   wireMeasurementDeviceInputs();
+}
+
+function sectionHeading(text) {
+  const heading = document.createElement("h3");
+  heading.className = "inspection-section-heading";
+  heading.textContent = text;
+  return heading;
 }
 
 function renderMeanSummary() {
@@ -296,7 +316,10 @@ function renderMeanSummary() {
   summary.innerHTML = `
     <div class="capability-row capability-header">
       <span>Variable</span>
+      <span>Min</span>
+      <span>Max</span>
       <span>Mean</span>
+      <span>Std Dev</span>
       <span>Cp</span>
       <span>Cpk</span>
       <span>Pp</span>
@@ -314,6 +337,8 @@ function renderMeanSummary() {
       const accepted = points.filter((point) => Number(point.value) === 1).length;
       item.innerHTML = `
         <span>${plan.characteristicName}</span>
+        <span class="muted-cell">-</span>
+        <span class="muted-cell">-</span>
         <span>${accepted}/${points.length || 0}</span>
         <span class="muted-cell">Accept/Reject</span>
         <span class="muted-cell">-</span>
@@ -323,10 +348,14 @@ function renderMeanSummary() {
       summary.appendChild(item);
       return;
     }
+    const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
     const capability = state.contexts[index]?.capability || {};
     item.innerHTML = `
       <span>${plan.characteristicName}</span>
+      <span>${formatNumber(values.length ? Math.min(...values) : null)}</span>
+      <span>${formatNumber(values.length ? Math.max(...values) : null)}</span>
       <span>${formatNumber(mean)}</span>
+      <span>${formatNumber(standardDeviation(values))}</span>
       <span>${capabilityBadge(capability.cp)}</span>
       <span>${capabilityBadge(capability.cpk)}</span>
       <span>${capabilityBadge(capability.pp)}</span>
@@ -338,6 +367,13 @@ function renderMeanSummary() {
 
 function capabilityBadge(value) {
   return `<span class="capability-chip ${capabilityClass(value)}">${formatNumber(value)}</span>`;
+}
+
+function standardDeviation(values) {
+  if (values.length < 2) return null;
+  const mean = values.reduce((total, value) => total + value, 0) / values.length;
+  const variance = values.reduce((total, value) => total + ((value - mean) ** 2), 0) / (values.length - 1);
+  return Math.sqrt(variance);
 }
 
 function capabilityClass(value) {
@@ -661,41 +697,62 @@ function drawLimitLine(ctx, scaleY, value, label, color, width, padding) {
   ctx.fillText(label, width - padding.right - 28, y - 4);
 }
 
-async function saveMaterialChange(event) {
+async function loadJobTags(jobNum) {
+  document.querySelectorAll(".job-tag-input").forEach((input) => {
+    input.value = "";
+  });
+
+  if (!jobNum) return;
+
+  try {
+    const tags = await api(`/jobs/${encodeURIComponent(jobNum)}/tags`);
+    tags.forEach((tag) => {
+      const input = [...document.querySelectorAll(".job-tag-input")]
+        .find((field) => field.dataset.tagName.toLowerCase() === tag.tagName.toLowerCase());
+      if (input) {
+        input.value = tag.tagValue || "";
+      }
+    });
+    $("tagMessage").textContent = tags.length ? `Loaded ${tags.length} job tag${tags.length === 1 ? "" : "s"}.` : "";
+    $("tagMessage").className = "message";
+  } catch (error) {
+    $("tagMessage").textContent = readableError(error);
+    $("tagMessage").className = "message error";
+  }
+}
+
+async function saveJobTags(event) {
   event.preventDefault();
   const { jobNum, resourceId, set } = selectedValues();
   if (!jobNum || !resourceId || !set) {
-    $("materialMessage").textContent = "Start work before saving a material event.";
-    $("materialMessage").className = "message error";
+    $("tagMessage").textContent = "Start work before saving tags.";
+    $("tagMessage").className = "message error";
     return;
   }
 
+  const tags = {};
+  document.querySelectorAll(".job-tag-input").forEach((input) => {
+    tags[input.dataset.tagName] = input.value.trim();
+  });
+
   try {
-    await api("/material-changes", {
+    await api(`/jobs/${encodeURIComponent(jobNum)}/tags`, {
       method: "POST",
       body: JSON.stringify({
         jobNum,
         partNum: set.partNum,
-        materialPartNum: $("materialPartNum").value.trim(),
-        oldLotNum: "",
-        newLotNum: $("newLotNum").value.trim(),
-        quantityLoaded: null,
         resourceId,
         operatorUserId: state.user.userName,
-        timestamp: new Date().toISOString(),
-        reason: $("materialReason").value,
-        deviceId: "browser-dev",
-        clientRecordId: newClientRecordId(),
-        submittedAt: new Date().toISOString()
+        tags,
+        updatedAt: new Date().toISOString()
       })
     });
-    $("newLotNum").value = "";
-    $("materialMessage").textContent = "Material event saved.";
-    $("materialMessage").className = "message ok";
+    $("tagMessage").textContent = "Tags saved.";
+    $("tagMessage").className = "message ok";
     await loadJobNotes(jobNum);
   } catch (error) {
-    $("materialMessage").textContent = readableError(error);
-    $("materialMessage").className = "message error";
+    $("tagMessage").textContent = readableError(error);
+    $("tagMessage").className = "message error";
   }
 }
 
@@ -1085,6 +1142,8 @@ function renderReviewMeasurements(rows) {
           <option value="Startup" ${row.inspectionPhase === "Startup" ? "selected" : ""}>Startup</option>
           <option value="Setup" ${row.inspectionPhase === "Setup" ? "selected" : ""}>Setup</option>
           <option value="In Process" ${row.inspectionPhase === "In Process" ? "selected" : ""}>In Process</option>
+          <option value="Spool Start" ${row.inspectionPhase === "Spool Start" ? "selected" : ""}>Spool Start</option>
+          <option value="Spool End" ${row.inspectionPhase === "Spool End" ? "selected" : ""}>Spool End</option>
         </select>
       </span>
       <span>${row.characteristicName}</span>
@@ -1600,7 +1659,7 @@ $("partNum").addEventListener("input", clearWorkContext);
 $("resourceId").addEventListener("change", clearWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
-$("materialForm").addEventListener("submit", saveMaterialChange);
+$("jobTagsForm").addEventListener("submit", saveJobTags);
 $("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
 $("overrideUserName").addEventListener("input", () => {

@@ -50,6 +50,16 @@ public sealed class FileBackedSpcRepositoryTests
                 NoteText = "Checked material lot and restarted.",
                 Timestamp = DateTimeOffset.Parse("2026-05-05T12:15:00Z")
             });
+            repository.JobTags.Add(new JobTag
+            {
+                JobNum = "J100",
+                PartNum = "P100",
+                ResourceId = "PRESS1",
+                TagName = "Wire Shipment",
+                TagValue = "WIRE-1",
+                OperatorUserId = "operator1",
+                UpdatedAt = DateTimeOffset.Parse("2026-05-05T12:20:00Z")
+            });
 
             repository.SaveChanges();
 
@@ -62,6 +72,7 @@ public sealed class FileBackedSpcRepositoryTests
             Assert.Contains(reloaded.Measurements, measurement => measurement.Value == 5.1m);
             Assert.Contains(reloaded.MaterialChanges, change => change.NewLotNum == "LOT-1");
             Assert.Contains(reloaded.JobNotes, note => note.NoteText == "Checked material lot and restarted.");
+            Assert.Contains(reloaded.JobTags, tag => tag.TagName == "Wire Shipment" && tag.TagValue == "WIRE-1");
         }
         finally
         {

@@ -553,7 +553,7 @@ public sealed class InspectionMeasurementService(
         Required(entry.OperatorUserId, nameof(entry.OperatorUserId), errors);
         if (!IsValidInspectionPhase(entry.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, or In Process.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Spool Start, or Spool End.");
         }
 
         if (entry.OperationSeq <= 0)
@@ -588,6 +588,16 @@ public sealed class InspectionMeasurementService(
         if (phase.Equals("Startup", StringComparison.OrdinalIgnoreCase))
         {
             return "Startup";
+        }
+
+        if (phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Spool Start";
+        }
+
+        if (phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Spool End";
         }
 
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
@@ -627,6 +637,8 @@ public sealed class InspectionMeasurementService(
             value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
     }
 }

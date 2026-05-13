@@ -174,6 +174,16 @@ public sealed class JobReviewService(
             return "Startup";
         }
 
+        if (phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Spool Start";
+        }
+
+        if (phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Spool End";
+        }
+
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
             ? "Setup"

@@ -62,6 +62,27 @@ Content-Type: application/json
 ### List job notes
 GET {{baseUrl}}/jobs/J100/notes
 
+### Save persistent job tags
+POST {{baseUrl}}/jobs/J100/tags
+Content-Type: application/json
+
+{
+  "partNum": "P100",
+  "resourceId": "PRESS1",
+  "operatorUserId": "operator1",
+  "tags": {
+    "Wire Shipment": "WIRE-123",
+    "Coil Number": "COIL-55",
+    "Spool Number": "SPOOL-8",
+    "Box Serial": "BOX-1001",
+    "Material Lot": "LOT2"
+  },
+  "updatedAt": "2026-05-01T12:18:00Z"
+}
+
+### List job tags
+GET {{baseUrl}}/jobs/J100/tags
+
 ### Add job note
 POST {{baseUrl}}/jobs/J100/notes
 Content-Type: application/json

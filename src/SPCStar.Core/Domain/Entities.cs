@@ -97,6 +97,18 @@ public sealed class JobNote
     public DateTimeOffset Timestamp { get; set; }
 }
 
+public sealed class JobTag
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string JobNum { get; set; }
+    public required string PartNum { get; set; }
+    public required string ResourceId { get; set; }
+    public required string TagName { get; set; }
+    public required string TagValue { get; set; }
+    public required string OperatorUserId { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public sealed class ResourceMachine
 {
     public Guid Id { get; init; } = Guid.NewGuid();

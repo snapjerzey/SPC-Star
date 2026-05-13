@@ -12,10 +12,11 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Manual setup screens for parts, operations, measured variables, accept/reject variables, sample size, frequency, and COA-required variables.
 - User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
-- Job, machine, part, and inspection phase selection before entry.
-- Multi-variable measurement entry with sample-size based input rows.
-- Accept/Reject inspection support.
-- Live row-based mean and capability summary for every active measured variable.
+- Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, Spool Start, and Spool End.
+- Persistent job tags for context such as wire shipment, coil, spool, box/serial, polisher, material part, and material lot.
+- Multi-variable measurement entry with measured variables separated from accept/reject attribute checks.
+- Accept/Reject inspection support for comparator/template checks.
+- Live row-based min, max, mean, standard deviation, Cp, Cpk, Pp, and Ppk summary for every active measured variable.
 - Cp, Cpk, Pp, and Ppk calculations with shared red/yellow/green visual status cues.
 - Trend chart rendering with chart type selection.
 - Drift detection rule selection with a global default and part-level override.
@@ -81,6 +82,8 @@ Initial endpoints include:
 - `GET /sync/setup-snapshot`
 - `POST /inspections/measurements`
 - `POST /material-changes`
+- `GET /jobs/{jobNum}/tags`
+- `POST /jobs/{jobNum}/tags`
 - `GET /jobs/{jobNum}/notes`
 - `GET /jobs/{jobNum}/history`
 - `POST /jobs/{jobNum}/notes`

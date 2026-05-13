@@ -25,6 +25,7 @@ builder.Services.AddSingleton<QaSummaryExportService>();
 builder.Services.AddSingleton<MaterialChangeLogService>();
 builder.Services.AddSingleton<JobNoteService>();
 builder.Services.AddSingleton<JobHistoryService>();
+builder.Services.AddSingleton<JobTagService>();
 builder.Services.AddSingleton<InspectionFrequencyService>();
 builder.Services.AddSingleton<ChartDataService>();
 builder.Services.AddSingleton<HistoryExportService>();
@@ -190,6 +191,24 @@ app.MapGet("/jobs/{jobNum}/notes", (string jobNum, JobNoteService service) =>
 app.MapGet("/jobs/{jobNum}/history", (string jobNum, JobHistoryService service) =>
 {
     return Results.Ok(service.GetForJob(jobNum));
+});
+
+app.MapGet("/jobs/{jobNum}/tags", (string jobNum, JobTagService service) =>
+{
+    return Results.Ok(service.GetForJob(jobNum));
+});
+
+app.MapPost("/jobs/{jobNum}/tags", (string jobNum, SaveJobTagsRequest request, JobTagService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.Save(request with { JobNum = jobNum });
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
 });
 
 app.MapPost("/jobs/{jobNum}/notes", (string jobNum, JobNoteEntry request, JobNoteService service, IRepositoryPersistence persistence) =>

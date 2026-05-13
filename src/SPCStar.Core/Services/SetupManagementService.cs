@@ -372,7 +372,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.AlertRuleSet, nameof(request.AlertRuleSet), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, or In Process.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Spool Start, or Spool End.");
         }
 
         if (request.OperationSeq <= 0) errors.Add("OperationSeq must be greater than zero.");
@@ -410,6 +410,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
             value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -424,6 +426,16 @@ public sealed class SetupManagementService(ISpcRepository repository)
         if (phase.Equals("Startup", StringComparison.OrdinalIgnoreCase))
         {
             return "Startup";
+        }
+
+        if (phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Spool Start";
+        }
+
+        if (phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Spool End";
         }
 
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||

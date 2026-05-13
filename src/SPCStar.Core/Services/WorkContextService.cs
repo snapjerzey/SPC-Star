@@ -29,7 +29,15 @@ public sealed record WorkContextDto(
     decimal? UpperControlLimit,
     InspectionFrequencyStatus FrequencyStatus,
     ActiveLockDto? ActiveLock,
+    WorkCapabilityDto Capability,
     IReadOnlyList<ChartPoint> RecentMeasurements);
+
+public sealed record WorkCapabilityDto(
+    decimal? Cp,
+    decimal? Cpk,
+    decimal? Pp,
+    decimal? Ppk,
+    int Count);
 
 public sealed class WorkContextService(
     ISpcRepository repository,
@@ -92,7 +100,49 @@ public sealed class WorkContextService(
             controlLimits?.Ucl ?? chart.UpperControlLimit,
             frequency,
             activeLock,
+            BuildCapability(request, plan),
             chart.Points.TakeLast(10).ToArray());
+    }
+
+    private WorkCapabilityDto BuildCapability(WorkContextRequest request, InspectionPlanSetupDto? plan)
+    {
+        if (plan is null || plan.CharacteristicType == CharacteristicType.Attribute)
+        {
+            return new WorkCapabilityDto(null, null, null, null, 0);
+        }
+
+        var values = repository.Measurements
+            .Where(measurement =>
+                measurement.JobNum.Equals(request.JobNum, StringComparison.OrdinalIgnoreCase) &&
+                measurement.PartNum.Equals(request.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                measurement.ResourceId.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+                measurement.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase) &&
+                measurement.InspectionPhase.Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase) &&
+                measurement.Value >= plan.Lsl &&
+                measurement.Value <= plan.Usl)
+            .Select(measurement => measurement.Value)
+            .ToArray();
+        var stdDev = StandardDeviation(values);
+        if (!stdDev.HasValue || stdDev.Value <= 0 || values.Length < 2)
+        {
+            return new WorkCapabilityDto(null, null, null, null, values.Length);
+        }
+
+        var mean = values.Average();
+        var cp = (plan.Usl - plan.Lsl) / (6 * stdDev.Value);
+        var cpk = Math.Min((mean - plan.Lsl) / (3 * stdDev.Value), (plan.Usl - mean) / (3 * stdDev.Value));
+        return new WorkCapabilityDto(cp, cpk, cp, cpk, values.Length);
+    }
+
+    private static decimal? StandardDeviation(IReadOnlyCollection<decimal> values)
+    {
+        if (values.Count < 2)
+        {
+            return null;
+        }
+
+        var mean = values.Average();
+        return (decimal)Math.Sqrt(values.Select(value => Math.Pow((double)(value - mean), 2)).Sum() / (values.Count - 1));
     }
 
     private static string NormalizeInspectionPhase(string? value)

@@ -554,6 +554,14 @@ textarea {
 .setup-row:last-child { border-bottom: 0; }
 .setup-row strong { display: block; }
 .setup-row span { color: var(--muted); font-size: 13px; }
+.row-actions {
+  display: flex;
+  gap: 8px;
+}
+.danger-button {
+  border-color: #fecaca;
+  color: #b42318;
+}
 .data-table {
   display: grid;
   gap: 0;
@@ -572,8 +580,8 @@ textarea {
   grid-template-columns: .9fr 1.2fr .8fr .9fr .9fr .8fr .8fr .8fr;
 }
 .review-summary-table .data-row {
-  grid-template-columns: .8fr 1.1fr .8fr .8fr .8fr .8fr .8fr .8fr .8fr .8fr .8fr;
-  min-width: 1120px;
+  grid-template-columns: .8fr 1.2fr .8fr .8fr .8fr .8fr .8fr .8fr .8fr .8fr;
+  min-width: 980px;
 }
 .review-measurement-table .data-row {
   grid-template-columns: 1fr .85fr 1.1fr .75fr .75fr .8fr .8fr auto;
@@ -644,6 +652,37 @@ textarea {
   display: block;
   font-size: 22px;
   margin: 2px 0;
+}
+.capability-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(52px, 1fr));
+  gap: 5px;
+  margin-top: 8px;
+}
+.capability-chip {
+  border-radius: 999px;
+  display: inline-flex;
+  justify-content: center;
+  min-width: 52px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 850;
+}
+.capability-good {
+  background: #dcfae6;
+  color: #067647;
+}
+.capability-warn {
+  background: #fef0c7;
+  color: #b54708;
+}
+.capability-bad {
+  background: #fee4e2;
+  color: #b42318;
+}
+.capability-neutral {
+  background: #eef2f6;
+  color: #475467;
 }
 .variable-title {
   display: flex;

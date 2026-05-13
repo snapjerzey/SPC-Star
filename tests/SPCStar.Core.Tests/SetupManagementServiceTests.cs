@@ -22,6 +22,33 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void DeleteUser_RemovesUser()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        var service = new SetupManagementService(repository);
+        Assert.True(service.UpsertUser(new UpsertUserRequest("inspector2", "secret", [RoleNames.Operator])).Succeeded);
+
+        var result = service.DeleteUser("inspector2");
+
+        Assert.True(result.Succeeded);
+        Assert.DoesNotContain(repository.Users, user => user.UserName == "inspector2");
+    }
+
+    [Fact]
+    public void DeleteUser_KeepsAtLeastOneAdminOrGod()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        var service = new SetupManagementService(repository);
+        Assert.True(service.DeleteUser("admin1").Succeeded);
+
+        var result = service.DeleteUser("god1");
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
     public void UpdateSettings_SavesGlobalAlertRuleSet()
     {
         var repository = new InMemorySpcRepository();

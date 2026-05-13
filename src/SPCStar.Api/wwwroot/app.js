@@ -23,6 +23,9 @@ async function api(path, options = {}) {
     const text = await response.text();
     throw new Error(text || `${response.status} ${response.statusText}`);
   }
+  if (response.status === 204) {
+    return null;
+  }
   return response.json();
 }
 
@@ -300,9 +303,35 @@ function renderMeanSummary() {
     item.innerHTML = `
       <span>${plan.characteristicName}</span>
       <strong>${formatNumber(mean)}</strong>
-      <small>${points.length} pt${points.length === 1 ? "" : "s"}</small>`;
+      <small>${points.length} pt${points.length === 1 ? "" : "s"}</small>
+      ${capabilityStrip(state.contexts[index]?.capability)}`;
     summary.appendChild(item);
   });
+}
+
+function capabilityStrip(capability = {}) {
+  return `
+    <div class="capability-strip">
+      ${capabilityChip("Cp", capability.cp)}
+      ${capabilityChip("Cpk", capability.cpk)}
+      ${capabilityChip("Pp", capability.pp)}
+      ${capabilityChip("Ppk", capability.ppk)}
+    </div>`;
+}
+
+function capabilityChip(label, value) {
+  return `<span class="capability-chip ${capabilityClass(value)}">${label} ${formatNumber(value)}</span>`;
+}
+
+function capabilityBadge(value) {
+  return `<span class="capability-chip ${capabilityClass(value)}">${formatNumber(value)}</span>`;
+}
+
+function capabilityClass(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "capability-neutral";
+  if (Number(value) >= 1.33) return "capability-good";
+  if (Number(value) >= 1.0) return "capability-warn";
+  return "capability-bad";
 }
 
 function formatFrequency(plan) {
@@ -595,7 +624,7 @@ async function saveMaterialChange(event) {
         materialPartNum: $("materialPartNum").value.trim(),
         oldLotNum: "",
         newLotNum: $("newLotNum").value.trim(),
-        quantityLoaded: optionalNumber("quantityLoaded"),
+        quantityLoaded: null,
         resourceId,
         operatorUserId: state.user.userName,
         timestamp: new Date().toISOString(),
@@ -606,7 +635,6 @@ async function saveMaterialChange(event) {
       })
     });
     $("newLotNum").value = "";
-    $("quantityLoaded").value = "";
     $("materialMessage").textContent = "Material event saved.";
     $("materialMessage").className = "message ok";
     await loadJobNotes(jobNum);
@@ -858,8 +886,9 @@ function renderPartReviewControls() {
 async function loadReview() {
   const partNum = $("partReviewFilter").value;
   const jobNum = $("reviewJobNum").value.trim();
-  await renderPartReview();
   if (!jobNum) {
+    $("partReviewList").classList.remove("hidden");
+    await renderPartReview();
     $("jobReviewPanel").classList.add("hidden");
     $("reviewMessage").textContent = "";
     $("reviewMessage").className = "message";
@@ -874,6 +903,7 @@ async function loadReview() {
   }
 
   try {
+    $("partReviewList").classList.add("hidden");
     const review = await api(`/review/job?partNum=${encodeURIComponent(partNum)}&jobNum=${encodeURIComponent(jobNum)}`);
     renderJobReview(review);
     $("reviewMessage").textContent = `${jobNum} review loaded.`;
@@ -933,7 +963,7 @@ function renderReviewSummary(rows, container, emptyMessage) {
   container.className = "data-table review-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Job</span><span>Variable</span><span>Type</span><span>Mean</span><span>Std Dev</span><span>Cp</span><span>Cpk</span><span>Pp</span><span>Ppk</span><span>Pk</span><span>Count</span>
+      <span>Scope</span><span>Variable</span><span>Type</span><span>Mean</span><span>Std Dev</span><span>Cp</span><span>Cpk</span><span>Pp</span><span>Ppk</span><span>Count</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
@@ -944,11 +974,10 @@ function renderReviewSummary(rows, container, emptyMessage) {
       <span>${row.characteristicType === "Attribute" ? "Accept/Reject" : "Measured"}</span>
       <span>${formatNumber(row.mean)}</span>
       <span>${formatNumber(row.stdDev)}</span>
-      <span>${formatNumber(row.cp)}</span>
-      <span>${formatNumber(row.cpk)}</span>
-      <span>${formatNumber(row.pp)}</span>
-      <span>${formatNumber(row.ppk)}</span>
-      <span>${formatNumber(row.pk)}</span>
+      <span>${capabilityBadge(row.cp)}</span>
+      <span>${capabilityBadge(row.cpk)}</span>
+      <span>${capabilityBadge(row.pp)}</span>
+      <span>${capabilityBadge(row.ppk)}</span>
       <span>${row.count}${row.outOfSpecExcludedCount ? ` / ${row.outOfSpecExcludedCount} excluded` : ""}</span>`;
     container.appendChild(item);
   });
@@ -1058,8 +1087,8 @@ function renderJobSummary(rows) {
       <span>${formatNumber(row.coaValue)}</span>
       <span>${formatNumber(row.mean)}</span>
       <span>${formatNumber(row.stdDev)}</span>
-      <span>${formatNumber(row.cpk)}</span>
-      <span>${formatNumber(row.ppk)}</span>`;
+      <span>${capabilityBadge(row.cpk)}</span>
+      <span>${capabilityBadge(row.ppk)}</span>`;
     container.appendChild(item);
   });
 }
@@ -1107,14 +1136,30 @@ function renderUsers() {
         <strong>${user.userName}</strong>
         <span>${user.roles.join(", ")}</span>
       </div>
-      <button type="button" class="secondary compact-button">Edit</button>`;
-    row.querySelector("button").addEventListener("click", () => {
+      <div class="row-actions">
+        <button type="button" class="secondary compact-button user-edit-button">Edit</button>
+        <button type="button" class="secondary compact-button danger-button user-delete-button">Delete</button>
+      </div>`;
+    row.querySelector(".user-edit-button").addEventListener("click", () => {
       $("setupUserName").value = user.userName;
       $("setupPassword").value = "";
       $("setupRole").value = user.roles[0] || state.roles[0] || "";
     });
+    row.querySelector(".user-delete-button").addEventListener("click", () => deleteUser(user.userName));
     list.appendChild(row);
   });
+}
+
+async function deleteUser(userName) {
+  try {
+    await api(`/setup/users/${encodeURIComponent(userName)}`, { method: "DELETE" });
+    $("userSetupMessage").textContent = `${userName} deleted.`;
+    $("userSetupMessage").className = "message ok";
+    await loadSetupAdmin();
+  } catch (error) {
+    $("userSetupMessage").textContent = readableError(error);
+    $("userSetupMessage").className = "message error";
+  }
 }
 
 async function saveUser(event) {

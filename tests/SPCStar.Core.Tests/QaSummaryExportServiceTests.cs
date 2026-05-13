@@ -66,7 +66,6 @@ public sealed class QaSummaryExportServiceTests
         Assert.Equal(0.1m, decimal.Round(row.StdDev!.Value, 5));
         Assert.Equal(1.66667m, decimal.Round(row.Cpk!.Value, 5));
         Assert.Equal(row.Cpk, row.Ppk);
-        Assert.Equal(row.Cpk, row.Pk);
     }
 
 

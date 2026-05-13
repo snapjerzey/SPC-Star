@@ -46,7 +46,6 @@ public sealed record JobVariableMeanRow(
     decimal? Cpk,
     decimal? Pp,
     decimal? Ppk,
-    decimal? Pk,
     int Count,
     int OutOfSpecExcludedCount,
     string Status);
@@ -204,7 +203,6 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             "Cpk",
             "Pp",
             "Ppk",
-            "Pk",
             "Count",
             "OutOfSpecExcluded",
             "Status"
@@ -230,7 +228,6 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["Cpk"] = row.Cpk?.ToString("0.#####") ?? string.Empty,
             ["Pp"] = row.Pp?.ToString("0.#####") ?? string.Empty,
             ["Ppk"] = row.Ppk?.ToString("0.#####") ?? string.Empty,
-            ["Pk"] = row.Pk?.ToString("0.#####") ?? string.Empty,
             ["Count"] = row.Count.ToString(),
             ["OutOfSpecExcluded"] = row.OutOfSpecExcludedCount.ToString(),
             ["Status"] = row.Status
@@ -284,7 +281,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         var coaValue = CoaValue(coaStatisticType, mean, stdDev);
         var capability = characteristicType == CharacteristicType.Variable
             ? Capability(acceptedValues, lsl, usl)
-            : new CapabilityMetrics(null, null, null, null, null, null);
+            : new CapabilityMetrics(null, null, null, null, null);
 
         return new JobVariableMeanRow(
             jobNum,
@@ -306,7 +303,6 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             capability.Cpk,
             capability.Pp,
             capability.Ppk,
-            capability.Pk,
             acceptedValues.Length,
             outOfSpecCount,
             values.Count == 0 ? "NoData" : acceptedValues.Length == 0 ? PassFailStatus.Fail.ToString() : PassFailStatus.Pass.ToString());
@@ -422,14 +418,14 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         };
     }
 
-    private sealed record CapabilityMetrics(decimal? StdDev, decimal? Cp, decimal? Cpk, decimal? Pp, decimal? Ppk, decimal? Pk);
+    private sealed record CapabilityMetrics(decimal? StdDev, decimal? Cp, decimal? Cpk, decimal? Pp, decimal? Ppk);
 
     private static CapabilityMetrics Capability(IReadOnlyCollection<decimal> values, decimal lsl, decimal usl)
     {
         var stdDev = StandardDeviation(values);
         if (!stdDev.HasValue || stdDev.Value <= 0 || values.Count < 2)
         {
-            return new CapabilityMetrics(stdDev, null, null, null, null, null);
+            return new CapabilityMetrics(stdDev, null, null, null, null);
         }
 
         var mean = values.Average();
@@ -438,6 +434,6 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         var upperCapability = (usl - mean) / (3 * stdDev.Value);
         var cpk = Math.Min(lowerCapability, upperCapability);
 
-        return new CapabilityMetrics(stdDev, cp, cpk, cp, cpk, cpk);
+        return new CapabilityMetrics(stdDev, cp, cpk, cp, cpk);
     }
 }

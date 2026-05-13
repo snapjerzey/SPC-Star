@@ -115,6 +115,19 @@ app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService s
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapDelete("/setup/users/{userName}", (string userName, SetupManagementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.DeleteUser(userName);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.NoContent()
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/setup/inspection-plans", (UpsertInspectionSetupRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
     var result = service.UpsertInspectionSetup(request);

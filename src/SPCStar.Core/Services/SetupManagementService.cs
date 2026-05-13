@@ -103,6 +103,39 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return ServiceResult<UserSetupDto>.Ok(GetUsers().First(item => item.UserName.Equals(user.UserName, StringComparison.OrdinalIgnoreCase)));
     }
 
+    public ServiceResult DeleteUser(string userName)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return ServiceResult.Fail("UserName is required.");
+        }
+
+        var user = repository.Users.FirstOrDefault(item => item.UserName.Equals(userName.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (user is null)
+        {
+            return ServiceResult.Fail("User was not found.");
+        }
+
+        var hasAdminRole = user.Roles.Any(role =>
+            role.Name.Equals(RoleNames.Admin, StringComparison.OrdinalIgnoreCase) ||
+            role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase));
+        if (hasAdminRole)
+        {
+            var remainingAdmins = repository.Users.Count(item =>
+                item.Id != user.Id &&
+                item.Roles.Any(role =>
+                    role.Name.Equals(RoleNames.Admin, StringComparison.OrdinalIgnoreCase) ||
+                    role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)));
+            if (remainingAdmins == 0)
+            {
+                return ServiceResult.Fail("At least one Admin or GOD user must remain.");
+            }
+        }
+
+        repository.Users.Remove(user);
+        return ServiceResult.Ok();
+    }
+
     public ServiceResult<InspectionPlanSetupDto> UpsertInspectionSetup(UpsertInspectionSetupRequest request)
     {
         var errors = ValidateInspectionSetup(request);

@@ -756,10 +756,17 @@ textarea {
 }
 .sample-inputs label {
   min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px;
 }
 .sample-inputs input,
 .sample-inputs select {
   width: 100%;
+}
+.sample-inputs label.device-input-active {
+  border-color: #0f63b8;
+  background: #eef6ff;
 }
 .limit-grid {
   display: grid;

@@ -276,11 +276,12 @@ function renderVariables() {
                 <option value="1">Accept</option>
                 <option value="0">Reject</option>
               </select>` : `
-              <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="number" step="0.0001" inputmode="decimal" placeholder="0.0000">`}
+              <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0000">`}
           </label>`).join("")}
       </div>`;
     list.appendChild(card);
   });
+  wireMeasurementDeviceInputs();
 }
 
 function renderMeanSummary() {
@@ -417,6 +418,48 @@ async function submitMeasurement(event) {
 
 function inputHasValue(input) {
   return input.value.trim().length > 0;
+}
+
+function wireMeasurementDeviceInputs() {
+  document.querySelectorAll(".measurement-input").forEach((input) => {
+    input.addEventListener("focus", () => input.closest("label")?.classList.add("device-input-active"));
+    input.addEventListener("blur", () => {
+      input.closest("label")?.classList.remove("device-input-active");
+      normalizeMeasurementInput(input);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      normalizeMeasurementInput(input);
+      focusNextMeasurementInput(input);
+    });
+    input.addEventListener("paste", () => {
+      window.setTimeout(() => normalizeMeasurementInput(input), 0);
+    });
+  });
+}
+
+function normalizeMeasurementInput(input) {
+  if (input.dataset.entryType !== "Variable") return;
+  const parsed = parseDeviceMeasurement(input.value);
+  if (parsed !== null) {
+    input.value = parsed;
+  }
+}
+
+function parseDeviceMeasurement(rawValue) {
+  const match = String(rawValue).replace(",", ".").match(/[-+]?\d*\.?\d+/);
+  return match ? match[0] : null;
+}
+
+function focusNextMeasurementInput(currentInput) {
+  const inputs = [...document.querySelectorAll(".measurement-input")];
+  const index = inputs.indexOf(currentInput);
+  const next = inputs[index + 1];
+  if (next) {
+    next.focus();
+    next.select?.();
+  }
 }
 
 function showEntryMessage(message, kind) {

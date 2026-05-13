@@ -32,7 +32,8 @@ public sealed record UpsertInspectionSetupRequest(
     string? OriginalProcessCode = null,
     int? OriginalOperationSeq = null,
     string? OriginalCharacteristicName = null,
-    CoaStatisticType CoaStatisticType = CoaStatisticType.Mean);
+    CoaStatisticType CoaStatisticType = CoaStatisticType.Mean,
+    string InspectionPhase = "In Process");
 
 public sealed class SetupManagementService(ISpcRepository repository)
 {
@@ -197,13 +198,23 @@ public sealed class SetupManagementService(ISpcRepository repository)
             spec.Usl = request.Usl;
         }
 
-        var plan = repository.InspectionPlans.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
+        var inspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
+        var plan = repository.InspectionPlans.FirstOrDefault(item =>
+            item.CharacteristicId == characteristic.Id &&
+            item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase));
         if (plan is null)
         {
-            plan = new InspectionPlan { CharacteristicId = characteristic.Id, SampleSize = request.SampleSize, AlertRuleSet = request.AlertRuleSet.Trim() };
+            plan = new InspectionPlan
+            {
+                CharacteristicId = characteristic.Id,
+                InspectionPhase = inspectionPhase,
+                SampleSize = request.SampleSize,
+                AlertRuleSet = request.AlertRuleSet.Trim()
+            };
             repository.InspectionPlans.Add(plan);
         }
 
+        plan.InspectionPhase = inspectionPhase;
         plan.SampleSize = request.SampleSize;
         plan.AlertRuleSet = request.AlertRuleSet.Trim();
         plan.Frequency = new InspectionFrequency { Type = request.FrequencyType, Value = request.FrequencyValue, Unit = request.FrequencyUnit };
@@ -219,6 +230,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return ServiceResult<InspectionPlanSetupDto>.Ok(new SetupQueryService(repository).GetInspectionPlans(request.PartNum).First(item =>
             item.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
             item.OperationSeq == request.OperationSeq &&
+            item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
             item.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -325,6 +337,10 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.CharacteristicName, nameof(request.CharacteristicName), errors);
         Required(request.UnitOfMeasure, nameof(request.UnitOfMeasure), errors);
         Required(request.AlertRuleSet, nameof(request.AlertRuleSet), errors);
+        if (!IsValidInspectionPhase(request.InspectionPhase))
+        {
+            errors.Add("InspectionPhase must be Startup, Setup, or In Process.");
+        }
 
         if (request.OperationSeq <= 0) errors.Add("OperationSeq must be greater than zero.");
         if (request.CharacteristicType == CharacteristicType.Variable && request.Lsl >= request.Usl) errors.Add("LSL must be less than USL.");
@@ -353,6 +369,34 @@ public sealed class SetupManagementService(ISpcRepository repository)
             FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart,
             _ => false
         };
+    }
+
+    private static bool IsValidInspectionPhase(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ||
+            value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeInspectionPhase(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "In Process";
+        }
+
+        var phase = value.Trim();
+        if (phase.Equals("Startup", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Startup";
+        }
+
+        return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
+            ? "Setup"
+            : "In Process";
     }
 
     private static bool IsSupportedRuleSet(string ruleSet)

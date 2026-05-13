@@ -10,7 +10,8 @@ public sealed record ChartDataRequest(
     string? ResourceId,
     string? CharacteristicName,
     DateTimeOffset? From,
-    DateTimeOffset? To);
+    DateTimeOffset? To,
+    string? InspectionPhase = null);
 
 public sealed record ChartPoint(
     Guid MeasurementId,
@@ -39,6 +40,7 @@ public sealed class ChartDataService(ISpcRepository repository)
                 Matches(request.PartNum, measurement.PartNum) &&
                 Matches(request.ResourceId, measurement.ResourceId) &&
                 Matches(request.CharacteristicName, measurement.CharacteristicName) &&
+                Matches(request.InspectionPhase, measurement.InspectionPhase) &&
                 (!request.From.HasValue || measurement.Timestamp >= request.From.Value) &&
                 (!request.To.HasValue || measurement.Timestamp <= request.To.Value))
             .OrderBy(measurement => measurement.Timestamp)

@@ -10,7 +10,8 @@ public sealed record WorkContextRequest(
     int OperationSeq,
     string ResourceId,
     string CharacteristicName,
-    DateTimeOffset Now);
+    DateTimeOffset Now,
+    string InspectionPhase = "In Process");
 
 public sealed record ActiveLockDto(
     Guid AlertId,
@@ -43,6 +44,7 @@ public sealed class WorkContextService(
             .FirstOrDefault(item =>
                 item.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
                 item.OperationSeq == request.OperationSeq &&
+                item.InspectionPhase.Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase) &&
                 item.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase));
         var chart = chartDataService.Build(new ChartDataRequest(
             ChartType.IndividualsMovingRange,
@@ -51,7 +53,8 @@ public sealed class WorkContextService(
             request.ResourceId,
             request.CharacteristicName,
             null,
-            null));
+            null,
+            NormalizeInspectionPhase(request.InspectionPhase)));
         var controlLimits = repository.ControlLimits.FirstOrDefault(limit =>
             limit.PartNum.Equals(request.PartNum, StringComparison.OrdinalIgnoreCase) &&
             limit.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
@@ -67,7 +70,8 @@ public sealed class WorkContextService(
             request.Now,
             null,
             null,
-            []));
+            [],
+            NormalizeInspectionPhase(request.InspectionPhase)));
         var activeLock = repository.Alerts
             .Where(alert =>
                 alert.Status == AlertStatus.Active &&
@@ -89,5 +93,24 @@ public sealed class WorkContextService(
             frequency,
             activeLock,
             chart.Points.TakeLast(10).ToArray());
+    }
+
+    private static string NormalizeInspectionPhase(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "In Process";
+        }
+
+        var phase = value.Trim();
+        if (phase.Equals("Startup", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Startup";
+        }
+
+        return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
+            ? "Setup"
+            : "In Process";
     }
 }

@@ -34,7 +34,7 @@ function setStatus(element, text, kind = "neutral") {
 function inspectionSets() {
   const map = new Map();
   state.snapshot.inspectionPlans.forEach((plan) => {
-    const key = `${plan.partNum}|${plan.processCode}|${plan.operationSeq}`;
+    const key = `${plan.partNum}|${plan.processCode}|${plan.operationSeq}|${plan.inspectionPhase || "In Process"}`;
     if (!map.has(key)) {
       map.set(key, {
         key,
@@ -43,6 +43,7 @@ function inspectionSets() {
         processCode: plan.processCode,
         processDescription: plan.processDescription,
         operationSeq: plan.operationSeq,
+        inspectionPhase: plan.inspectionPhase || "In Process",
         plans: []
       });
     }
@@ -53,7 +54,10 @@ function inspectionSets() {
 
 function selectedInspectionSet() {
   const partNum = $("partNum").value.trim();
-  return inspectionSets().find((set) => set.partNum.toLowerCase() === partNum.toLowerCase()) || null;
+  const phase = $("inspectionPhase").value;
+  return inspectionSets().find((set) =>
+    set.partNum.toLowerCase() === partNum.toLowerCase() &&
+    normalizeInspectionPhase(set.inspectionPhase) === normalizeInspectionPhase(phase)) || null;
 }
 
 function selectedValues() {
@@ -120,6 +124,14 @@ function fillDatalist(list, rows, valueOf) {
   });
 }
 
+function normalizeInspectionPhase(value) {
+  if (!value) return "In Process";
+  const phase = value.trim().toLowerCase();
+  if (phase === "startup") return "Startup";
+  if (phase === "set up" || phase === "setup") return "Setup";
+  return "In Process";
+}
+
 function updatePartFromJob() {
   const job = state.snapshot.jobs.find((item) => item.jobNum.toLowerCase() === $("jobNum").value.trim().toLowerCase());
   if (job && state.snapshot.parts.some((part) => part.partNum.toLowerCase() === job.partNum.toLowerCase())) {
@@ -141,7 +153,7 @@ async function loadContext(event) {
   if (!set) {
     state.selectedPlans = [];
     state.contexts = [];
-    renderEmptyContext(`Part ${partNum} is not set up in SPC Star. Ask Admin or GOD to add the part before inspecting.`);
+    renderEmptyContext(`Part ${partNum} is not set up for ${$("inspectionPhase").value} inspections. Ask Admin or GOD to add that inspection phase before inspecting.`);
     return;
   }
 
@@ -178,7 +190,8 @@ async function loadVariableContext(jobNum, resourceId, plan) {
     processCode: plan.processCode,
     operationSeq: String(plan.operationSeq),
     resourceId,
-    characteristicName: plan.characteristicName
+    characteristicName: plan.characteristicName,
+    inspectionPhase: plan.inspectionPhase || $("inspectionPhase").value
   });
   return api(`/work-context?${params}`);
 }
@@ -186,7 +199,7 @@ async function loadVariableContext(jobNum, resourceId, plan) {
 function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
   $("contextTitle").textContent = `${jobNum} ${resourceId}`;
-  $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq}`;
+  $("contextSubtitle").textContent = `${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.inspectionPhase}`;
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
   $("jobNotesPanel").classList.remove("hidden");
@@ -233,6 +246,7 @@ function renderVariables() {
           <span>${isAttribute ? "Accept / Reject" : plan.unitOfMeasure}</span>
         </div>
         <div class="sample-meta">
+          <span>${plan.inspectionPhase || "In Process"}</span>
           <span>Sample size ${plan.sampleSize}</span>
           <span>${formatFrequency(plan)}</span>
         </div>
@@ -342,7 +356,7 @@ async function submitMeasurement(event) {
           operationSeq: entry.plan.operationSeq,
           resourceId,
           characteristicName: entry.plan.characteristicName,
-          inspectionPhase: $("inspectionPhase").value,
+          inspectionPhase: entry.plan.inspectionPhase || $("inspectionPhase").value,
           value: entry.value,
           timestamp: new Date().toISOString(),
           operatorUserId: state.user.userName,
@@ -396,7 +410,8 @@ async function loadTrend() {
       resourceId,
       characteristicName: state.trendCharacteristic,
       from: null,
-      to: null
+      to: null,
+      inspectionPhase: set.inspectionPhase || $("inspectionPhase").value
     })
   });
 
@@ -840,7 +855,7 @@ function renderPartReviewControls() {
 function renderSetupEditChoices() {
   const sets = [{ key: "", label: "Create new part setup" }, ...inspectionSets().map((set) => ({
     key: set.key,
-    label: `${set.partNum} / ${set.processCode}`
+    label: `${set.partNum} / ${set.processCode} / ${set.inspectionPhase}`
   }))];
   fillSelect($("setupEditPartSelect"), sets, (set) => set.key, (set) => set.label);
 }
@@ -858,6 +873,7 @@ function renderPartReview() {
     .sort((a, b) =>
       a.partNum.localeCompare(b.partNum) ||
       a.operationSeq - b.operationSeq ||
+      (a.inspectionPhase || "").localeCompare(b.inspectionPhase || "") ||
       a.characteristicName.localeCompare(b.characteristicName));
 
   if (!plans.length) {
@@ -869,7 +885,7 @@ function renderPartReview() {
   container.className = "data-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Part</span><span>Operation</span><span>Variable</span><span>Spec</span><span>COA</span>
+      <span>Part</span><span>Operation</span><span>Phase</span><span>Variable</span><span>Spec</span><span>COA</span>
     </div>`;
   plans.forEach((plan) => {
     const row = document.createElement("div");
@@ -877,6 +893,7 @@ function renderPartReview() {
     row.innerHTML = `
       <span>${plan.partNum}</span>
       <span>${plan.processCode} ${plan.operationSeq}</span>
+      <span>${plan.inspectionPhase || "In Process"}</span>
       <span>${plan.characteristicName} (${plan.characteristicType === "Attribute" ? "Accept/Reject" : plan.unitOfMeasure})</span>
       <span>${plan.characteristicType === "Attribute" ? "Attribute check" : `${formatNumber(plan.lsl)} / ${formatNumber(plan.nominal)} / ${formatNumber(plan.usl)}`}</span>
       <span>${plan.isRequiredForCoa ? "Required" : "No"}</span>`;
@@ -1115,6 +1132,7 @@ function loadSelectedPartSetup() {
     operationSeq: set.operationSeq || 10
   };
   const firstPlan = set.plans[0];
+  $("setupInspectionPhase").value = firstPlan.inspectionPhase || "In Process";
   $("setupSampleSize").value = String(firstPlan.sampleSize || 1);
   $("setupFrequencyType").value = firstPlan.frequencyType;
   updateSetupFrequencyUnits();
@@ -1139,6 +1157,7 @@ function clearInspectionSetupForm() {
   $("setupFrequencyValue").value = "10000";
   $("setupFrequencyUnit").value = "Pieces";
   $("setupAlertRuleSet").value = "GlobalDefault";
+  $("setupInspectionPhase").value = "In Process";
   updateRuleDescription();
   updateSetupFrequencyUnits();
   $("setupVariableRows").innerHTML = "";
@@ -1232,6 +1251,7 @@ async function saveInspectionSetup(event) {
       processCode: $("setupProcessCode").value.trim(),
       processDescription: $("setupProcessCode").value.trim(),
       operationSeq: Number($("setupOperationSeq").value),
+      inspectionPhase: $("setupInspectionPhase").value,
       sampleSize: Number($("setupSampleSize").value),
       frequencyType: $("setupFrequencyType").value,
       frequencyValue: Number($("setupFrequencyValue").value),

@@ -15,7 +15,8 @@ public sealed record InspectionFrequencyCheckRequest(
     DateTimeOffset Now,
     int? CurrentQuantity,
     int? QuantityAtLastInspection,
-    IReadOnlyCollection<InspectionFrequencyEvent> Events);
+    IReadOnlyCollection<InspectionFrequencyEvent> Events,
+    string InspectionPhase = "In Process");
 
 public sealed record InspectionFrequencyStatus(
     InspectionDueStatus Status,
@@ -41,6 +42,7 @@ public sealed class InspectionFrequencyService(ISpcRepository repository)
                 measurement.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
                 measurement.OperationSeq == request.OperationSeq &&
                 measurement.ResourceId.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+                measurement.InspectionPhase.Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase) &&
                 measurement.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(measurement => measurement.Timestamp)
             .Select(measurement => (DateTimeOffset?)measurement.Timestamp)
@@ -79,7 +81,28 @@ public sealed class InspectionFrequencyService(ISpcRepository repository)
 
         return characteristic is null
             ? null
-            : repository.InspectionPlans.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
+            : repository.InspectionPlans.FirstOrDefault(item =>
+                item.CharacteristicId == characteristic.Id &&
+                item.InspectionPhase.Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizeInspectionPhase(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "In Process";
+        }
+
+        var phase = value.Trim();
+        if (phase.Equals("Startup", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Startup";
+        }
+
+        return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
+            ? "Setup"
+            : "In Process";
     }
 
     private static InspectionFrequencyStatus EvaluateTime(

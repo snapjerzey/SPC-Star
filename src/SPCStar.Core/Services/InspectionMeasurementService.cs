@@ -553,7 +553,7 @@ public sealed class InspectionMeasurementService(
         Required(entry.OperatorUserId, nameof(entry.OperatorUserId), errors);
         if (!IsValidInspectionPhase(entry.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Set Up or In Process.");
+            errors.Add("InspectionPhase must be Startup, Setup, or In Process.");
         }
 
         if (entry.OperationSeq <= 0)
@@ -579,8 +579,20 @@ public sealed class InspectionMeasurementService(
 
     private static string NormalizeInspectionPhase(string? value)
     {
-        return value?.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) == true
-            ? "Set Up"
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "In Process";
+        }
+
+        var phase = value.Trim();
+        if (phase.Equals("Startup", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Startup";
+        }
+
+        return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
+            ? "Setup"
             : "In Process";
     }
 
@@ -612,7 +624,9 @@ public sealed class InspectionMeasurementService(
     private static bool IsValidInspectionPhase(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ||
+            value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -129,13 +129,18 @@ public sealed class SetupImportService(ISpcRepository repository)
                 errors.Add($"Row {rowNumber}: IsRequiredForCOA must be true or false.");
             }
 
+            if (!IsValidInspectionPhase(row.GetValueOrDefault("InspectionPhase")))
+            {
+                errors.Add($"Row {rowNumber}: InspectionPhase must be Startup, Setup, or In Process.");
+            }
+
             if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("COAStatistic")) &&
                 !Enum.TryParse<CoaStatisticType>(row.GetValueOrDefault("COAStatistic"), true, out _))
             {
                 errors.Add($"Row {rowNumber}: Invalid COAStatistic.");
             }
 
-            var duplicateKey = $"{row.GetValueOrDefault("PartNum")}|{row.GetValueOrDefault("ProcessCode")}|{operationSeq}|{row.GetValueOrDefault("CharacteristicName")}";
+            var duplicateKey = $"{row.GetValueOrDefault("PartNum")}|{row.GetValueOrDefault("ProcessCode")}|{operationSeq}|{row.GetValueOrDefault("CharacteristicName")}|{NormalizeInspectionPhase(row.GetValueOrDefault("InspectionPhase"))}";
             if (!seenCharacteristics.Add(duplicateKey))
             {
                 errors.Add($"Row {rowNumber}: Duplicate characteristic in import.");
@@ -168,6 +173,15 @@ public sealed class SetupImportService(ISpcRepository repository)
             string.Equals(ruleSet, "Custom", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsValidInspectionPhase(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ||
+            value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
     }
 
     private void Upsert(Dictionary<string, string> row)
@@ -247,13 +261,17 @@ public sealed class SetupImportService(ISpcRepository repository)
             spec.Usl = decimal.Parse(row["USL"]);
         }
 
-        var plan = repository.InspectionPlans.FirstOrDefault(p => p.CharacteristicId == characteristic.Id);
+        var inspectionPhase = NormalizeInspectionPhase(row.GetValueOrDefault("InspectionPhase"));
+        var plan = repository.InspectionPlans.FirstOrDefault(p =>
+            p.CharacteristicId == characteristic.Id &&
+            p.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase));
         if (plan is null)
         {
             repository.InspectionPlans.Add(BuildPlan(characteristic.Id, row));
         }
         else
         {
+            plan.InspectionPhase = inspectionPhase;
             plan.SampleSize = int.Parse(row["SampleSize"]);
             plan.AlertRuleSet = row["AlertRuleSet"];
             plan.Frequency = BuildFrequency(row);
@@ -267,6 +285,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         return new InspectionPlan
         {
             CharacteristicId = characteristicId,
+            InspectionPhase = NormalizeInspectionPhase(row.GetValueOrDefault("InspectionPhase")),
             SampleSize = int.Parse(row["SampleSize"]),
             AlertRuleSet = row["AlertRuleSet"],
             Frequency = BuildFrequency(row)
@@ -288,6 +307,25 @@ public sealed class SetupImportService(ISpcRepository repository)
         return row.TryGetValue("COAStatistic", out var value) && !string.IsNullOrWhiteSpace(value)
             ? Enum.Parse<CoaStatisticType>(value, true)
             : CoaStatisticType.Mean;
+    }
+
+    private static string NormalizeInspectionPhase(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "In Process";
+        }
+
+        var phase = value.Trim();
+        if (phase.Equals("Startup", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Startup";
+        }
+
+        return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
+            ? "Setup"
+            : "In Process";
     }
 
     private void UpsertControlLimit(Dictionary<string, string> row, Part part, ManufacturingProcess process, int operationSeq)

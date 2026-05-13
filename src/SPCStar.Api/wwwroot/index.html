@@ -74,7 +74,8 @@
           <label>
             Inspection Phase
             <select id="inspectionPhase" required>
-              <option value="Set Up">Set Up</option>
+              <option value="Startup">Startup</option>
+              <option value="Setup">Setup</option>
               <option value="In Process" selected>In Process</option>
             </select>
           </label>
@@ -263,6 +264,14 @@
                 </div>
               </div>
               <div class="setup-fields timing-fields">
+                <label>
+                  Inspection phase
+                  <select id="setupInspectionPhase">
+                    <option value="Startup">Startup</option>
+                    <option value="Setup">Setup</option>
+                    <option value="In Process" selected>In Process</option>
+                  </select>
+                </label>
                 <label>Sample size<input id="setupSampleSize" type="number" min="1" value="5" required></label>
                 <label>
                   Frequency type

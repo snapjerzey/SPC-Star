@@ -183,10 +183,10 @@ public sealed class InspectionAndOverrideTests
         var repository = RepositoryWithSecurityAndLimits();
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
-        var result = service.EnterMeasurement(Entry(10m) with { InspectionPhase = "Set Up" });
+        var result = service.EnterMeasurement(Entry(10m) with { InspectionPhase = "Startup" });
 
         Assert.True(result.Succeeded);
-        Assert.Equal("Set Up", repository.Measurements.Single().InspectionPhase);
+        Assert.Equal("Startup", repository.Measurements.Single().InspectionPhase);
     }
 
     [Fact]

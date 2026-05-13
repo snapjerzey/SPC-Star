@@ -87,6 +87,48 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertInspectionSetup_AllowsDifferentRequirementsByInspectionPhase()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        Assert.True(service.UpsertInspectionSetup(Request(
+            processCode: "MOLD",
+            characteristicName: "Diameter",
+            inspectionPhase: "Startup")).Succeeded);
+        Assert.True(service.UpsertInspectionSetup(Request(
+            processCode: "MOLD",
+            characteristicName: "Diameter",
+            inspectionPhase: "Setup")).Succeeded);
+        Assert.True(service.UpsertInspectionSetup(Request(
+            processCode: "MOLD",
+            characteristicName: "Diameter",
+            inspectionPhase: "In Process")).Succeeded);
+
+        var plans = new SetupQueryService(repository).GetInspectionPlans("P200");
+
+        Assert.Equal(3, plans.Count);
+        Assert.Contains(plans, plan => plan.InspectionPhase == "Startup");
+        Assert.Contains(plans, plan => plan.InspectionPhase == "Setup");
+        Assert.Contains(plans, plan => plan.InspectionPhase == "In Process");
+    }
+
+    [Fact]
+    public void UpsertInspectionSetup_NormalizesSetUpToSetup()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpsertInspectionSetup(Request(
+            processCode: "MOLD",
+            characteristicName: "Diameter",
+            inspectionPhase: "Set Up"));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Setup", repository.InspectionPlans.Single().InspectionPhase);
+    }
+
+    [Fact]
     public void UpsertInspectionSetup_RenamesExistingOperationWithoutCreatingDuplicate()
     {
         var repository = new InMemorySpcRepository();
@@ -131,7 +173,8 @@ public sealed class SetupManagementServiceTests
         string characteristicName,
         string? originalProcessCode = null,
         string? originalCharacteristicName = null,
-        CoaStatisticType coaStatisticType = CoaStatisticType.Mean)
+        CoaStatisticType coaStatisticType = CoaStatisticType.Mean,
+        string inspectionPhase = "In Process")
     {
         return new UpsertInspectionSetupRequest(
             "P200",
@@ -156,6 +199,7 @@ public sealed class SetupManagementServiceTests
             originalProcessCode,
             10,
             originalCharacteristicName,
-            coaStatisticType);
+            coaStatisticType,
+            inspectionPhase);
     }
 }

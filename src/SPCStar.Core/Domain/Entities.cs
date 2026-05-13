@@ -61,6 +61,7 @@ public sealed class InspectionPlan
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid CharacteristicId { get; set; }
+    public string InspectionPhase { get; set; } = "In Process";
     public int SampleSize { get; set; }
     public required string AlertRuleSet { get; set; }
     public InspectionFrequency Frequency { get; set; } = new();

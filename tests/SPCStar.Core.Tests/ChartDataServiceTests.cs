@@ -57,6 +57,22 @@ public sealed class ChartDataServiceTests
         Assert.Contains(RuleTriggered.OnePointBeyondControlLimit, result.Points.Last().RuleViolations);
     }
 
+    [Fact]
+    public void Build_FiltersByInspectionPhase()
+    {
+        var repository = RepositoryWithChartData();
+        var startupMeasurement = Measurement(9.9m, 4);
+        startupMeasurement.InspectionPhase = "Startup";
+        repository.Measurements.Add(startupMeasurement);
+
+        var result = new ChartDataService(repository)
+            .Build(new ChartDataRequest(ChartType.Run, "J100", "P100", "PRESS1", "Diameter", null, null, "In Process"));
+
+        Assert.Equal(3, result.Points.Count);
+        Assert.DoesNotContain(result.Points, point => point.Value == 9.9m);
+    }
+
+
     private static InMemorySpcRepository RepositoryWithChartData()
     {
         var repository = new InMemorySpcRepository();

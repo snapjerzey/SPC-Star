@@ -23,7 +23,7 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 - `SetupManagementService`: users, global settings, and manual part/operation/inspection setup.
 - `SetupQueryService`: tablet setup snapshot, part lookup, inspection plan lookup, and setup review data.
 - `AuthSessionService`: development login/session contract for role-aware UI flows.
-- `WorkContextService`: one-call inspection screen context for tablet entry.
+- `WorkContextService`: one-call inspection screen context for tablet entry, including live capability metrics.
 - `InspectionMeasurementService`: operator measurement entry, active lock enforcement, alert creation, inspection phase capture, and global/part-level drift rule resolution.
 - `WesternElectricRuleService`: Western Electric drift rules used directly and as part of Nelson-style detection.
 - `AlertOverrideService`: permission-based lock override and audit creation.
@@ -32,8 +32,13 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 - `InspectionFrequencyService`: time, quantity, and event frequency evaluation.
 - `ChartDataService`: chart-ready measurement points with moving range, limits, specs, and violations.
 - `QaSummaryExportService`: COA-style summary calculations and CSV export.
+- `JobReviewService`: part/job review data, editable inspection entries, and limit-status flags for review highlighting.
 - `HistoryExportService`: raw inspection, job history, drift alert, and material change CSV exports.
 - `OfflineSyncService`: first batch upload contract for retry-safe tablet/offline writes.
+
+## Inspection UI behavior
+
+The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. Devices that require direct serial or HID communication should be added through a dedicated Web Serial/WebHID profile layer so the inspection workflow does not need to change.
 
 ## Next architecture step
 

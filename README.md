@@ -10,12 +10,13 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - SQLite-oriented schema and seed scripts.
 - CSV setup import with validation and upsert behavior.
 - Manual setup screens for parts, operations, measured variables, accept/reject variables, sample size, frequency, and COA-required variables.
-- User management screens for operators, line techs, QA, admins, and GOD access.
+- User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
 - Job, machine, part, and inspection phase selection before entry.
 - Multi-variable measurement entry with sample-size based input rows.
 - Accept/Reject inspection support.
-- Running mean summary for every active variable.
+- Live row-based mean and capability summary for every active measured variable.
+- Cp, Cpk, Pp, and Ppk calculations with shared red/yellow/green visual status cues.
 - Trend chart rendering with chart type selection.
 - Drift detection rule selection with a global default and part-level override.
 - Western Electric, Nelson-style trend, CUSUM, EWMA, moving average trend, linear trend/slope, custom default, spec-limit-only, and no-automatic-rule options.
@@ -23,8 +24,11 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Authorized override workflow with credential validation, cause/action notes, line tech/admin/QA/GOD support, and GOD-mode bypass reason validation.
 - Material lot change logging for job/resource traceability.
 - Timestamped job notes for operator handoff and issue history.
+- Review tab for part capability across all jobs, part/job job review, measurement history, notes, locks, material history, and editable inspection entries.
+- Review measurement highlighting: red for out-of-spec values and yellow for out-of-control values.
 - QA summary views and CSV export for one or more jobs.
 - Raw inspection, alert, material, and job history CSV exports.
+- USB keyboard-style measurement capture support for gauges/scales/calipers that enter values into focused fields, including value cleanup and Enter-to-next-field behavior.
 - Offline-oriented setup snapshot and retry-safe sync contracts.
 - Unit tests for the high-risk rules and calculations.
 - Dependency-free smoke tests that can run even when NuGet package restore is unavailable.
@@ -70,6 +74,7 @@ Initial endpoints include:
 - `GET /setup/settings`
 - `POST /setup/settings`
 - `POST /setup/users`
+- `DELETE /setup/users/{userName}`
 - `POST /setup/inspection-plans`
 - `GET /setup/parts`
 - `GET /setup/inspection-plans`
@@ -77,6 +82,7 @@ Initial endpoints include:
 - `POST /inspections/measurements`
 - `POST /material-changes`
 - `GET /jobs/{jobNum}/notes`
+- `GET /jobs/{jobNum}/history`
 - `POST /jobs/{jobNum}/notes`
 - `POST /alerts/{alertId}/override`
 - `POST /inspection-frequency/evaluate`
@@ -84,6 +90,13 @@ Initial endpoints include:
 - `POST /charts/data`
 - `POST /qa/summary`
 - `POST /qa/summary.csv`
+- `GET /qa/jobs/{jobNum}/variable-means`
+- `GET /qa/jobs/{jobNum}/variable-means.csv`
+- `GET /qa/job-variable-means`
+- `GET /qa/job-variable-means.csv`
+- `GET /review/part`
+- `GET /review/job`
+- `PATCH /review/measurements/{measurementId}`
 - `POST /exports/inspection-data.csv`
 - `GET /exports/jobs/{jobNum}/inspection-history.csv`
 - `POST /exports/drift-alerts.csv`
@@ -114,4 +127,5 @@ The API seeds demo security users and one sample inspection plan:
 - Full offline queue UI with conflict handling.
 - Custom drift-rule editor for admin-defined thresholds and warning behavior.
 - Box-level traceability once the required production count/source logic is defined.
+- Native Web Serial/WebHID device profiles for gauges that do not behave like keyboard input.
 - Broader reporting/search screens for historical job notes, machine issues, drift events, and material events.

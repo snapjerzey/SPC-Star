@@ -284,43 +284,53 @@ function renderVariables() {
 function renderMeanSummary() {
   const summary = $("meanSummary");
   summary.innerHTML = "";
+  if (!state.selectedPlans.length) {
+    summary.className = "mean-summary empty";
+    return;
+  }
+
+  summary.className = "mean-summary capability-table";
+  summary.innerHTML = `
+    <div class="capability-row capability-header">
+      <span>Variable</span>
+      <span>Mean</span>
+      <span>Cp</span>
+      <span>Cpk</span>
+      <span>Pp</span>
+      <span>Ppk</span>
+      <span>Points</span>
+    </div>`;
   state.selectedPlans.forEach((plan, index) => {
     const points = state.contexts[index]?.recentMeasurements || [];
     const mean = points.length
       ? points.reduce((total, point) => total + Number(point.value), 0) / points.length
       : null;
     const item = document.createElement("div");
-    item.className = "mean-item";
+    item.className = "capability-row";
     if (plan.characteristicType === "Attribute") {
       const accepted = points.filter((point) => Number(point.value) === 1).length;
       item.innerHTML = `
         <span>${plan.characteristicName}</span>
-        <strong>${accepted}/${points.length || 0}</strong>
-        <small>accepted</small>`;
+        <span>${accepted}/${points.length || 0}</span>
+        <span class="muted-cell">Accept/Reject</span>
+        <span class="muted-cell">-</span>
+        <span class="muted-cell">-</span>
+        <span class="muted-cell">-</span>
+        <span>${points.length}</span>`;
       summary.appendChild(item);
       return;
     }
+    const capability = state.contexts[index]?.capability || {};
     item.innerHTML = `
       <span>${plan.characteristicName}</span>
-      <strong>${formatNumber(mean)}</strong>
-      <small>${points.length} pt${points.length === 1 ? "" : "s"}</small>
-      ${capabilityStrip(state.contexts[index]?.capability)}`;
+      <span>${formatNumber(mean)}</span>
+      <span>${capabilityBadge(capability.cp)}</span>
+      <span>${capabilityBadge(capability.cpk)}</span>
+      <span>${capabilityBadge(capability.pp)}</span>
+      <span>${capabilityBadge(capability.ppk)}</span>
+      <span>${points.length}</span>`;
     summary.appendChild(item);
   });
-}
-
-function capabilityStrip(capability = {}) {
-  return `
-    <div class="capability-strip">
-      ${capabilityChip("Cp", capability.cp)}
-      ${capabilityChip("Cpk", capability.cpk)}
-      ${capabilityChip("Pp", capability.pp)}
-      ${capabilityChip("Ppk", capability.ppk)}
-    </div>`;
-}
-
-function capabilityChip(label, value) {
-  return `<span class="capability-chip ${capabilityClass(value)}">${label} ${formatNumber(value)}</span>`;
 }
 
 function capabilityBadge(value) {

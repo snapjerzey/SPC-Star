@@ -247,6 +247,7 @@ function renderLock(activeLock) {
     banner.classList.add("hidden");
     banner.textContent = "";
     panel.classList.add("hidden");
+    document.body.classList.remove("lock-active");
     $("overrideMessage").textContent = "";
     return;
   }
@@ -254,6 +255,7 @@ function renderLock(activeLock) {
   const lockText = `LOCKED: ${activeLock.characteristicName} - ${ruleLabel(activeLock.ruleTriggered)} at ${formatTime(activeLock.lockedAt)}${activeLock.detail ? `. ${activeLock.detail}` : ""}`;
   banner.textContent = lockText;
   panel.classList.remove("hidden");
+  document.body.classList.add("lock-active");
   panel.querySelector(".panel-heading p")?.remove();
   const detail = document.createElement("p");
   detail.textContent = lockText;
@@ -428,28 +430,37 @@ function formatFrequency(plan) {
 
 async function submitMeasurement(event) {
   event.preventDefault();
-  const inputs = [...document.querySelectorAll(".measurement-input")].filter((input) => !input.disabled);
-  const empty = inputs.find((input) => !inputHasValue(input));
-  if (empty) {
-    showEntryMessage(`Fill in ${sampleLabel(empty)} before submitting.`, "error");
-    empty.focus();
+  const activeInput = document.activeElement?.classList?.contains("measurement-input")
+    ? document.activeElement
+    : null;
+  if (activeInput) {
+    await submitSingleMeasurementAndAdvance(activeInput, false);
     return;
   }
-
-  try {
-    for (const input of inputs) {
-      await submitMeasurementInput(input, { reloadOnSuccess: false });
-    }
-    showEntryMessage(`${inputs.length} inspection value${inputs.length === 1 ? "" : "s"} submitted.`, "ok");
-    await loadContext();
-  } catch (error) {
-    showEntryMessage("Measurement rejected. " + readableError(error), "error");
-    await loadContext();
-  }
+  showEntryMessage("Measurements submit automatically when you leave each field.", "ok");
 }
 
 function inputHasValue(input) {
   return input.value.trim().length > 0;
+}
+
+async function submitSingleMeasurementAndAdvance(input, moveNext) {
+  normalizeMeasurementInput(input);
+  if (!inputHasValue(input)) {
+    showEntryMessage(`Fill in ${sampleLabel(input)} before moving on.`, "error");
+    input.focus();
+    return;
+  }
+
+  try {
+    const result = await submitMeasurementInput(input, { reloadOnSuccess: false });
+    if (moveNext && result !== "locked" && !state.activeLock) {
+      focusNextMeasurementInput(input);
+    }
+  } catch {
+    input.focus();
+    input.select?.();
+  }
 }
 
 function wireMeasurementDeviceInputs() {
@@ -457,23 +468,22 @@ function wireMeasurementDeviceInputs() {
     input.addEventListener("focus", () => input.closest("label")?.classList.add("device-input-active"));
     input.addEventListener("blur", async () => {
       input.closest("label")?.classList.remove("device-input-active");
-      normalizeMeasurementInput(input);
-      if (!inputHasValue(input)) {
-        showEntryMessage(`Fill in ${sampleLabel(input)} before moving on.`, "error");
+      if (input.dataset.tabSubmitting === "true" || input.disabled || input.dataset.submitted === "true") {
         return;
       }
-      await submitMeasurementInput(input).catch(() => {});
+      await submitSingleMeasurementAndAdvance(input, false);
     });
     input.addEventListener("change", async () => {
       if (input.dataset.entryType === "Attribute" && inputHasValue(input)) {
-        await submitMeasurementInput(input).catch(() => {});
+        await submitSingleMeasurementAndAdvance(input, false);
       }
     });
-    input.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
+    input.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter" && event.key !== "Tab") return;
       event.preventDefault();
-      normalizeMeasurementInput(input);
-      submitMeasurementInput(input).then(() => focusNextMeasurementInput(input)).catch(() => {});
+      input.dataset.tabSubmitting = "true";
+      await submitSingleMeasurementAndAdvance(input, true);
+      input.dataset.tabSubmitting = "false";
     });
     input.addEventListener("paste", () => {
       window.setTimeout(() => normalizeMeasurementInput(input), 0);
@@ -519,9 +529,15 @@ async function submitMeasurementInput(input, options = {}) {
     const planIndex = Number(input.dataset.planIndex);
     state.contexts[planIndex] = await loadVariableContext(jobNum, resourceId, plan);
     renderMeanSummary();
-    if (state.contexts[planIndex]?.activeLock || options.reloadOnSuccess !== false) {
+    if (state.contexts[planIndex]?.activeLock) {
+      state.activeLock = state.contexts[planIndex].activeLock;
+      await loadContext();
+      return "locked";
+    }
+    if (options.reloadOnSuccess === true) {
       await loadContext();
     }
+    return "submitted";
   } catch (error) {
     showEntryMessage("Measurement rejected. " + readableError(error), "error");
     await loadContext();
@@ -552,7 +568,7 @@ function parseDeviceMeasurement(rawValue) {
 function focusNextMeasurementInput(currentInput) {
   const inputs = [...document.querySelectorAll(".measurement-input")];
   const index = inputs.indexOf(currentInput);
-  const next = inputs[index + 1];
+  const next = inputs.slice(index + 1).find((input) => !input.disabled);
   if (next) {
     next.focus();
     next.select?.();

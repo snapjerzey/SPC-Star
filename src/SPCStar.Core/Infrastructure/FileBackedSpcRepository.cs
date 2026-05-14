@@ -166,7 +166,8 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         string UserName,
         string PasswordHash,
         string PasswordSalt,
-        List<string> RoleNames)
+        List<string> RoleNames,
+        List<string>? ProductGroups)
     {
         public static PersistedUser FromUser(User user)
         {
@@ -175,7 +176,8 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
                 user.UserName,
                 user.PasswordHash,
                 user.PasswordSalt,
-                user.Roles.Select(role => role.Name).ToList());
+                user.Roles.Select(role => role.Name).ToList(),
+                [.. user.ProductGroups]);
         }
 
         public User ToUser(IReadOnlyCollection<Role> roles)
@@ -194,6 +196,14 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
                 if (role is not null)
                 {
                     user.Roles.Add(role);
+                }
+            }
+
+            foreach (var group in ProductGroups ?? [])
+            {
+                if (!string.IsNullOrWhiteSpace(group) && !user.ProductGroups.Contains(group.Trim(), StringComparer.OrdinalIgnoreCase))
+                {
+                    user.ProductGroups.Add(group.Trim());
                 }
             }
 

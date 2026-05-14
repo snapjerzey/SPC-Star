@@ -5,11 +5,12 @@ using System.Text;
 
 namespace SPCStar.Core.Services;
 
-public sealed record PartSetupDto(string PartNum, string Description);
+public sealed record PartSetupDto(string PartNum, string Description, string ProductGroup);
 
 public sealed record InspectionPlanSetupDto(
     string PartNum,
     string PartDescription,
+    string ProductGroup,
     string ProcessCode,
     string ProcessDescription,
     int OperationSeq,
@@ -96,7 +97,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
     {
         return repository.Parts
             .OrderBy(part => part.PartNum)
-            .Select(part => new PartSetupDto(part.PartNum, part.Description))
+            .Select(part => new PartSetupDto(part.PartNum, part.Description, ProductGroup(part.ProductGroup)))
             .ToArray();
     }
 
@@ -114,6 +115,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
             select new InspectionPlanSetupDto(
                 part.PartNum,
                 part.Description,
+                ProductGroup(part.ProductGroup),
                 process.ProcessCode,
                 process.Description,
                 operation.OperationSeq,
@@ -225,6 +227,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 custom.WarningBehavior,
                 custom.Notes));
     }
+
+    private static string ProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
 
     private static string BuildSetupVersion(
         SettingsSetupDto settings,

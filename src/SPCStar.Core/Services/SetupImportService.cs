@@ -9,6 +9,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     [
         "PartNum",
         "PartDescription",
+        "ProductGroup",
         "ProcessCode",
         "ProcessDescription",
         "OperationSeq",
@@ -192,12 +193,13 @@ public sealed class SetupImportService(ISpcRepository repository)
         var part = repository.Parts.FirstOrDefault(p => p.PartNum.Equals(row["PartNum"], StringComparison.OrdinalIgnoreCase));
         if (part is null)
         {
-            part = new Part { PartNum = row["PartNum"], Description = row["PartDescription"] };
+            part = new Part { PartNum = row["PartNum"], Description = row["PartDescription"], ProductGroup = CleanProductGroup(row.GetValueOrDefault("ProductGroup")) };
             repository.Parts.Add(part);
         }
         else
         {
             part.Description = row["PartDescription"];
+            part.ProductGroup = CleanProductGroup(row.GetValueOrDefault("ProductGroup"));
         }
 
         var process = repository.Processes.FirstOrDefault(p => p.ProcessCode.Equals(row["ProcessCode"], StringComparison.OrdinalIgnoreCase));
@@ -384,6 +386,8 @@ public sealed class SetupImportService(ISpcRepository repository)
         value = parsed;
         return true;
     }
+
+    private static string CleanProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
 }
 
 

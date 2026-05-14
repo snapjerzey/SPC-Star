@@ -457,8 +457,8 @@ static DateTimeOffset Now(int minutes)
 static string ValidCsv(string description = "Widget", string lsl = "4.5", string usl = "5.5", string sampleSize = "1")
 {
     return string.Join(Environment.NewLine, [
-        "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
-        $"P100,{description},MOLD,Molding,10,Diameter,Variable,5.0,{lsl},{usl},mm,{sampleSize},Time,30,Minutes,WesternElectric,true",
+        "PartNum,PartDescription,ProductGroup,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
+        $"P100,{description},General,MOLD,Molding,10,Diameter,Variable,5.0,{lsl},{usl},mm,{sampleSize},Time,30,Minutes,WesternElectric,true",
         string.Empty
     ]);
 }

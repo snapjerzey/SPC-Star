@@ -41,9 +41,9 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Fail("No configured inspection characteristic was found for the submitted part/process/operation/characteristic.");
         }
 
-        if (!CanEnterInspections(entry.OperatorUserId))
+        if (!CanEnterInspections(entry.OperatorUserId, entry.PartNum))
         {
-            return ServiceResult<InspectionMeasurement>.Fail("User is not authorized to enter inspections.");
+            return ServiceResult<InspectionMeasurement>.Fail("User is not authorized to enter inspections for this product group.");
         }
 
         var activeLock = FindActiveLock(entry);
@@ -148,11 +148,26 @@ public sealed class InspectionMeasurementService(
             item.Name.Equals(entry.CharacteristicName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private bool CanEnterInspections(string userName)
+    private bool CanEnterInspections(string userName, string partNum)
     {
-        return repository.Users
-            .FirstOrDefault(user => user.UserName.Equals(userName.Trim(), StringComparison.OrdinalIgnoreCase))
-            ?.Roles.Any(role => role.Permissions.Contains(PermissionNames.CanEnterInspections)) == true;
+        var user = repository.Users.FirstOrDefault(user => user.UserName.Equals(userName.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (user?.Roles.Any(role => role.Permissions.Contains(PermissionNames.CanEnterInspections)) != true)
+        {
+            return false;
+        }
+
+        if (user.Roles.Any(role =>
+            role.Name.Equals(RoleNames.Admin, StringComparison.OrdinalIgnoreCase) ||
+            role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var productGroup = repository.Parts
+            .FirstOrDefault(part => part.PartNum.Equals(partNum.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?.ProductGroup;
+        productGroup = string.IsNullOrWhiteSpace(productGroup) ? "General" : productGroup.Trim();
+        return user.ProductGroups.Any(group => group.Equals(productGroup, StringComparison.OrdinalIgnoreCase));
     }
 
     private void CreateAlertsForViolations(InspectionMeasurement measurement, InspectionMeasurementEntry entry)

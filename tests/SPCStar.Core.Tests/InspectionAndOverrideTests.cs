@@ -204,6 +204,20 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_RejectsOperatorOutsideCertifiedProductGroup()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.Parts.Single(part => part.PartNum == "P100").ProductGroup = "Needles";
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(10m));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("product group", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(repository.Measurements);
+    }
+
+    [Fact]
     public void EnterMeasurement_CreatesLock_WhenAttributeIsRejected()
     {
         var repository = RepositoryWithSecurityAndLimits();

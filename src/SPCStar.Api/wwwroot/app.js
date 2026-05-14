@@ -43,6 +43,7 @@ function inspectionSets() {
         key,
         partNum: plan.partNum,
         partDescription: plan.partDescription,
+        productGroup: plan.productGroup || "General",
         processCode: plan.processCode,
         processDescription: plan.processDescription,
         operationSeq: plan.operationSeq,
@@ -98,6 +99,7 @@ async function loadSnapshot() {
   $("jobNum").value = "";
   fillSelect($("resourceId"), [{ resourceId: "", description: "Select machine" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
   fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
+  fillDatalist($("productGroupOptions"), productGroups(), (group) => group);
   $("partNum").value = "";
   if (canManageSetup()) {
     renderGlobalRuleSetting();
@@ -126,6 +128,10 @@ function fillDatalist(list, rows, valueOf) {
     option.value = valueOf(row);
     list.appendChild(option);
   });
+}
+
+function productGroups() {
+  return [...new Set((state.snapshot?.parts || []).map((part) => part.productGroup || "General"))].sort();
 }
 
 function normalizeInspectionPhase(value) {
@@ -1298,7 +1304,7 @@ async function loadReview() {
 function renderSetupEditChoices() {
   const sets = [{ key: "", label: "Create new part setup" }, ...inspectionSets().map((set) => ({
     key: set.key,
-    label: `${set.partNum} / ${set.processCode} / ${set.inspectionPhase}`
+    label: `${set.partNum} / ${set.productGroup || "General"} / ${set.processCode} / ${set.inspectionPhase}`
   }))];
   fillSelect($("setupEditPartSelect"), sets, (set) => set.key, (set) => set.label);
 }
@@ -1778,7 +1784,7 @@ function renderUsers() {
     row.innerHTML = `
       <div>
         <strong>${user.userName}</strong>
-        <span>${user.roles.join(", ")}</span>
+        <span>${user.roles.join(", ")} / ${user.productGroups?.length ? user.productGroups.join(", ") : "No product groups"}</span>
       </div>
       <div class="row-actions">
         <button type="button" class="secondary compact-button user-edit-button">Edit</button>
@@ -1788,6 +1794,7 @@ function renderUsers() {
       $("setupUserName").value = user.userName;
       $("setupPassword").value = "";
       $("setupRole").value = user.roles[0] || state.roles[0] || "";
+      $("setupUserProductGroups").value = (user.productGroups || []).join(", ");
     });
     row.querySelector(".user-delete-button").addEventListener("click", () => deleteUser(user.userName));
     list.appendChild(row);
@@ -1814,7 +1821,8 @@ async function saveUser(event) {
       body: JSON.stringify({
         userName: $("setupUserName").value.trim(),
         password: $("setupPassword").value,
-        roles: [$("setupRole").value]
+        roles: [$("setupRole").value],
+        productGroups: parseCommaList($("setupUserProductGroups").value)
       })
     });
     $("setupPassword").value = "";
@@ -1951,6 +1959,7 @@ function loadSelectedPartSetup() {
 
   $("setupPartNum").value = set.partNum;
   $("setupPartDescription").value = set.partDescription;
+  $("setupProductGroup").value = set.productGroup || "General";
   $("setupProcessCode").value = set.processCode;
   $("setupProcessDescription").value = set.processDescription || set.processCode;
   $("setupOperationSeq").value = String(set.operationSeq || 10);
@@ -1987,6 +1996,7 @@ function clearInspectionSetupForm() {
   $("setupOperationSeq").value = "10";
   $("setupProcessDescription").value = "";
   $("setupSampleSize").value = "5";
+  $("setupProductGroup").value = "General";
   $("setupFrequencyType").value = "Quantity";
   $("setupFrequencyValue").value = "10000";
   $("setupFrequencyUnit").value = "Pieces";
@@ -2177,6 +2187,7 @@ async function saveInspectionSetup(event) {
     const baseRequest = {
       partNum: $("setupPartNum").value.trim(),
       partDescription: $("setupPartDescription").value.trim(),
+      productGroup: $("setupProductGroup").value.trim(),
       processCode: $("setupProcessCode").value.trim(),
       processDescription: $("setupProcessCode").value.trim(),
       operationSeq: Number($("setupOperationSeq").value),
@@ -2271,10 +2282,17 @@ function newClientRecordId() {
 
 function loadCsvTemplate() {
   $("csvImportText").value = [
-    "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,InspectionPhase,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
-    "P200,Example part,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,Startup,5,Event,1,StartOfJob,WesternElectric,true,Mean",
-    "P200,Example part,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,In Process,5,Quantity,10000,Pieces,NelsonRules,true,StandardDeviation"
+    "PartNum,PartDescription,ProductGroup,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,InspectionPhase,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
+    "P200,Example part,General,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,Startup,5,Event,1,StartOfJob,WesternElectric,true,Mean",
+    "P200,Example part,General,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,In Process,5,Quantity,10000,Pieces,NelsonRules,true,StandardDeviation"
   ].join("\n");
+}
+
+function parseCommaList(value) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function readableError(error) {

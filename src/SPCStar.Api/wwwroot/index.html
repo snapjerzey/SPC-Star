@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260514-rule-detail-builder">
+  <link rel="stylesheet" href="/styles.css?v=20260514-product-groups">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -223,6 +223,8 @@
               <div class="setup-fields">
                 <label>Part number<input id="setupPartNum" required></label>
                 <label>Part description<input id="setupPartDescription" required></label>
+                <label>Product group<input id="setupProductGroup" list="productGroupOptions" required></label>
+                <datalist id="productGroupOptions"></datalist>
               </div>
             </div>
 
@@ -372,6 +374,10 @@
               <label>
                 Access level
                 <select id="setupRole"></select>
+              </label>
+              <label>
+                Product groups
+                <input id="setupUserProductGroups" list="productGroupOptions" autocomplete="off" placeholder="General, Needles">
               </label>
               <button type="submit">Save User</button>
             </form>
@@ -622,6 +628,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260514-rule-detail-builder"></script>
+  <script src="/app.js?v=20260514-product-groups"></script>
 </body>
 </html>

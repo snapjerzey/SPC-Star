@@ -3,15 +3,16 @@ using SPCStar.Core.Infrastructure;
 
 namespace SPCStar.Core.Services;
 
-public sealed record UserSetupDto(string UserName, IReadOnlyList<string> Roles, IReadOnlyList<string> Permissions);
+public sealed record UserSetupDto(string UserName, IReadOnlyList<string> Roles, IReadOnlyList<string> Permissions, IReadOnlyList<string> ProductGroups);
 
-public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles);
+public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string>? ProductGroups = null);
 
 public sealed record UpdateSettingsRequest(string GlobalAlertRuleSet, CustomDriftRuleSetupDto? CustomDriftRule = null);
 
 public sealed record UpsertInspectionSetupRequest(
     string PartNum,
     string PartDescription,
+    string ProductGroup,
     string ProcessCode,
     string ProcessDescription,
     int OperationSeq,
@@ -52,7 +53,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
             .Select(user => new UserSetupDto(
                 user.UserName,
                 user.Roles.Select(role => role.Name).OrderBy(role => role).ToArray(),
-                user.Roles.SelectMany(role => role.Permissions).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(permission => permission).ToArray()))
+                user.Roles.SelectMany(role => role.Permissions).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(permission => permission).ToArray(),
+                user.ProductGroups.OrderBy(group => group).ToArray()))
             .ToArray();
     }
 
@@ -176,6 +178,11 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
         user.Roles.Clear();
         user.Roles.AddRange(roles);
+        user.ProductGroups.Clear();
+        foreach (var group in CleanProductGroups(request.ProductGroups))
+        {
+            user.ProductGroups.Add(group);
+        }
         return ServiceResult<UserSetupDto>.Ok(GetUsers().First(item => item.UserName.Equals(user.UserName, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -223,12 +230,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase));
         if (part is null)
         {
-            part = new Part { PartNum = request.PartNum.Trim(), Description = request.PartDescription.Trim() };
+            part = new Part { PartNum = request.PartNum.Trim(), Description = request.PartDescription.Trim(), ProductGroup = CleanProductGroup(request.ProductGroup) };
             repository.Parts.Add(part);
         }
         else
         {
             part.Description = request.PartDescription.Trim();
+            part.ProductGroup = CleanProductGroup(request.ProductGroup);
         }
 
         var originalProcessCode = string.IsNullOrWhiteSpace(request.OriginalProcessCode)
@@ -485,6 +493,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var errors = new List<string>();
         Required(request.PartNum, nameof(request.PartNum), errors);
         Required(request.PartDescription, nameof(request.PartDescription), errors);
+        Required(request.ProductGroup, nameof(request.ProductGroup), errors);
         Required(request.ProcessCode, nameof(request.ProcessCode), errors);
         Required(request.ProcessDescription, nameof(request.ProcessDescription), errors);
         Required(request.CharacteristicName, nameof(request.CharacteristicName), errors);
@@ -599,6 +608,18 @@ public sealed class SetupManagementService(ISpcRepository repository)
         {
             errors.Add($"{name} is required.");
         }
+    }
+
+    private static string CleanProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
+
+    private static IReadOnlyList<string> CleanProductGroups(IReadOnlyList<string>? values)
+    {
+        return values?
+            .Select(CleanProductGroup)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value)
+            .ToArray() ?? [];
     }
 }
 

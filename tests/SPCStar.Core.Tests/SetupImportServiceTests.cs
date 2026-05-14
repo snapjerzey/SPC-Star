@@ -44,8 +44,8 @@ public sealed class SetupImportServiceTests
         var service = new SetupImportService(repository);
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
-            "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
-            "P100,Widget,MOLD,Molding,10,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true",
+            "PartNum,PartDescription,ProductGroup,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
+            "P100,Widget,General,MOLD,Molding,10,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true",
             string.Empty
         ]));
 
@@ -62,8 +62,8 @@ public sealed class SetupImportServiceTests
         var service = new SetupImportService(repository);
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
-            "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
-            "P100,Widget,MOLD,Molding,10,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true,StandardDeviation",
+            "PartNum,PartDescription,ProductGroup,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
+            "P100,Widget,General,MOLD,Molding,10,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true,StandardDeviation",
             string.Empty
         ]));
 
@@ -92,8 +92,8 @@ public sealed class SetupImportServiceTests
         string sampleSize = "1")
     {
         return string.Join(Environment.NewLine, [
-            "PartNum,PartDescription,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
-            $"P100,{description},MOLD,Molding,10,Diameter,Variable,5.0,{lsl},{usl},mm,{sampleSize},Time,30,Minutes,WesternElectric,true",
+            "PartNum,PartDescription,ProductGroup,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA",
+            $"P100,{description},General,MOLD,Molding,10,Diameter,Variable,5.0,{lsl},{usl},mm,{sampleSize},Time,30,Minutes,WesternElectric,true",
             string.Empty
         ]);
     }

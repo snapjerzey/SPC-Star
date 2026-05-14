@@ -14,11 +14,12 @@ public sealed class SetupManagementServiceTests
         SeedData.SeedSecurity(repository);
         var service = new SetupManagementService(repository);
 
-        var result = service.UpsertUser(new UpsertUserRequest("inspector2", "secret", [RoleNames.Operator]));
+        var result = service.UpsertUser(new UpsertUserRequest("inspector2", "secret", [RoleNames.Operator], ["Needles"]));
 
         Assert.True(result.Succeeded);
         Assert.True(new CredentialService(repository).ValidateCredential("inspector2", "secret"));
         Assert.Contains(repository.Users.Single(user => user.UserName == "inspector2").Roles, role => role.Name == RoleNames.Operator);
+        Assert.Contains("Needles", repository.Users.Single(user => user.UserName == "inspector2").ProductGroups);
     }
 
     [Fact]
@@ -69,6 +70,7 @@ public sealed class SetupManagementServiceTests
         var result = service.UpsertInspectionSetup(new UpsertInspectionSetupRequest(
             "P200",
             "Customer part",
+            "General",
             "CUT",
             "Cutting",
             20,
@@ -89,6 +91,7 @@ public sealed class SetupManagementServiceTests
 
         Assert.True(result.Succeeded);
         Assert.Single(repository.Parts);
+        Assert.Equal("General", repository.Parts.Single().ProductGroup);
         Assert.Single(repository.Operations);
         var characteristic = Assert.Single(repository.Characteristics);
         Assert.Equal(CoaStatisticType.Mean, characteristic.CoaStatisticType);
@@ -228,6 +231,7 @@ public sealed class SetupManagementServiceTests
         return new UpsertInspectionSetupRequest(
             "P200",
             "Customer part",
+            "General",
             processCode,
             processCode,
             10,

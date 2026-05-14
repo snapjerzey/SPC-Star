@@ -20,6 +20,7 @@ public sealed class AuthSessionServiceTests
         Assert.Equal("qa1", result.Value!.UserName);
         Assert.Contains("QA", result.Value.Roles);
         Assert.Contains("CanOverrideDriftLock", result.Value.Permissions);
+        Assert.Empty(result.Value.ProductGroups);
         Assert.Equal("dev-session:qa1", result.Value.SessionToken);
     }
 
@@ -48,6 +49,7 @@ public sealed class AuthSessionServiceTests
         Assert.Contains("LineTech", result.Value!.Roles);
         Assert.Contains("CanEnterInspections", result.Value.Permissions);
         Assert.Contains("CanOverrideDriftLock", result.Value.Permissions);
+        Assert.Contains("General", result.Value.ProductGroups);
     }
 
     [Fact]

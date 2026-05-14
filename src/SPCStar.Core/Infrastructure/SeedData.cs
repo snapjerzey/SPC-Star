@@ -38,8 +38,8 @@ public static class SeedData
             PermissionNames.CanManageUsers,
             PermissionNames.CanUseGodMode);
 
-        AddDefaultUser(repository, "operator1", "operator1", operatorRole);
-        AddDefaultUser(repository, "linetech1", "linetech1", lineTech);
+        AddDefaultUser(repository, "operator1", "operator1", operatorRole, "General");
+        AddDefaultUser(repository, "linetech1", "linetech1", lineTech, "General");
         AddDefaultUser(repository, "qa1", "qa1", qa);
         AddDefaultUser(repository, "admin1", "admin1", admin);
         AddDefaultUser(repository, "god1", "god1", god);
@@ -52,7 +52,7 @@ public static class SeedData
             return;
         }
 
-        var part = new Part { PartNum = "P100", Description = "Sample molded widget" };
+        var part = new Part { PartNum = "P100", Description = "Sample molded widget", ProductGroup = "General" };
         var process = new ManufacturingProcess { ProcessCode = "MOLD", Description = "Injection molding" };
         var operation = new Operation { PartId = part.Id, ProcessId = process.Id, OperationSeq = 10 };
         var diameter = new Characteristic
@@ -108,20 +108,30 @@ public static class SeedData
         return role;
     }
 
-    private static void AddDefaultUser(ISpcRepository repository, string userName, string password, Role role)
+    private static void AddDefaultUser(ISpcRepository repository, string userName, string password, Role role, params string[] productGroups)
     {
-        if (repository.Users.Any(user => user.UserName.Equals(userName, StringComparison.OrdinalIgnoreCase)))
+        var existing = repository.Users.FirstOrDefault(user => user.UserName.Equals(userName, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
         {
+            foreach (var group in productGroups.Where(group => !string.IsNullOrWhiteSpace(group)))
+            {
+                if (!existing.ProductGroups.Contains(group, StringComparer.OrdinalIgnoreCase))
+                {
+                    existing.ProductGroups.Add(group);
+                }
+            }
             return;
         }
 
-        repository.Users.Add(User(userName, password, role));
+        repository.Users.Add(User(userName, password, role, productGroups));
     }
 
-    private static User User(string userName, string password, Role role)
+    private static User User(string userName, string password, Role role, params string[] productGroups)
     {
         var (hash, salt) = Services.PasswordHasher.HashPassword(password);
-        return new User { UserName = userName, PasswordHash = hash, PasswordSalt = salt, Roles = { role } };
+        var user = new User { UserName = userName, PasswordHash = hash, PasswordSalt = salt, Roles = { role } };
+        user.ProductGroups.AddRange(productGroups.Where(group => !string.IsNullOrWhiteSpace(group)).Distinct(StringComparer.OrdinalIgnoreCase));
+        return user;
     }
 
     private static void AddVariablePlan(

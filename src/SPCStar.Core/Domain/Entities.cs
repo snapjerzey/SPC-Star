@@ -7,6 +7,7 @@ public sealed class User
     public required string PasswordHash { get; set; }
     public required string PasswordSalt { get; set; }
     public List<Role> Roles { get; } = [];
+    public List<string> ProductGroups { get; } = [];
 }
 
 public sealed class Role
@@ -21,6 +22,7 @@ public sealed class Part
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string PartNum { get; set; }
     public required string Description { get; set; }
+    public string ProductGroup { get; set; } = "General";
 }
 
 public sealed class ManufacturingProcess

@@ -8,6 +8,7 @@ public sealed record UserSessionDto(
     string UserName,
     IReadOnlyList<string> Roles,
     IReadOnlyList<string> Permissions,
+    IReadOnlyList<string> ProductGroups,
     string SessionToken);
 
 public sealed class AuthSessionService(
@@ -48,6 +49,6 @@ public sealed class AuthSessionService(
             .OrderBy(permission => permission)
             .ToArray();
 
-        return new UserSessionDto(user.UserName, roles, permissions, $"dev-session:{user.UserName}");
+        return new UserSessionDto(user.UserName, roles, permissions, user.ProductGroups.OrderBy(group => group).ToArray(), $"dev-session:{user.UserName}");
     }
 }

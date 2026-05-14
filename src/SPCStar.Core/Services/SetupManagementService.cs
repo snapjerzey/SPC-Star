@@ -7,7 +7,7 @@ public sealed record UserSetupDto(string UserName, IReadOnlyList<string> Roles, 
 
 public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles);
 
-public sealed record UpdateSettingsRequest(string GlobalAlertRuleSet);
+public sealed record UpdateSettingsRequest(string GlobalAlertRuleSet, CustomDriftRuleSetupDto? CustomDriftRule = null);
 
 public sealed record UpsertInspectionSetupRequest(
     string PartNum,
@@ -66,7 +66,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
     public SettingsSetupDto GetSettings()
     {
-        return new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet);
+        return SettingsDto();
     }
 
     public ServiceResult<SettingsSetupDto> UpdateSettings(UpdateSettingsRequest request)
@@ -77,7 +77,75 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         repository.Settings.GlobalAlertRuleSet = request.GlobalAlertRuleSet.Trim();
+        if (request.CustomDriftRule is not null)
+        {
+            var customErrors = ValidateCustomRule(request.CustomDriftRule);
+            if (customErrors.Count > 0)
+            {
+                return ServiceResult<SettingsSetupDto>.Fail(customErrors);
+            }
+
+            repository.Settings.CustomDriftRule = new CustomDriftRuleSettings
+            {
+                Name = string.IsNullOrWhiteSpace(request.CustomDriftRule.Name) ? "Custom Drift Rule" : request.CustomDriftRule.Name.Trim(),
+                WindowSize = request.CustomDriftRule.WindowSize,
+                SigmaThreshold = request.CustomDriftRule.SigmaThreshold,
+                MinimumPointsBeyondThreshold = request.CustomDriftRule.MinimumPointsBeyondThreshold,
+                Direction = request.CustomDriftRule.Direction.Trim(),
+                IncludeWesternElectric = request.CustomDriftRule.IncludeWesternElectric,
+                WarningBehavior = request.CustomDriftRule.WarningBehavior.Trim(),
+                Notes = request.CustomDriftRule.Notes?.Trim() ?? string.Empty
+            };
+        }
+
         return ServiceResult<SettingsSetupDto>.Ok(GetSettings());
+    }
+
+    private SettingsSetupDto SettingsDto()
+    {
+        var custom = repository.Settings.CustomDriftRule;
+        return new SettingsSetupDto(
+            repository.Settings.GlobalAlertRuleSet,
+            new CustomDriftRuleSetupDto(
+                custom.Name,
+                custom.WindowSize,
+                custom.SigmaThreshold,
+                custom.MinimumPointsBeyondThreshold,
+                custom.Direction,
+                custom.IncludeWesternElectric,
+                custom.WarningBehavior,
+                custom.Notes));
+    }
+
+    private static List<string> ValidateCustomRule(CustomDriftRuleSetupDto rule)
+    {
+        var errors = new List<string>();
+        if (rule.WindowSize < 2 || rule.WindowSize > 25)
+        {
+            errors.Add("Custom rule window size must be between 2 and 25.");
+        }
+
+        if (rule.SigmaThreshold <= 0 || rule.SigmaThreshold > 6)
+        {
+            errors.Add("Custom rule sigma threshold must be greater than 0 and no more than 6.");
+        }
+
+        if (rule.MinimumPointsBeyondThreshold < 1 || rule.MinimumPointsBeyondThreshold > rule.WindowSize)
+        {
+            errors.Add("Custom rule minimum points must be at least 1 and no more than the window size.");
+        }
+
+        if (!new[] { "SameSide", "Above", "Below", "EitherSide" }.Contains(rule.Direction, StringComparer.OrdinalIgnoreCase))
+        {
+            errors.Add("Custom rule direction is not supported.");
+        }
+
+        if (!new[] { "Lock", "Warning", "AuditOnly" }.Contains(rule.WarningBehavior, StringComparer.OrdinalIgnoreCase))
+        {
+            errors.Add("Custom rule warning behavior is not supported.");
+        }
+
+        return errors;
     }
 
     public ServiceResult<UserSetupDto> UpsertUser(UpsertUserRequest request)

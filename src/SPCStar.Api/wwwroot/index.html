@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260514-report-chart-details">
+  <link rel="stylesheet" href="/styles.css?v=20260514-rule-detail-builder">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -408,45 +408,55 @@
           </form>
           <p id="globalRuleMessage" class="message"></p>
           <div class="rule-card-grid">
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="GlobalDefault">
               <h3>Use Global Default</h3>
               <p>Part setups can inherit the global rule selected here. If a specific part needs different drift detection, override that part in Parts & Inspections without changing the rest of the plant.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="WesternElectric">
               <h3>Western Electric</h3>
               <p>Uses control limits to catch classic non-random process behavior: one point beyond a control limit, two of three points near a control limit, four of five points approaching a limit, or eight consecutive points on one side of center.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="NelsonRules">
               <h3>Nelson Rules</h3>
               <p>Uses the current Western Electric checks and adds a Nelson-style trend signal when six consecutive measurements move in the same direction. This helps catch steady drift before parts go out of control.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="Cusum">
               <h3>CUSUM</h3>
               <p>Tracks cumulative deviation from center using a reference value of one-half sigma and an action limit of five sigma. This is sensitive to small sustained shifts that may not trip a single-point rule.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="Ewma">
               <h3>EWMA</h3>
               <p>Uses an exponentially weighted moving average with lambda 0.20 and a three-sigma EWMA limit. Recent measurements carry more weight while older process history still matters.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="MovingAverageTrend">
               <h3>Moving Average Trend</h3>
               <p>Looks at the latest five measurements and compares their average to the process center. It triggers when that moving average is at least one sigma away from center.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="LinearTrendSlope">
               <h3>Linear Trend / Slope</h3>
               <p>Checks the slope across the latest six measurements. It triggers when the slope is strong enough and the total movement across the window is at least one sigma.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="Custom">
               <h3>Custom Rule</h3>
               <p>Reserved for configurable admin-defined behavior. Until the custom-rule editor is added, the default custom behavior triggers when the latest four points are beyond one sigma on the same side of center.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Configure</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="SpecLimitOnly">
               <h3>Spec Limit Only</h3>
               <p>Ignores process-drift patterns and locks only when a measured value is outside the configured lower or upper specification limit.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
-            <article class="rule-card">
+            <article class="rule-card" data-rule-key="None">
               <h3>No Automatic Rule</h3>
               <p>Records inspection results without automatic drift or measured-variable lockouts. Accept/Reject failures still lock because they are direct failed inspections.</p>
+              <button type="button" class="secondary compact-button rule-detail-button">Details</button>
             </article>
             <article class="rule-card muted-rule">
               <h3>Warning Behavior</h3>
@@ -569,6 +579,49 @@
       </section>
     </section>
   </main>
-  <script src="/app.js?v=20260514-report-chart-details"></script>
+  <section id="ruleDetailModal" class="modal-backdrop hidden">
+    <div class="panel rule-detail-modal">
+      <div class="panel-heading horizontal">
+        <div>
+          <h2 id="ruleDetailTitle">Rule Details</h2>
+          <p id="ruleDetailSubtitle"></p>
+        </div>
+        <button id="closeRuleDetailButton" type="button" class="secondary compact-button">Close</button>
+      </div>
+      <div id="ruleDetailBody" class="rule-detail-body"></div>
+      <form id="customRuleForm" class="custom-rule-form hidden">
+        <label>Protocol name<input id="customRuleName"></label>
+        <label>Recent point window<input id="customWindowSize" type="number" min="2" max="25"></label>
+        <label>Sigma threshold<input id="customSigmaThreshold" type="number" min="0.1" max="6" step="0.1"></label>
+        <label>Minimum points beyond threshold<input id="customMinimumPoints" type="number" min="1" max="25"></label>
+        <label>
+          Direction
+          <select id="customDirection">
+            <option value="SameSide">Same side of center</option>
+            <option value="Above">Above center only</option>
+            <option value="Below">Below center only</option>
+            <option value="EitherSide">Either side of center</option>
+          </select>
+        </label>
+        <label>
+          Include Western Electric checks
+          <select id="customIncludeWesternElectric">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+        </label>
+        <label>
+          Response behavior
+          <select id="customWarningBehavior">
+            <option value="Lock">Lock inspection</option>
+          </select>
+        </label>
+        <label class="full-width-field">Protocol notes<textarea id="customRuleNotes" rows="4"></textarea></label>
+        <button type="submit">Save Custom Protocol</button>
+      </form>
+      <p id="customRuleMessage" class="message"></p>
+    </div>
+  </section>
+  <script src="/app.js?v=20260514-rule-detail-builder"></script>
 </body>
 </html>

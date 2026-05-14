@@ -757,6 +757,147 @@ function chartTypeLabel(value) {
   }[value] || value;
 }
 
+const RULE_DETAILS = {
+  GlobalDefault: {
+    title: "Use Global Default",
+    subtitle: "Part-level inheritance",
+    body: `
+      <p>This option tells a part setup to use whatever rule is selected as the plant-wide global default. It is useful when most parts should follow the same drift detection protocol.</p>
+      <h3>How it works</h3>
+      <ul>
+        <li>The global rule is selected at the top of the Rules tab.</li>
+        <li>Any part set to Use Global Default follows that global rule automatically.</li>
+        <li>If the global rule is changed later, those inherited part setups change with it.</li>
+        <li>Parts with a specific override keep their own rule and do not follow the global change.</li>
+      </ul>`
+  },
+  WesternElectric: {
+    title: "Western Electric",
+    subtitle: "Classic control-chart pattern detection",
+    body: `
+      <p>Western Electric rules look for non-random process behavior on a control chart. They are designed to catch process shifts before the process produces a long run of bad parts.</p>
+      <h3>Protocol used in SPC-Star</h3>
+      <ul>
+        <li>One point beyond a control limit triggers a lock.</li>
+        <li>Two of three recent points near the same control limit triggers a lock.</li>
+        <li>Four of five recent points moving toward the same limit triggers a lock.</li>
+        <li>Eight consecutive points on the same side of centerline triggers a lock.</li>
+      </ul>
+      <h3>When to use it</h3>
+      <p>Use this as the standard process-control method for stable, measured variables where control limits are meaningful and enough history exists to detect patterns.</p>`
+  },
+  NelsonRules: {
+    title: "Nelson Rules",
+    subtitle: "Extended trend and pattern detection",
+    body: `
+      <p>Nelson rules expand on control-chart logic by adding more pattern checks. SPC-Star currently applies the Western Electric checks and adds a Nelson-style six-point trend rule.</p>
+      <h3>Protocol used in SPC-Star</h3>
+      <ul>
+        <li>All active Western Electric checks are still evaluated.</li>
+        <li>Six consecutive points rising triggers a Nelson trend lock.</li>
+        <li>Six consecutive points falling triggers a Nelson trend lock.</li>
+      </ul>
+      <h3>When to use it</h3>
+      <p>Use Nelson Rules when gradual tool wear, material change, machine warm-up, or operator method changes can create a steady directional drift before values exceed limits.</p>`
+  },
+  Cusum: {
+    title: "CUSUM",
+    subtitle: "Cumulative sum shift detection",
+    body: `
+      <p>CUSUM tracks accumulated deviation from the process center. Small offsets that look harmless one point at a time can become obvious when their cumulative effect keeps building.</p>
+      <h3>Protocol used in SPC-Star</h3>
+      <ul>
+        <li>The process centerline is used as the target.</li>
+        <li>The reference value is one-half sigma.</li>
+        <li>The action limit is five sigma.</li>
+        <li>If the positive or negative cumulative sum exceeds the action limit, SPC-Star triggers a CUSUM shift lock.</li>
+      </ul>
+      <h3>When to use it</h3>
+      <p>Use CUSUM when you care about small sustained shifts, such as tool wear or a machine slowly moving away from target.</p>`
+  },
+  Ewma: {
+    title: "EWMA",
+    subtitle: "Exponentially weighted moving average",
+    body: `
+      <p>EWMA smooths the process using a weighted average. Recent measurements matter most, but older measurements still influence the signal.</p>
+      <h3>Protocol used in SPC-Star</h3>
+      <ul>
+        <li>Lambda is 0.20, so recent points receive 20 percent of the new weighted average.</li>
+        <li>The starting EWMA value is the process centerline.</li>
+        <li>The EWMA limit is calculated from sigma and lambda.</li>
+        <li>If the weighted average moves beyond the EWMA limit, SPC-Star triggers an EWMA shift lock.</li>
+      </ul>
+      <h3>When to use it</h3>
+      <p>Use EWMA for noisy measurements where individual points bounce around but the smoothed process direction matters.</p>`
+  },
+  MovingAverageTrend: {
+    title: "Moving Average Trend",
+    subtitle: "Recent-window average shift",
+    body: `
+      <p>Moving average trend detection compares the average of a recent group of points against the centerline. It is simpler than EWMA and easy to explain on the floor.</p>
+      <h3>Protocol used in SPC-Star</h3>
+      <ul>
+        <li>The latest five measurements are averaged.</li>
+        <li>If that average is at least one sigma away from center, SPC-Star triggers a moving-average trend lock.</li>
+      </ul>
+      <h3>When to use it</h3>
+      <p>Use this when short-term process movement matters and you want a clear recent-sample rule.</p>`
+  },
+  LinearTrendSlope: {
+    title: "Linear Trend / Slope",
+    subtitle: "Directional drift over a recent window",
+    body: `
+      <p>Linear trend detection fits a simple slope across recent points. It looks for steady movement in one direction, not just values sitting above or below center.</p>
+      <h3>Protocol used in SPC-Star</h3>
+      <ul>
+        <li>The latest six measurements are evaluated.</li>
+        <li>SPC-Star calculates the slope across the window.</li>
+        <li>The slope must be strong enough and the total movement across the window must be at least one sigma.</li>
+      </ul>
+      <h3>When to use it</h3>
+      <p>Use this for gradual wear patterns where each value may still be acceptable, but the direction is clearly heading toward trouble.</p>`
+  },
+  Custom: {
+    title: "Custom Rule",
+    subtitle: "Plant-defined drift protocol",
+    body: `
+      <p>Custom lets SPC-Star use a plant-defined rule instead of one fixed statistical method. Configure the recent point window, sigma threshold, direction, and how many points must cross that threshold.</p>
+      <h3>Current engine behavior</h3>
+      <ul>
+        <li>SPC-Star looks at the most recent configured number of measurements.</li>
+        <li>It compares those values to centerline plus or minus the configured sigma threshold.</li>
+        <li>It triggers when the configured number of points exceed that threshold in the selected direction.</li>
+        <li>The option to include Western Electric checks keeps the standard control-chart rules active alongside the custom rule.</li>
+      </ul>`
+  },
+  SpecLimitOnly: {
+    title: "Spec Limit Only",
+    subtitle: "Customer specification guardrail",
+    body: `
+      <p>Spec Limit Only ignores drift patterns and locks only when a value is outside the lower or upper specification limit.</p>
+      <h3>Protocol used in SPC-Star</h3>
+      <ul>
+        <li>A value below LSL locks the inspection.</li>
+        <li>A value above USL locks the inspection.</li>
+        <li>Control-limit drift patterns do not create locks.</li>
+      </ul>
+      <h3>When to use it</h3>
+      <p>Use this when only direct pass/fail conformance should stop the process, or when control limits are not yet mature.</p>`
+  },
+  None: {
+    title: "No Automatic Rule",
+    subtitle: "Record only",
+    body: `
+      <p>This setting records measurements without automatic drift or measured-variable lockouts. It should be used carefully because SPC-Star will not stop the operator for measured-variable drift.</p>
+      <h3>What still applies</h3>
+      <ul>
+        <li>Inspection data is still saved.</li>
+        <li>Charts and review data still update.</li>
+        <li>Accept/Reject attribute failures still lock because they are direct failed inspections.</li>
+      </ul>`
+  }
+};
+
 function drawChartFrame(ctx, padding, plotWidth, plotHeight) {
   ctx.strokeStyle = "#d7e1ec";
   ctx.lineWidth = 1;
@@ -1165,6 +1306,7 @@ function renderSetupEditChoices() {
 function renderGlobalRuleSetting() {
   $("globalAlertRuleSet").value = state.snapshot.settings?.globalAlertRuleSet || "WesternElectric";
   updateRuleDescription();
+  loadCustomRuleForm();
 }
 
 async function renderPartReview() {
@@ -1870,7 +2012,7 @@ function updateRuleDescription() {
     Ewma: "Uses an exponentially weighted moving average with lambda 0.20 and a three-sigma EWMA limit.",
     MovingAverageTrend: "Checks the latest five measurements and triggers when their average is at least one sigma from center.",
     LinearTrendSlope: "Checks the latest six measurements and triggers when the slope is strong enough and total movement is at least one sigma.",
-    Custom: "Reserved for admin-defined behavior. For now, it triggers when the latest four points are beyond one sigma on the same side of center.",
+    Custom: "Uses the saved custom protocol from the Rules tab. Click Custom Rule in Rules to review or configure the protocol.",
     SpecLimitOnly: "Locks only when a value is outside the lower or upper specification limit.",
     None: "Records measured values without automatic drift locks. Accept/Reject failures still lock."
   };
@@ -1882,7 +2024,10 @@ async function saveGlobalRule(event) {
   try {
     const settings = await api("/setup/settings", {
       method: "POST",
-      body: JSON.stringify({ globalAlertRuleSet: $("globalAlertRuleSet").value })
+      body: JSON.stringify({
+        globalAlertRuleSet: $("globalAlertRuleSet").value,
+        customDriftRule: customRulePayload()
+      })
     });
     state.snapshot.settings = settings;
     $("globalRuleMessage").textContent = "Global rule saved.";
@@ -1891,6 +2036,84 @@ async function saveGlobalRule(event) {
   } catch (error) {
     $("globalRuleMessage").textContent = readableError(error);
     $("globalRuleMessage").className = "message error";
+  }
+}
+
+function loadCustomRuleForm() {
+  const rule = state.snapshot?.settings?.customDriftRule || defaultCustomRule();
+  $("customRuleName").value = rule.name || "Custom Drift Rule";
+  $("customWindowSize").value = String(rule.windowSize || 4);
+  $("customSigmaThreshold").value = String(rule.sigmaThreshold || 1);
+  $("customMinimumPoints").value = String(rule.minimumPointsBeyondThreshold || 4);
+  $("customDirection").value = rule.direction || "SameSide";
+  $("customIncludeWesternElectric").value = String(rule.includeWesternElectric ?? false);
+  $("customWarningBehavior").value = rule.warningBehavior || "Lock";
+  $("customRuleNotes").value = rule.notes || "";
+}
+
+function defaultCustomRule() {
+  return {
+    name: "Custom Drift Rule",
+    windowSize: 4,
+    sigmaThreshold: 1,
+    minimumPointsBeyondThreshold: 4,
+    direction: "SameSide",
+    includeWesternElectric: false,
+    warningBehavior: "Lock",
+    notes: "Triggers when the configured number of recent points are beyond the configured sigma threshold."
+  };
+}
+
+function customRulePayload() {
+  return {
+    name: $("customRuleName").value.trim() || "Custom Drift Rule",
+    windowSize: Number($("customWindowSize").value),
+    sigmaThreshold: Number($("customSigmaThreshold").value),
+    minimumPointsBeyondThreshold: Number($("customMinimumPoints").value),
+    direction: $("customDirection").value,
+    includeWesternElectric: $("customIncludeWesternElectric").value === "true",
+    warningBehavior: $("customWarningBehavior").value,
+    notes: $("customRuleNotes").value.trim()
+  };
+}
+
+function openRuleDetail(ruleKey) {
+  const details = RULE_DETAILS[ruleKey] || RULE_DETAILS.WesternElectric;
+  $("ruleDetailTitle").textContent = details.title;
+  $("ruleDetailSubtitle").textContent = details.subtitle;
+  $("ruleDetailBody").innerHTML = details.body;
+  $("customRuleForm").classList.toggle("hidden", ruleKey !== "Custom");
+  $("customRuleMessage").textContent = "";
+  $("customRuleMessage").className = "message";
+  if (ruleKey === "Custom") {
+    loadCustomRuleForm();
+  }
+  $("ruleDetailModal").classList.remove("hidden");
+}
+
+function closeRuleDetail() {
+  $("ruleDetailModal").classList.add("hidden");
+}
+
+async function saveCustomRule(event) {
+  event.preventDefault();
+  try {
+    const settings = await api("/setup/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        globalAlertRuleSet: $("globalAlertRuleSet").value,
+        customDriftRule: customRulePayload()
+      })
+    });
+    state.snapshot.settings = settings;
+    loadCustomRuleForm();
+    $("customRuleMessage").textContent = "Custom drift protocol saved.";
+    $("customRuleMessage").className = "message ok";
+    $("globalRuleMessage").textContent = "Custom drift protocol saved.";
+    $("globalRuleMessage").className = "message ok";
+  } catch (error) {
+    $("customRuleMessage").textContent = readableError(error);
+    $("customRuleMessage").className = "message error";
   }
 }
 
@@ -2159,6 +2382,16 @@ $("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);
 $("setupAlertRuleSet").addEventListener("change", updateRuleDescription);
 $("globalAlertRuleSet").addEventListener("change", updateRuleDescription);
 $("globalRuleForm").addEventListener("submit", saveGlobalRule);
+document.querySelectorAll(".rule-card[data-rule-key]").forEach((card) => {
+  card.addEventListener("click", () => openRuleDetail(card.dataset.ruleKey));
+});
+$("closeRuleDetailButton").addEventListener("click", closeRuleDetail);
+$("ruleDetailModal").addEventListener("click", (event) => {
+  if (event.target.id === "ruleDetailModal") {
+    closeRuleDetail();
+  }
+});
+$("customRuleForm").addEventListener("submit", saveCustomRule);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
 $("partReviewFilter").addEventListener("change", loadReview);

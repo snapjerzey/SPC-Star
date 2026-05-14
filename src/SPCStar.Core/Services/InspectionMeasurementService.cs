@@ -274,7 +274,7 @@ public sealed class InspectionMeasurementService(
 
         if (string.Equals(ruleSet, "Custom", StringComparison.OrdinalIgnoreCase))
         {
-            return DetectCustomDefault(points, centerLine, sigma);
+            return DetectCustom(points, centerLine, lcl, ucl, sigma, repository.Settings.CustomDriftRule);
         }
 
         return [];
@@ -393,23 +393,41 @@ public sealed class InspectionMeasurementService(
         return [];
     }
 
-    private static IReadOnlyList<WesternElectricViolation> DetectCustomDefault(IReadOnlyList<WesternElectricPoint> points, decimal centerLine, decimal sigma)
+    private IReadOnlyList<WesternElectricViolation> DetectCustom(IReadOnlyList<WesternElectricPoint> points, decimal centerLine, decimal lcl, decimal ucl, decimal sigma, CustomDriftRuleSettings custom)
     {
-        if (points.Count < 4)
+        var violations = custom.IncludeWesternElectric
+            ? westernElectricRuleService.Detect(points, centerLine, lcl, ucl).ToList()
+            : [];
+        var windowSize = Math.Clamp(custom.WindowSize, 2, 25);
+        if (points.Count < windowSize)
         {
-            return [];
+            return violations;
         }
 
-        var window = points.TakeLast(4).ToArray();
-        if (window.All(point => point.Value > centerLine + sigma) || window.All(point => point.Value < centerLine - sigma))
+        var window = points.TakeLast(windowSize).ToArray();
+        var sigmaThreshold = custom.SigmaThreshold <= 0 ? 1m : custom.SigmaThreshold;
+        var minimumPoints = Math.Clamp(custom.MinimumPointsBeyondThreshold, 1, windowSize);
+        var upperThreshold = centerLine + sigma * sigmaThreshold;
+        var lowerThreshold = centerLine - sigma * sigmaThreshold;
+        var aboveCount = window.Count(point => point.Value > upperThreshold);
+        var belowCount = window.Count(point => point.Value < lowerThreshold);
+        var triggered = custom.Direction switch
         {
-            return [new WesternElectricViolation(
+            "Above" => aboveCount >= minimumPoints,
+            "Below" => belowCount >= minimumPoints,
+            "EitherSide" => aboveCount + belowCount >= minimumPoints,
+            _ => aboveCount >= minimumPoints || belowCount >= minimumPoints
+        };
+
+        if (triggered)
+        {
+            violations.Add(new WesternElectricViolation(
                 RuleTriggered.CustomRuleTriggered,
                 window.Select(point => point.MeasurementId).ToArray(),
-                window[^1].Timestamp)];
+                window[^1].Timestamp));
         }
 
-        return [];
+        return violations;
     }
 
     private static decimal Sigma(decimal centerLine, decimal lcl, decimal ucl)

@@ -579,13 +579,58 @@ textarea {
   border-radius: 6px;
   background: #fbfdff;
   padding: 14px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
 .rule-card p {
   margin-bottom: 0;
   line-height: 1.45;
 }
+.rule-detail-button {
+  justify-self: start;
+}
 .muted-rule {
   background: #f8fafc;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, .48);
+}
+.rule-detail-modal {
+  width: min(920px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+}
+.rule-detail-body {
+  display: grid;
+  gap: 12px;
+  color: #344054;
+  line-height: 1.5;
+}
+.rule-detail-body h3 {
+  margin: 10px 0 2px;
+}
+.rule-detail-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.custom-rule-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.custom-rule-form .full-width-field,
+.custom-rule-form button {
+  grid-column: span 2;
 }
 .setup-list {
   display: grid;

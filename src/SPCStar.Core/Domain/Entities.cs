@@ -70,6 +70,19 @@ public sealed class InspectionPlan
 public sealed class AppSettings
 {
     public string GlobalAlertRuleSet { get; set; } = "WesternElectric";
+    public CustomDriftRuleSettings CustomDriftRule { get; set; } = new();
+}
+
+public sealed class CustomDriftRuleSettings
+{
+    public string Name { get; set; } = "Custom Drift Rule";
+    public int WindowSize { get; set; } = 4;
+    public decimal SigmaThreshold { get; set; } = 1m;
+    public int MinimumPointsBeyondThreshold { get; set; } = 4;
+    public string Direction { get; set; } = "SameSide";
+    public bool IncludeWesternElectric { get; set; }
+    public string WarningBehavior { get; set; } = "Lock";
+    public string Notes { get; set; } = "Triggers when the configured number of recent points are beyond the configured sigma threshold.";
 }
 
 public sealed class InspectionFrequency

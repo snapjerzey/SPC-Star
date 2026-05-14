@@ -56,7 +56,17 @@ public sealed record JobSetupDto(string JobNum, string PartNum);
 
 public sealed record ResourceSetupDto(string ResourceId, string? Description);
 
-public sealed record SettingsSetupDto(string GlobalAlertRuleSet);
+public sealed record CustomDriftRuleSetupDto(
+    string Name,
+    int WindowSize,
+    decimal SigmaThreshold,
+    int MinimumPointsBeyondThreshold,
+    string Direction,
+    bool IncludeWesternElectric,
+    string WarningBehavior,
+    string Notes);
+
+public sealed record SettingsSetupDto(string GlobalAlertRuleSet, CustomDriftRuleSetupDto CustomDriftRule);
 
 public sealed record PartJobDataFieldSetupDto(
     string PartNum,
@@ -186,8 +196,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
 
         return new SetupSnapshotDto(
             generatedAt ?? DateTimeOffset.UtcNow,
-            BuildSetupVersion(new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet), parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources, jobDataFields),
-            new SettingsSetupDto(repository.Settings.GlobalAlertRuleSet),
+            BuildSetupVersion(SettingsDto(), parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources, jobDataFields),
+            SettingsDto(),
             parts,
             processes,
             operations,
@@ -198,6 +208,22 @@ public sealed class SetupQueryService(ISpcRepository repository)
             jobs,
             resources,
             jobDataFields);
+    }
+
+    private SettingsSetupDto SettingsDto()
+    {
+        var custom = repository.Settings.CustomDriftRule;
+        return new SettingsSetupDto(
+            repository.Settings.GlobalAlertRuleSet,
+            new CustomDriftRuleSetupDto(
+                custom.Name,
+                custom.WindowSize,
+                custom.SigmaThreshold,
+                custom.MinimumPointsBeyondThreshold,
+                custom.Direction,
+                custom.IncludeWesternElectric,
+                custom.WarningBehavior,
+                custom.Notes));
     }
 
     private static string BuildSetupVersion(

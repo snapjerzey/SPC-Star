@@ -113,6 +113,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         public void CopyTo(ISpcRepository repository)
         {
             repository.Settings.GlobalAlertRuleSet = Settings?.GlobalAlertRuleSet ?? "WesternElectric";
+            repository.Settings.CustomDriftRule = Settings?.CustomDriftRule ?? new CustomDriftRuleSettings();
             repository.Roles.AddRange(Roles.Select(role => role.ToRole()));
             foreach (var user in Users)
             {

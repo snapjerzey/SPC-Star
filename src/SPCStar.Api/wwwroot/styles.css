@@ -664,6 +664,16 @@ textarea {
   border-left: 4px solid #f79009;
   padding-left: 6px;
 }
+.review-measurement-table .review-history-event-row {
+  background: #f8fafc;
+  color: #344054;
+  font-weight: 650;
+}
+.review-measurement-table .review-history-event-row span:nth-child(4) {
+  color: #475467;
+  font-weight: 500;
+  line-height: 1.35;
+}
 .status-text {
   display: block;
   font-size: 11px;

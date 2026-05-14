@@ -1174,20 +1174,7 @@ async function renderPartReview() {
 function renderJobReview(review) {
   $("jobReviewPanel").classList.remove("hidden");
   renderReviewSummary(review.variableSummary || [], $("jobReviewSummary"), "No summary data for this job.");
-  renderReviewMeasurements(review.measurements || []);
-  renderJobLedger($("jobReviewHistory"), review.history || [], review.measurements || []);
-}
-
-function renderJobLedger(container, history, measurements) {
-  const measurementEntries = measurements.map((measurement) => ({
-    ...measurement,
-    entryType: "Measurement",
-    timestamp: measurement.timestamp,
-    operatorUserId: measurement.operatorUserId
-  }));
-  const rows = [...history, ...measurementEntries]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  renderHistoryList(container, rows);
+  renderReviewMeasurements(review.measurements || [], review.history || []);
 }
 
 function renderReviewSummary(rows, container, emptyMessage) {
@@ -1244,41 +1231,74 @@ async function saveReviewMeasurement(id, item) {
   }
 }
 
-function renderReviewMeasurements(rows) {
+function renderReviewMeasurements(measurements, history) {
   const container = $("jobReviewMeasurements");
+  const rows = [
+    ...measurements.map((measurement) => ({ kind: "Measurement", timestamp: measurement.timestamp, measurement })),
+    ...history.map((entry) => ({ kind: "History", timestamp: entry.timestamp, entry }))
+  ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
   if (!rows.length) {
     container.className = "data-table empty";
-    container.textContent = "No measurements for this job.";
+    container.textContent = "No job history for this job.";
     return;
   }
 
   container.className = "data-table review-measurement-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Time</span><span>Phase</span><span>Variable</span><span>Value</span><span>Machine</span><span>Operation</span><span>User</span><span></span>
+      <span>Time</span><span>Phase</span><span>Type</span><span>Value / Details</span><span>Machine</span><span>Operation</span><span>User</span><span></span>
     </div>`;
   rows.forEach((row) => {
+    if (row.kind === "History") {
+      renderReviewHistoryEvent(container, row.entry);
+      return;
+    }
+
+    const measurement = row.measurement;
     const item = document.createElement("div");
-    item.className = `data-row ${row.isOutOfSpec ? "measurement-out-spec" : row.isOutOfControl ? "measurement-out-control" : ""}`;
+    item.className = `data-row ${measurement.isOutOfSpec ? "measurement-out-spec" : measurement.isOutOfControl ? "measurement-out-control" : ""}`;
     item.innerHTML = `
-      <span>${formatDateTime(row.timestamp)}</span>
+      <span>${formatDateTime(measurement.timestamp)}</span>
       <span>
         <select class="review-measurement-phase">
-          <option value="Startup" ${row.inspectionPhase === "Startup" ? "selected" : ""}>Startup</option>
-          <option value="Setup" ${row.inspectionPhase === "Setup" ? "selected" : ""}>Setup</option>
-          <option value="In Process" ${row.inspectionPhase === "In Process" ? "selected" : ""}>In Process</option>
-          <option value="Spool" ${normalizeInspectionPhase(row.inspectionPhase) === "Spool" ? "selected" : ""}>Spool</option>
+          <option value="Startup" ${measurement.inspectionPhase === "Startup" ? "selected" : ""}>Startup</option>
+          <option value="Setup" ${measurement.inspectionPhase === "Setup" ? "selected" : ""}>Setup</option>
+          <option value="In Process" ${measurement.inspectionPhase === "In Process" ? "selected" : ""}>In Process</option>
+          <option value="Spool" ${normalizeInspectionPhase(measurement.inspectionPhase) === "Spool" ? "selected" : ""}>Spool</option>
         </select>
       </span>
-      <span>${row.characteristicName}</span>
-      <span>${reviewMeasurementValueControl(row)}</span>
-      <span>${row.resourceId}${row.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : row.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
-      <span>${row.processCode} ${row.operationSeq}</span>
-      <span>${row.operatorUserId}</span>
+      <span>${measurement.characteristicName}</span>
+      <span>${reviewMeasurementValueControl(measurement)}</span>
+      <span>${measurement.resourceId}${measurement.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : measurement.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
+      <span>${measurement.processCode} ${measurement.operationSeq}</span>
+      <span>${measurement.operatorUserId}</span>
       <span><button type="button" class="secondary compact-button">Save</button></span>`;
-    item.querySelector("button").addEventListener("click", () => saveReviewMeasurement(row.id, item));
+    item.querySelector("button").addEventListener("click", () => saveReviewMeasurement(measurement.id, item));
     container.appendChild(item);
   });
+}
+
+function renderReviewHistoryEvent(container, entry) {
+  const item = document.createElement("div");
+  item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""}`;
+  const details = entry.entryType === "Lock"
+    ? lockHistoryText(entry)
+    : entry.entryType === "Material"
+      ? materialHistoryText(entry)
+      : entry.entryType === "MeasurementEdit"
+        ? measurementEditHistoryText(entry)
+        : entry.noteText;
+  item.innerHTML = `
+    <span>${formatDateTime(entry.timestamp)}</span>
+    <span>-</span>
+    <span>${escapeHtml(historyEntryTitle(entry))}</span>
+    <span>${escapeHtml(details || "")}</span>
+    <span>${escapeHtml(entry.resourceId || "-")}</span>
+    <span>-</span>
+    <span>${escapeHtml(entry.operatorUserId || "-")}</span>
+    <span></span>`;
+  container.appendChild(item);
 }
 
 function reviewMeasurementValueControl(row) {

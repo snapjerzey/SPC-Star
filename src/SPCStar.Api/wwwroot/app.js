@@ -522,9 +522,6 @@ async function submitMeasurementInput(input, options = {}) {
         submittedAt: new Date().toISOString()
       })
     });
-    input.dataset.submitted = "true";
-    input.disabled = true;
-    input.closest("label")?.classList.add("measurement-submitted");
     showEntryMessage(`${sampleLabel(input)} submitted.`, "ok");
     const planIndex = Number(input.dataset.planIndex);
     state.contexts[planIndex] = await loadVariableContext(jobNum, resourceId, plan);
@@ -534,6 +531,7 @@ async function submitMeasurementInput(input, options = {}) {
       await loadContext();
       return "locked";
     }
+    resetAcceptedMeasurementInput(input);
     if (options.reloadOnSuccess === true) {
       await loadContext();
     }
@@ -545,6 +543,15 @@ async function submitMeasurementInput(input, options = {}) {
   } finally {
     input.dataset.submitting = "false";
   }
+}
+
+function resetAcceptedMeasurementInput(input) {
+  delete input.dataset.submitted;
+  input.value = "";
+  input.disabled = false;
+  const label = input.closest("label");
+  label?.classList.add("measurement-submitted");
+  window.setTimeout(() => label?.classList.remove("measurement-submitted"), 900);
 }
 
 function sampleLabel(input) {

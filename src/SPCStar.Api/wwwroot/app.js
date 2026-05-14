@@ -969,7 +969,7 @@ function measurementHistoryText(entry) {
 }
 
 function measurementEditHistoryText(entry) {
-  return `${entry.oldInspectionPhase}: ${formatNumber(entry.oldValue)} changed to ${entry.newInspectionPhase}: ${formatNumber(entry.newValue)}.`;
+  return `Edited from ${entry.oldInspectionPhase}: ${formatNumber(entry.oldValue)} to ${entry.newInspectionPhase}: ${formatNumber(entry.newValue)} by ${entry.operatorUserId}.`;
 }
 
 function lockHistoryText(entry) {
@@ -1242,7 +1242,7 @@ function renderReviewMeasurements(measurements, history) {
   const rows = [
     ...measurements.map((measurement) => ({ kind: "Measurement", timestamp: measurement.timestamp, measurement })),
     ...history.map((entry) => ({ kind: "History", timestamp: entry.timestamp, entry }))
-  ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
   if (!rows.length) {
     container.className = "data-table empty";
@@ -1287,7 +1287,7 @@ function renderReviewMeasurements(measurements, history) {
 
 function renderReviewHistoryEvent(container, entry) {
   const item = document.createElement("div");
-  item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""}`;
+  item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""}`;
   const details = entry.entryType === "Lock"
     ? lockHistoryText(entry)
     : entry.entryType === "Material"

@@ -669,6 +669,11 @@ textarea {
   color: #344054;
   font-weight: 650;
 }
+.review-measurement-table .measurement-edit-history {
+  background: #eff6ff;
+  border-left: 4px solid #0f63b8;
+  padding-left: 6px;
+}
 .review-measurement-table .review-history-event-row span:nth-child(4) {
   color: #475467;
   font-weight: 500;

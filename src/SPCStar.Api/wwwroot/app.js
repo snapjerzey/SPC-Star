@@ -444,12 +444,14 @@ function inputHasValue(input) {
   return input.value.trim().length > 0;
 }
 
-async function submitSingleMeasurementAndAdvance(input, moveNext) {
+async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) {
   normalizeMeasurementInput(input);
   if (!inputHasValue(input)) {
     showEntryMessage(`Fill in ${sampleLabel(input)} before moving on.`, "error");
-    input.focus();
-    return;
+    if (options.keepFocusWhenEmpty) {
+      input.focus();
+    }
+    return "empty";
   }
 
   try {
@@ -480,9 +482,13 @@ function wireMeasurementDeviceInputs() {
     });
     input.addEventListener("keydown", async (event) => {
       if (event.key !== "Enter" && event.key !== "Tab") return;
+      if (event.key === "Tab" && !inputHasValue(input)) {
+        showEntryMessage(`Fill in ${sampleLabel(input)} before moving on.`, "error");
+        return;
+      }
       event.preventDefault();
       input.dataset.tabSubmitting = "true";
-      await submitSingleMeasurementAndAdvance(input, true);
+      await submitSingleMeasurementAndAdvance(input, true, { keepFocusWhenEmpty: event.key === "Enter" });
       input.dataset.tabSubmitting = "false";
     });
     input.addEventListener("paste", () => {

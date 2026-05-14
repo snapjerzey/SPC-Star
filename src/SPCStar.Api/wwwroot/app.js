@@ -1435,11 +1435,17 @@ function drawReport(points, data = {}) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
-  const padding = { left: 42, right: 18, top: 18, bottom: 34 };
+  const padding = { left: 62, right: 78, top: 58, bottom: 48 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
+  const chartType = $("reportChartType").value;
+  drawReportHeader(ctx, width, points, data, chartType);
   drawChartFrame(ctx, padding, plotWidth, plotHeight);
-  if (!points.length) return;
+  if (!points.length) {
+    drawEmptyChartMessage(ctx, width, height);
+    return;
+  }
+
   const values = points.map((point) => Number(point.value));
   const limitValues = [data.lowerControlLimit, data.upperControlLimit, data.lowerSpecLimit, data.upperSpecLimit]
     .filter((value) => value !== null && value !== undefined)
@@ -1449,17 +1455,24 @@ function drawReport(points, data = {}) {
   const spread = max === min ? 1 : max - min;
   const low = min - spread * 0.1;
   const high = max + spread * 0.1;
-  const chartType = $("reportChartType").value;
+
   if (chartType === "Histogram") {
     drawHistogram(ctx, points, padding, plotWidth, plotHeight, low, high);
+    drawHistogramDetails(ctx, points, padding, plotWidth, plotHeight, low, high);
     return;
   }
+
   if (chartType === "MovingRange") {
     drawMovingRange(ctx, points, padding, plotWidth, plotHeight);
+    drawMovingRangeDetails(ctx, points, padding, plotWidth, plotHeight);
+    drawXAxisDetails(ctx, points, padding, plotWidth, plotHeight);
     return;
   }
+
   const x = (index) => padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
   const y = (value) => padding.top + (1 - ((Number(value) - low) / (high - low))) * plotHeight;
+  drawYAxisDetails(ctx, padding, plotWidth, plotHeight, low, high);
+  drawXAxisDetails(ctx, points, padding, plotWidth, plotHeight);
   if (chartType === "ControlLimits") {
     drawLimitLine(ctx, y, data.upperControlLimit, "UCL", "#c76508", width, padding);
     drawLimitLine(ctx, y, data.lowerControlLimit, "LCL", "#c76508", width, padding);
@@ -1470,6 +1483,134 @@ function drawReport(points, data = {}) {
     drawLimitLine(ctx, y, data.mean, "Mean", "#067647", width, padding);
   }
   drawLineSeries(ctx, points, (point, index) => x(index), (point) => y(point.value));
+  drawPointValueDetails(ctx, points, (point, index) => x(index), (point) => y(point.value));
+}
+
+function drawReportHeader(ctx, width, points, data, chartType) {
+  const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
+  const stats = values.length ? {
+    count: values.length,
+    min: Math.min(...values),
+    max: Math.max(...values),
+    mean: values.reduce((total, value) => total + value, 0) / values.length,
+    stdDev: standardDeviation(values)
+  } : null;
+  const filters = [
+    $("reportPartNum").value.trim() || "All parts",
+    $("reportJobNum").value.trim() || "All jobs",
+    $("reportCharacteristicName").value.trim() || "All variables",
+    $("reportInspectionPhase").value || "All phases"
+  ].join(" / ");
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "700 14px Segoe UI, Arial";
+  ctx.fillText(`${chartTypeLabel(chartType)} Report`, 12, 20);
+  ctx.fillStyle = "#5f6f82";
+  ctx.font = "11px Segoe UI, Arial";
+  ctx.fillText(filters, 12, 38);
+  if (!stats) return;
+  const summary = `Count ${stats.count}   Min ${formatNumber(stats.min)}   Max ${formatNumber(stats.max)}   Mean ${formatNumber(data.mean ?? stats.mean)}   Std Dev ${formatNumber(stats.stdDev)}`;
+  ctx.fillStyle = "#344054";
+  ctx.textAlign = "right";
+  ctx.fillText(summary, width - 12, 20);
+  ctx.textAlign = "left";
+}
+
+function drawEmptyChartMessage(ctx, width, height) {
+  ctx.fillStyle = "#5f6f82";
+  ctx.font = "13px Segoe UI, Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("No matching data for this report.", width / 2, height / 2);
+  ctx.textAlign = "left";
+}
+
+function drawYAxisDetails(ctx, padding, plotWidth, plotHeight, low, high) {
+  ctx.fillStyle = "#5f6f82";
+  ctx.font = "11px Segoe UI, Arial";
+  ctx.textAlign = "right";
+  for (let index = 0; index <= 4; index++) {
+    const value = high - ((high - low) / 4) * index;
+    const y = padding.top + (plotHeight / 4) * index;
+    ctx.fillText(formatNumber(value), padding.left - 8, y + 4);
+  }
+  ctx.textAlign = "left";
+}
+
+function drawXAxisDetails(ctx, points, padding, plotWidth, plotHeight) {
+  if (!points.length) return;
+  const indexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])];
+  ctx.fillStyle = "#5f6f82";
+  ctx.font = "10px Segoe UI, Arial";
+  ctx.textAlign = "center";
+  indexes.forEach((pointIndex) => {
+    const x = padding.left + (points.length === 1 ? plotWidth / 2 : (pointIndex / (points.length - 1)) * plotWidth);
+    ctx.fillText(formatShortDateTime(points[pointIndex].timestamp), x, padding.top + plotHeight + 20);
+  });
+  ctx.textAlign = "left";
+}
+
+function drawPointValueDetails(ctx, points, xOf, yOf) {
+  const shouldLabelAll = points.length <= 18;
+  ctx.font = "10px Segoe UI, Arial";
+  ctx.textAlign = "center";
+  points.forEach((point, index) => {
+    if (!shouldLabelAll && index !== 0 && index !== points.length - 1 && !point.hasRuleViolation) return;
+    const x = xOf(point, index);
+    const y = yOf(point, index);
+    ctx.fillStyle = point.hasRuleViolation ? "#b42318" : "#344054";
+    ctx.fillText(formatNumber(point.value), x, Math.max(12, y - 8));
+  });
+  ctx.textAlign = "left";
+}
+
+function histogramBins(points, low, high) {
+  const values = points.map((point) => Number(point.value));
+  const binCount = Math.min(8, Math.max(4, Math.ceil(Math.sqrt(values.length))));
+  const binWidth = (high - low) / binCount || 1;
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    count: 0,
+    low: low + index * binWidth,
+    high: low + (index + 1) * binWidth
+  }));
+  values.forEach((value) => {
+    const index = Math.min(binCount - 1, Math.max(0, Math.floor((value - low) / binWidth)));
+    bins[index].count += 1;
+  });
+  return bins;
+}
+
+function drawHistogramDetails(ctx, points, padding, plotWidth, plotHeight, low, high) {
+  const bins = histogramBins(points, low, high);
+  const maxBin = Math.max(...bins.map((bin) => bin.count), 1);
+  drawYAxisDetails(ctx, padding, plotWidth, plotHeight, 0, maxBin);
+  ctx.fillStyle = "#344054";
+  ctx.font = "10px Segoe UI, Arial";
+  ctx.textAlign = "center";
+  bins.forEach((bin, index) => {
+    const x = padding.left + (index + 0.5) * (plotWidth / bins.length);
+    const y = padding.top + plotHeight - (bin.count / maxBin) * plotHeight;
+    ctx.fillText(String(bin.count), x, y - 5);
+    ctx.fillText(`${formatNumber(bin.low)}-${formatNumber(bin.high)}`, x, padding.top + plotHeight + 18);
+  });
+  ctx.textAlign = "left";
+}
+
+function drawMovingRangeDetails(ctx, points, padding, plotWidth, plotHeight) {
+  const ranges = points.map((point) => Number(point.movingRange)).filter(Number.isFinite);
+  if (!ranges.length) return;
+  const high = Math.max(...ranges, 1) * 1.1;
+  drawYAxisDetails(ctx, padding, plotWidth, plotHeight, 0, high);
+  ctx.fillStyle = "#344054";
+  ctx.font = "10px Segoe UI, Arial";
+  ctx.textAlign = "center";
+  points.forEach((point, index) => {
+    const range = Number(point.movingRange);
+    if (!Number.isFinite(range)) return;
+    if (points.length > 18 && index !== points.length - 1 && !point.hasRuleViolation) return;
+    const x = padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
+    const y = padding.top + (1 - (range / high)) * plotHeight;
+    ctx.fillText(formatNumber(range), x, Math.max(12, y - 8));
+  });
+  ctx.textAlign = "left";
 }
 
 function coaStatisticLabel(value) {
@@ -1942,6 +2083,15 @@ function formatTime(value) {
 function formatDateTime(value) {
   return new Date(value).toLocaleString([], {
     year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatShortDateTime(value) {
+  return new Date(value).toLocaleString([], {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

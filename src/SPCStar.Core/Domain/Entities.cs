@@ -153,6 +153,22 @@ public sealed class InspectionMeasurement
     public DateTimeOffset? SyncedAt { get; set; }
 }
 
+public sealed class MeasurementEditAudit
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public Guid MeasurementId { get; set; }
+    public required string JobNum { get; set; }
+    public required string PartNum { get; set; }
+    public required string ResourceId { get; set; }
+    public required string CharacteristicName { get; set; }
+    public decimal OldValue { get; set; }
+    public decimal NewValue { get; set; }
+    public required string OldInspectionPhase { get; set; }
+    public required string NewInspectionPhase { get; set; }
+    public required string EditedByUserId { get; set; }
+    public DateTimeOffset EditedAt { get; set; }
+}
+
 public sealed class MaterialChangeLog
 {
     public Guid Id { get; init; } = Guid.NewGuid();
@@ -201,6 +217,7 @@ public sealed class ProcessAlert
     public required string CharacteristicName { get; set; }
     public required string OperatorUserId { get; set; }
     public RuleTriggered RuleTriggered { get; set; }
+    public string? Detail { get; set; }
     public DateTimeOffset LockedAt { get; set; }
     public AlertStatus Status { get; set; } = AlertStatus.Active;
 }

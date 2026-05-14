@@ -521,6 +521,16 @@ textarea {
   align-items: end;
   margin-bottom: 12px;
 }
+.report-filter-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+.report-filter-form button {
+  grid-column: span 4;
+}
 .review-filter-bar {
   display: grid;
   grid-template-columns: minmax(160px, 220px) minmax(180px, 260px) auto;
@@ -810,6 +820,15 @@ textarea {
   border-color: #0f63b8;
   background: #eef6ff;
 }
+.sample-inputs label.measurement-submitted {
+  border-color: #abefc6;
+  background: #ecfdf3;
+}
+.sample-inputs label.measurement-submitted input,
+.sample-inputs label.measurement-submitted select {
+  color: #067647;
+  font-weight: 800;
+}
 .limit-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(58px, 1fr));
@@ -836,8 +855,26 @@ textarea {
   padding: 14px 16px;
 }
 .lock-panel {
+  position: fixed;
+  z-index: 50;
+  inset: 5vh max(16px, calc((100vw - 620px) / 2)) auto;
   border-color: #fecdca;
   background: #fffafa;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, .35);
+  max-height: 90vh;
+  overflow: auto;
+}
+.lock-panel::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background: rgba(15, 23, 42, .42);
+}
+.lock-panel .panel-heading p {
+  color: var(--danger);
+  font-weight: 750;
+  line-height: 1.45;
 }
 
 .trend-canvas {
@@ -921,7 +958,8 @@ textarea {
   .status-row { justify-content: flex-start; }
   .job-data-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .job-data-form button { grid-column: span 2; }
-  .form-grid, .measurement-form, .override-form, .job-summary-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form { grid-template-columns: 1fr; }
+  .report-filter-form button { grid-column: auto; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-nav { padding-bottom: 8px; }
   .setup-variable-row {

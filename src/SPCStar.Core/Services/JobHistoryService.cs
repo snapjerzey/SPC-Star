@@ -14,6 +14,7 @@ public sealed record JobHistoryEntryDto(
     string? NoteText = null,
     string? CharacteristicName = null,
     RuleTriggered? RuleTriggered = null,
+    string? Detail = null,
     AlertStatus? Status = null,
     string? OverrideUserId = null,
     string? OverrideRole = null,
@@ -24,7 +25,11 @@ public sealed record JobHistoryEntryDto(
     string? MaterialPartNum = null,
     string? NewLotNum = null,
     decimal? QuantityLoaded = null,
-    string? Reason = null);
+    string? Reason = null,
+    decimal? OldValue = null,
+    decimal? NewValue = null,
+    string? OldInspectionPhase = null,
+    string? NewInspectionPhase = null);
 
 public sealed class JobHistoryService(ISpcRepository repository)
 {
@@ -67,6 +72,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
                     alert.LockedAt,
                     CharacteristicName: alert.CharacteristicName,
                     RuleTriggered: alert.RuleTriggered,
+                    Detail: alert.Detail,
                     Status: alert.Status,
                     OverrideUserId: audit?.OverrideUserId,
                     OverrideRole: audit?.OverrideRole,
@@ -91,9 +97,26 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 QuantityLoaded: change.QuantityLoaded,
                 Reason: change.Reason));
 
+        var edits = repository.MeasurementEditAudits
+            .Where(edit => edit.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Select(edit => new JobHistoryEntryDto(
+                edit.Id,
+                "MeasurementEdit",
+                edit.JobNum,
+                edit.PartNum,
+                edit.ResourceId,
+                edit.EditedByUserId,
+                edit.EditedAt,
+                CharacteristicName: edit.CharacteristicName,
+                OldValue: edit.OldValue,
+                NewValue: edit.NewValue,
+                OldInspectionPhase: edit.OldInspectionPhase,
+                NewInspectionPhase: edit.NewInspectionPhase));
+
         return notes
             .Concat(locks)
             .Concat(materialChanges)
+            .Concat(edits)
             .OrderByDescending(entry => entry.Timestamp)
             .ToArray();
     }

@@ -35,6 +35,7 @@ public sealed class InspectionAndOverrideTests
         Assert.True(result.Succeeded);
         var alert = Assert.Single(repository.Alerts);
         Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
+        Assert.Contains("above the upper specification limit", alert.Detail);
     }
 
     [Fact]

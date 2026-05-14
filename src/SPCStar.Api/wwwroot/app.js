@@ -102,6 +102,7 @@ async function loadSnapshot() {
   if (canManageSetup()) {
     renderGlobalRuleSetting();
     renderPartReviewControls();
+    renderReportControls();
     renderSetupEditChoices();
     renderPartReview();
   }
@@ -250,8 +251,13 @@ function renderLock(activeLock) {
     return;
   }
   banner.classList.remove("hidden");
-  banner.textContent = `LOCKED: ${activeLock.characteristicName} - ${ruleLabel(activeLock.ruleTriggered)} at ${formatTime(activeLock.lockedAt)}`;
+  const lockText = `LOCKED: ${activeLock.characteristicName} - ${ruleLabel(activeLock.ruleTriggered)} at ${formatTime(activeLock.lockedAt)}${activeLock.detail ? `. ${activeLock.detail}` : ""}`;
+  banner.textContent = lockText;
   panel.classList.remove("hidden");
+  panel.querySelector(".panel-heading p")?.remove();
+  const detail = document.createElement("p");
+  detail.textContent = lockText;
+  panel.querySelector(".panel-heading").appendChild(detail);
   $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
   $("godReasonLabel").classList.toggle("hidden", !state.user?.roles?.includes("GOD"));
 }
@@ -422,48 +428,23 @@ function formatFrequency(plan) {
 
 async function submitMeasurement(event) {
   event.preventDefault();
-  const { jobNum, resourceId } = selectedValues();
-  const inputs = [...document.querySelectorAll(".measurement-input")];
-  const entries = inputs
-    .map((input) => ({ input, plan: state.selectedPlans[Number(input.dataset.planIndex)], value: Number(input.value) }))
-    .filter((entry) => inputHasValue(entry.input));
-
-  if (!entries.length) {
-    showEntryMessage("Enter at least one measurement value.", "error");
-    return;
-  }
-
-  if (entries.some((entry) => !Number.isFinite(entry.value))) {
-    showEntryMessage("Every entered measurement must be numeric.", "error");
+  const inputs = [...document.querySelectorAll(".measurement-input")].filter((input) => !input.disabled);
+  const empty = inputs.find((input) => !inputHasValue(input));
+  if (empty) {
+    showEntryMessage(`Fill in ${sampleLabel(empty)} before submitting.`, "error");
+    empty.focus();
     return;
   }
 
   try {
-    for (const entry of entries) {
-      await api("/inspections/measurements", {
-        method: "POST",
-        body: JSON.stringify({
-          jobNum,
-          partNum: entry.plan.partNum,
-          processCode: entry.plan.processCode,
-          operationSeq: entry.plan.operationSeq,
-          resourceId,
-          characteristicName: entry.plan.characteristicName,
-          inspectionPhase: entry.plan.inspectionPhase || $("inspectionPhase").value,
-          value: entry.value,
-          timestamp: new Date().toISOString(),
-          operatorUserId: state.user.userName,
-          deviceId: "browser-dev",
-          clientRecordId: newClientRecordId(),
-          submittedAt: new Date().toISOString()
-        })
-      });
+    for (const input of inputs) {
+      await submitMeasurementInput(input, { reloadOnSuccess: false });
     }
-    inputs.forEach((input) => { input.value = ""; });
-    showEntryMessage(`${entries.length} measurement${entries.length === 1 ? "" : "s"} submitted.`, "ok");
+    showEntryMessage(`${inputs.length} inspection value${inputs.length === 1 ? "" : "s"} submitted.`, "ok");
     await loadContext();
   } catch (error) {
     showEntryMessage("Measurement rejected. " + readableError(error), "error");
+    await loadContext();
   }
 }
 
@@ -474,20 +455,85 @@ function inputHasValue(input) {
 function wireMeasurementDeviceInputs() {
   document.querySelectorAll(".measurement-input").forEach((input) => {
     input.addEventListener("focus", () => input.closest("label")?.classList.add("device-input-active"));
-    input.addEventListener("blur", () => {
+    input.addEventListener("blur", async () => {
       input.closest("label")?.classList.remove("device-input-active");
       normalizeMeasurementInput(input);
+      if (!inputHasValue(input)) {
+        showEntryMessage(`Fill in ${sampleLabel(input)} before moving on.`, "error");
+        return;
+      }
+      await submitMeasurementInput(input).catch(() => {});
+    });
+    input.addEventListener("change", async () => {
+      if (input.dataset.entryType === "Attribute" && inputHasValue(input)) {
+        await submitMeasurementInput(input).catch(() => {});
+      }
     });
     input.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
       event.preventDefault();
       normalizeMeasurementInput(input);
-      focusNextMeasurementInput(input);
+      submitMeasurementInput(input).then(() => focusNextMeasurementInput(input)).catch(() => {});
     });
     input.addEventListener("paste", () => {
       window.setTimeout(() => normalizeMeasurementInput(input), 0);
     });
   });
+}
+
+async function submitMeasurementInput(input, options = {}) {
+  if (input.disabled || input.dataset.submitting === "true" || input.dataset.submitted === "true") return;
+  if (!inputHasValue(input)) return;
+  const { jobNum, resourceId } = selectedValues();
+  const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  const value = Number(input.value);
+  if (!Number.isFinite(value)) {
+    showEntryMessage(`${sampleLabel(input)} must be numeric.`, "error");
+    throw new Error(`${sampleLabel(input)} must be numeric.`);
+  }
+
+  input.dataset.submitting = "true";
+  try {
+    await api("/inspections/measurements", {
+      method: "POST",
+      body: JSON.stringify({
+        jobNum,
+        partNum: plan.partNum,
+        processCode: plan.processCode,
+        operationSeq: plan.operationSeq,
+        resourceId,
+        characteristicName: plan.characteristicName,
+        inspectionPhase: plan.inspectionPhase || $("inspectionPhase").value,
+        value,
+        timestamp: new Date().toISOString(),
+        operatorUserId: state.user.userName,
+        deviceId: "browser-dev",
+        clientRecordId: newClientRecordId(),
+        submittedAt: new Date().toISOString()
+      })
+    });
+    input.dataset.submitted = "true";
+    input.disabled = true;
+    input.closest("label")?.classList.add("measurement-submitted");
+    showEntryMessage(`${sampleLabel(input)} submitted.`, "ok");
+    const planIndex = Number(input.dataset.planIndex);
+    state.contexts[planIndex] = await loadVariableContext(jobNum, resourceId, plan);
+    renderMeanSummary();
+    if (state.contexts[planIndex]?.activeLock || options.reloadOnSuccess !== false) {
+      await loadContext();
+    }
+  } catch (error) {
+    showEntryMessage("Measurement rejected. " + readableError(error), "error");
+    await loadContext();
+    throw error;
+  } finally {
+    input.dataset.submitting = "false";
+  }
+}
+
+function sampleLabel(input) {
+  const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  return `${plan?.characteristicName || "value"} sample ${Number(input.dataset.sampleIndex) + 1}`;
 }
 
 function normalizeMeasurementInput(input) {
@@ -852,6 +898,10 @@ function renderHistoryList(list, entries) {
       text.textContent = lockHistoryText(entry);
     } else if (entry.entryType === "Material") {
       text.textContent = materialHistoryText(entry);
+    } else if (entry.entryType === "MeasurementEdit") {
+      text.textContent = measurementEditHistoryText(entry);
+    } else if (entry.entryType === "Measurement") {
+      text.textContent = measurementHistoryText(entry);
     } else {
       text.textContent = entry.noteText;
     }
@@ -862,6 +912,14 @@ function renderHistoryList(list, entries) {
 }
 
 function historyEntryTitle(entry) {
+  if (entry.entryType === "Measurement") {
+    return `${entry.characteristicName} inspection`;
+  }
+
+  if (entry.entryType === "MeasurementEdit") {
+    return `${entry.characteristicName} edited`;
+  }
+
   if (entry.entryType === "Lock") {
     return `${entry.characteristicName} ${entry.status === "Active" ? "locked" : "lock cleared"}`;
   }
@@ -871,6 +929,18 @@ function historyEntryTitle(entry) {
   }
 
   return entry.operatorUserId;
+}
+
+function measurementHistoryText(entry) {
+  const value = entry.characteristicType === "Attribute"
+    ? Number(entry.value) === 1 ? "Accept" : "Reject"
+    : formatNumber(entry.value);
+  const flags = entry.isOutOfSpec ? " Out of spec." : entry.isOutOfControl ? " Out of control." : "";
+  return `${entry.inspectionPhase}: ${value} on ${entry.resourceId}.${flags}`;
+}
+
+function measurementEditHistoryText(entry) {
+  return `${entry.oldInspectionPhase}: ${formatNumber(entry.oldValue)} changed to ${entry.newInspectionPhase}: ${formatNumber(entry.newValue)}.`;
 }
 
 function lockHistoryText(entry) {
@@ -956,7 +1026,7 @@ function showPanel(panelName) {
 }
 
 function showSetupSection(sectionName) {
-  const sections = ["Inspection", "Users", "Rules", "Import", "Review", "JobData"];
+  const sections = ["Inspection", "Users", "Rules", "Import", "Review", "Reports", "JobData"];
   sections.forEach((section) => {
     $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
     $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
@@ -1008,6 +1078,11 @@ async function loadSetupAdmin() {
 function renderPartReviewControls() {
   const parts = [{ partNum: "", description: "All parts" }, ...state.snapshot.parts];
   fillSelect($("partReviewFilter"), parts, (part) => part.partNum, (part) => part.partNum || part.description);
+}
+
+function renderReportControls() {
+  fillSelect($("reportResourceId"), [{ resourceId: "", description: "All machines" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
+  fillDatalist($("reportCharacteristicOptions"), state.snapshot.characteristics, (characteristic) => characteristic.name);
 }
 
 async function loadReview() {
@@ -1077,7 +1152,19 @@ function renderJobReview(review) {
   $("jobReviewPanel").classList.remove("hidden");
   renderReviewSummary(review.variableSummary || [], $("jobReviewSummary"), "No summary data for this job.");
   renderReviewMeasurements(review.measurements || []);
-  renderHistoryList($("jobReviewHistory"), review.history || []);
+  renderJobLedger($("jobReviewHistory"), review.history || [], review.measurements || []);
+}
+
+function renderJobLedger(container, history, measurements) {
+  const measurementEntries = measurements.map((measurement) => ({
+    ...measurement,
+    entryType: "Measurement",
+    timestamp: measurement.timestamp,
+    operatorUserId: measurement.operatorUserId
+  }));
+  const rows = [...history, ...measurementEntries]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  renderHistoryList(container, rows);
 }
 
 function renderReviewSummary(rows, container, emptyMessage) {
@@ -1123,7 +1210,7 @@ async function saveReviewMeasurement(id, item) {
   try {
     await api(`/review/measurements/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ value, inspectionPhase })
+      body: JSON.stringify({ value, inspectionPhase, editedByUserId: state.user.userName })
     });
     $("reviewMessage").textContent = "Inspection entry updated.";
     $("reviewMessage").className = "message ok";
@@ -1161,7 +1248,7 @@ function renderReviewMeasurements(rows) {
         </select>
       </span>
       <span>${row.characteristicName}</span>
-      <span><input class="review-measurement-value" type="number" step="0.0001" value="${Number(row.value)}"></span>
+      <span>${reviewMeasurementValueControl(row)}</span>
       <span>${row.resourceId}${row.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : row.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
       <span>${row.processCode} ${row.operationSeq}</span>
       <span>${row.operatorUserId}</span>
@@ -1169,6 +1256,18 @@ function renderReviewMeasurements(rows) {
     item.querySelector("button").addEventListener("click", () => saveReviewMeasurement(row.id, item));
     container.appendChild(item);
   });
+}
+
+function reviewMeasurementValueControl(row) {
+  if (row.characteristicType === "Attribute") {
+    return `
+      <select class="review-measurement-value">
+        <option value="1" ${Number(row.value) === 1 ? "selected" : ""}>Accept</option>
+        <option value="0" ${Number(row.value) === 0 ? "selected" : ""}>Reject</option>
+      </select>`;
+  }
+
+  return `<input class="review-measurement-value" type="number" step="0.0001" value="${Number(row.value)}">`;
 }
 
 async function loadJobSummary(event) {
@@ -1239,6 +1338,81 @@ function parseJobNums() {
     .split(",")
     .map((jobNum) => jobNum.trim())
     .filter(Boolean);
+}
+
+async function runReport(event) {
+  event.preventDefault();
+  try {
+    const data = await api("/charts/data", {
+      method: "POST",
+      body: JSON.stringify({
+        chartType: "IndividualsMovingRange",
+        jobNum: $("reportJobNum").value.trim() || null,
+        partNum: $("reportPartNum").value.trim() || null,
+        resourceId: $("reportResourceId").value || null,
+        characteristicName: $("reportCharacteristicName").value.trim() || null,
+        from: dateTimeLocalValue("reportFrom"),
+        to: dateTimeLocalValue("reportTo"),
+        inspectionPhase: $("reportInspectionPhase").value || null
+      })
+    });
+    drawReport(data.points, data);
+    $("reportMessage").textContent = `${data.points.length} point${data.points.length === 1 ? "" : "s"} loaded.`;
+    $("reportMessage").className = "message ok";
+  } catch (error) {
+    $("reportMessage").textContent = readableError(error);
+    $("reportMessage").className = "message error";
+  }
+}
+
+function dateTimeLocalValue(id) {
+  const value = $(id).value;
+  return value ? new Date(value).toISOString() : null;
+}
+
+function drawReport(points, data = {}) {
+  const canvas = $("reportCanvas");
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  const padding = { left: 42, right: 18, top: 18, bottom: 34 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  drawChartFrame(ctx, padding, plotWidth, plotHeight);
+  if (!points.length) return;
+  const values = points.map((point) => Number(point.value));
+  const limitValues = [data.lowerControlLimit, data.upperControlLimit, data.lowerSpecLimit, data.upperSpecLimit]
+    .filter((value) => value !== null && value !== undefined)
+    .map(Number);
+  const min = Math.min(...values, ...limitValues);
+  const max = Math.max(...values, ...limitValues);
+  const spread = max === min ? 1 : max - min;
+  const low = min - spread * 0.1;
+  const high = max + spread * 0.1;
+  const chartType = $("reportChartType").value;
+  if (chartType === "Histogram") {
+    drawHistogram(ctx, points, padding, plotWidth, plotHeight, low, high);
+    return;
+  }
+  if (chartType === "MovingRange") {
+    drawMovingRange(ctx, points, padding, plotWidth, plotHeight);
+    return;
+  }
+  const x = (index) => padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
+  const y = (value) => padding.top + (1 - ((Number(value) - low) / (high - low))) * plotHeight;
+  if (chartType === "ControlLimits") {
+    drawLimitLine(ctx, y, data.upperControlLimit, "UCL", "#c76508", width, padding);
+    drawLimitLine(ctx, y, data.lowerControlLimit, "LCL", "#c76508", width, padding);
+    drawLimitLine(ctx, y, data.upperSpecLimit, "USL", "#b42318", width, padding);
+    drawLimitLine(ctx, y, data.lowerSpecLimit, "LSL", "#b42318", width, padding);
+  }
+  if (chartType === "Run") {
+    drawLimitLine(ctx, y, data.mean, "Mean", "#067647", width, padding);
+  }
+  drawLineSeries(ctx, points, (point, index) => x(index), (point) => y(point.value));
 }
 
 function coaStatisticLabel(value) {
@@ -1765,6 +1939,7 @@ $("setupUsersSectionTab").addEventListener("click", () => showSetupSection("User
 $("setupRulesSectionTab").addEventListener("click", () => showSetupSection("Rules"));
 $("setupImportSectionTab").addEventListener("click", () => showSetupSection("Import"));
 $("setupReviewSectionTab").addEventListener("click", () => showSetupSection("Review"));
+$("setupReportsSectionTab").addEventListener("click", () => showSetupSection("Reports"));
 $("setupJobDataSectionTab").addEventListener("click", () => showSetupSection("JobData"));
 $("userSetupForm").addEventListener("submit", saveUser);
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
@@ -1789,6 +1964,7 @@ $("reviewJobNum").addEventListener("keydown", (event) => {
 });
 $("jobSummaryForm").addEventListener("submit", loadJobSummary);
 $("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
+$("reportForm").addEventListener("submit", runReport);
 setStatus($("syncStatus"), navigator.onLine ? "Online" : "Offline", navigator.onLine ? "ok" : "warn");
 clearInspectionSetupForm();
 

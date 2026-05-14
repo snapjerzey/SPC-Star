@@ -455,6 +455,7 @@ public sealed class InspectionMeasurementService(
             CharacteristicName = measurement.CharacteristicName,
             OperatorUserId = measurement.OperatorUserId,
             RuleTriggered = RuleTriggered.SpecLimitViolation,
+            Detail = SpecLimitDetail(measurement, spec),
             LockedAt = measurement.Timestamp
         };
 
@@ -528,6 +529,7 @@ public sealed class InspectionMeasurementService(
             CharacteristicName = measurement.CharacteristicName,
             OperatorUserId = measurement.OperatorUserId,
             RuleTriggered = RuleTriggered.AttributeRejected,
+            Detail = "Attribute was rejected.",
             LockedAt = measurement.Timestamp
         };
 
@@ -604,7 +606,23 @@ public sealed class InspectionMeasurementService(
 
     private static string ActiveLockMessage(ProcessAlert alert)
     {
-        return $"{alert.CharacteristicName} is locked for job {alert.JobNum} on {alert.ResourceId} due to {RuleText(alert.RuleTriggered)} at {alert.LockedAt:MM/dd/yyyy HH:mm}. Clear that lock before entering more {alert.CharacteristicName} measurements.";
+        var detail = string.IsNullOrWhiteSpace(alert.Detail) ? string.Empty : $" {alert.Detail}";
+        return $"{alert.CharacteristicName} is locked for job {alert.JobNum} on {alert.ResourceId} due to {RuleText(alert.RuleTriggered)} at {alert.LockedAt:MM/dd/yyyy HH:mm}.{detail} Clear that lock before entering more {alert.CharacteristicName} measurements.";
+    }
+
+    private static string SpecLimitDetail(InspectionMeasurement measurement, SpecLimit spec)
+    {
+        if (measurement.Value > spec.Usl)
+        {
+            return $"Entered value {measurement.Value:0.#####} is above the upper specification limit {spec.Usl:0.#####}.";
+        }
+
+        if (measurement.Value < spec.Lsl)
+        {
+            return $"Entered value {measurement.Value:0.#####} is below the lower specification limit {spec.Lsl:0.#####}.";
+        }
+
+        return string.Empty;
     }
 
     private static string RuleText(RuleTriggered rule)

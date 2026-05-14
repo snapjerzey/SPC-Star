@@ -18,7 +18,8 @@ public sealed record ActiveLockDto(
     string CharacteristicName,
     RuleTriggered RuleTriggered,
     DateTimeOffset LockedAt,
-    string OperatorUserId);
+    string OperatorUserId,
+    string? Detail);
 
 public sealed record WorkContextDto(
     WorkContextRequest Request,
@@ -88,7 +89,7 @@ public sealed class WorkContextService(
                 alert.ResourceId.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
                 alert.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(alert => alert.LockedAt)
-            .Select(alert => new ActiveLockDto(alert.Id, alert.CharacteristicName, alert.RuleTriggered, alert.LockedAt, alert.OperatorUserId))
+            .Select(alert => new ActiveLockDto(alert.Id, alert.CharacteristicName, alert.RuleTriggered, alert.LockedAt, alert.OperatorUserId, alert.Detail))
             .FirstOrDefault();
 
         return new WorkContextDto(

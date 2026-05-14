@@ -73,6 +73,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         List<ResourceMachine> Resources,
         List<Device> Devices,
         List<InspectionMeasurement> Measurements,
+        List<MeasurementEditAudit>? MeasurementEditAudits,
         List<JobNote>? JobNotes,
         List<JobTag>? JobTags,
         List<PartJobDataField>? PartJobDataFields,
@@ -98,6 +99,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
                 [.. repository.Resources],
                 [.. repository.Devices],
                 [.. repository.Measurements],
+                [.. repository.MeasurementEditAudits],
                 [.. repository.JobNotes],
                 [.. repository.JobTags],
                 [.. repository.PartJobDataFields],
@@ -127,6 +129,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
             repository.Resources.AddRange(Resources);
             repository.Devices.AddRange(Devices);
             repository.Measurements.AddRange(Measurements);
+            repository.MeasurementEditAudits.AddRange(MeasurementEditAudits ?? []);
             repository.JobNotes.AddRange(JobNotes ?? []);
             repository.JobTags.AddRange(JobTags ?? []);
             repository.PartJobDataFields.AddRange(PartJobDataFields ?? []);

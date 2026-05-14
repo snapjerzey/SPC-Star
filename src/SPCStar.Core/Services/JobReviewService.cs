@@ -12,6 +12,7 @@ public sealed record JobInspectionMeasurementDto(
     string InspectionPhase,
     string ResourceId,
     string CharacteristicName,
+    CharacteristicType CharacteristicType,
     decimal Value,
     DateTimeOffset Timestamp,
     string OperatorUserId,
@@ -29,7 +30,8 @@ public sealed record JobReviewDto(
 public sealed record UpdateInspectionMeasurementRequest(
     decimal Value,
     DateTimeOffset? Timestamp = null,
-    string? InspectionPhase = null);
+    string? InspectionPhase = null,
+    string? EditedByUserId = null);
 
 public sealed class JobReviewService(
     ISpcRepository repository,
@@ -92,16 +94,32 @@ public sealed class JobReviewService(
             return ServiceResult<JobInspectionMeasurementDto>.Fail("Inspection measurement was not found.");
         }
 
+        var oldValue = measurement.Value;
+        var oldPhase = measurement.InspectionPhase;
+        var newPhase = string.IsNullOrWhiteSpace(request.InspectionPhase)
+            ? measurement.InspectionPhase
+            : NormalizeInspectionPhase(request.InspectionPhase);
         measurement.Value = request.Value;
         if (request.Timestamp.HasValue)
         {
             measurement.Timestamp = request.Timestamp.Value;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.InspectionPhase))
+        measurement.InspectionPhase = newPhase;
+        repository.MeasurementEditAudits.Add(new MeasurementEditAudit
         {
-            measurement.InspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
-        }
+            MeasurementId = measurement.Id,
+            JobNum = measurement.JobNum,
+            PartNum = measurement.PartNum,
+            ResourceId = measurement.ResourceId,
+            CharacteristicName = measurement.CharacteristicName,
+            OldValue = oldValue,
+            NewValue = measurement.Value,
+            OldInspectionPhase = oldPhase,
+            NewInspectionPhase = measurement.InspectionPhase,
+            EditedByUserId = string.IsNullOrWhiteSpace(request.EditedByUserId) ? "unknown" : request.EditedByUserId.Trim(),
+            EditedAt = DateTimeOffset.UtcNow
+        });
 
         return ServiceResult<JobInspectionMeasurementDto>.Ok(ToDto(measurement));
     }
@@ -122,6 +140,7 @@ public sealed class JobReviewService(
             measurement.InspectionPhase,
             measurement.ResourceId,
             measurement.CharacteristicName,
+            FindCharacteristic(measurement)?.Type ?? CharacteristicType.Variable,
             measurement.Value,
             measurement.Timestamp,
             measurement.OperatorUserId,
@@ -150,6 +169,26 @@ public sealed class JobReviewService(
         return characteristic is null
             ? null
             : repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
+    }
+
+    private Characteristic? FindCharacteristic(InspectionMeasurement measurement)
+    {
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase));
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase));
+        if (part is null || process is null)
+        {
+            return null;
+        }
+
+        var operation = repository.Operations.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.ProcessId == process.Id &&
+            item.OperationSeq == measurement.OperationSeq);
+        return operation is null
+            ? null
+            : repository.Characteristics.FirstOrDefault(item =>
+                item.OperationId == operation.Id &&
+                item.Name.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase));
     }
 
     private ControlLimitSet? FindControlLimit(InspectionMeasurement measurement)

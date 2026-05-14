@@ -17,6 +17,7 @@ public interface ISpcRepository
     List<ResourceMachine> Resources { get; }
     List<Device> Devices { get; }
     List<InspectionMeasurement> Measurements { get; }
+    List<MeasurementEditAudit> MeasurementEditAudits { get; }
     List<JobNote> JobNotes { get; }
     List<JobTag> JobTags { get; }
     List<PartJobDataField> PartJobDataFields { get; }

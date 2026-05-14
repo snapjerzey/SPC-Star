@@ -23,6 +23,11 @@ public sealed class JobReviewServiceTests
         Assert.Equal(5.25m, measurement.Value);
         Assert.Equal("Setup", measurement.InspectionPhase);
         Assert.Equal(5.25m, result.Value!.Value);
+        var audit = Assert.Single(repository.MeasurementEditAudits);
+        Assert.Equal(5m, audit.OldValue);
+        Assert.Equal(5.25m, audit.NewValue);
+        Assert.Equal("In Process", audit.OldInspectionPhase);
+        Assert.Equal("Setup", audit.NewInspectionPhase);
     }
 
     [Fact]

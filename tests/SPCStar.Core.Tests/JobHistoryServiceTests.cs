@@ -69,10 +69,12 @@ public sealed class JobHistoryServiceTests
 
         Assert.Equal(3, history.Count);
         Assert.Equal("Note", history[0].EntryType);
-        Assert.Equal("Material", history[1].EntryType);
-        Assert.Equal("Lock", history[2].EntryType);
-        Assert.Equal("LOT-2", history[1].NewLotNum);
-        Assert.Equal("Tooling", history[2].CauseCategory);
-        Assert.Equal("Changed tool insert", history[2].SolutionText);
+        Assert.Equal("Lock", history[1].EntryType);
+        Assert.Equal("Material", history[2].EntryType);
+        Assert.Equal(DateTimeOffset.Parse("2026-05-12T08:15:00Z"), history[1].Timestamp);
+        Assert.Equal("linetech1", history[1].OverrideUserId);
+        Assert.Equal("Tooling", history[1].CauseCategory);
+        Assert.Equal("Changed tool insert", history[1].SolutionText);
+        Assert.Equal("LOT-2", history[2].NewLotNum);
     }
 }

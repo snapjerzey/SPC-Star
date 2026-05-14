@@ -960,6 +960,14 @@ function historyEntryTitle(entry) {
   return entry.operatorUserId;
 }
 
+function historyEntryUser(entry) {
+  if (entry.entryType === "Lock" && entry.status !== "Active" && entry.overrideUserId) {
+    return entry.overrideUserId;
+  }
+
+  return entry.operatorUserId || "-";
+}
+
 function measurementHistoryText(entry) {
   const value = entry.characteristicType === "Attribute"
     ? Number(entry.value) === 1 ? "Accept" : "Reject"
@@ -1302,7 +1310,7 @@ function renderReviewHistoryEvent(container, entry) {
     <span>${escapeHtml(details || "")}</span>
     <span>${escapeHtml(entry.resourceId || "-")}</span>
     <span>-</span>
-    <span>${escapeHtml(entry.operatorUserId || "-")}</span>
+    <span>${escapeHtml(historyEntryUser(entry))}</span>
     <span></span>`;
   container.appendChild(item);
 }

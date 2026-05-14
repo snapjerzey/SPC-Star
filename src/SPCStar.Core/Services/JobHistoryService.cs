@@ -69,7 +69,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
                     alert.PartNum,
                     alert.ResourceId,
                     alert.OperatorUserId,
-                    alert.LockedAt,
+                    audit?.UnlockedAt ?? alert.LockedAt,
                     CharacteristicName: alert.CharacteristicName,
                     RuleTriggered: alert.RuleTriggered,
                     Detail: alert.Detail,

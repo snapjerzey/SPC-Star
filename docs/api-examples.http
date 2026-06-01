@@ -17,7 +17,7 @@ POST {{baseUrl}}/setup/import-csv
 Content-Type: application/json
 
 {
-  "csv": "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,MaterialDescription,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic,IsRequired,DisplayOrder\nJobData,P200,Demo part,Needles,Startup,,Wire Shipment,,,,,,,,,,,,,,,,,,,true,1\nMaterial,P200,Demo part,Needles,Startup,,,Wire,WIRE-302,302 stainless wire,,,,,,,,,,,,,,,,true,2\nVariable,P200,Demo part,Needles,Startup,Needle Forming,,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,5,Event,1,StartOfJob,WesternElectric,true,Mean,,"
+  "csv": "Section,Part Number,Part Description,Product Group,Inspection Phase,Operation,Item Name,Inspection Type,Material Part Number,Material Description,Unit,Target,Lower Spec,Upper Spec,Lower Control,Upper Control,Sample Size,Frequency Type,Frequency,Frequency Unit,Drift Rule,COA Required,COA Statistic,Required,Sort Order\nJob Data,P200,Demo part,Needles,Startup,,Wire Shipment,,,,,,,,,,,,,,,,,true,1\nMaterial,P200,Demo part,Needles,Startup,,Wire,,WIRE-302,302 stainless wire,,,,,,,,,,,,,,,true,2\nVariable,P200,Demo part,Needles,Startup,Needle Forming,Diameter,, , ,mm,5.0,4.5,5.5,4.25,5.75,5,Event,1,StartOfJob,WesternElectric,true,Mean,,"
 }
 
 ### Add part-specific job data field

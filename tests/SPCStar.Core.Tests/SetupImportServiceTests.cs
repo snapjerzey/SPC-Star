@@ -49,7 +49,7 @@ public sealed class SetupImportServiceTests
             string.Empty
         ]));
 
-        Assert.True(result.Succeeded);
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         var limit = Assert.Single(repository.ControlLimits);
         Assert.Equal(4.25m, limit.Lcl);
         Assert.Equal(5.75m, limit.Ucl);
@@ -67,7 +67,7 @@ public sealed class SetupImportServiceTests
             string.Empty
         ]));
 
-        Assert.True(result.Succeeded);
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal(CoaStatisticType.StandardDeviation, repository.Characteristics.Single().CoaStatisticType);
     }
 
@@ -106,6 +106,30 @@ public sealed class SetupImportServiceTests
         Assert.Equal("Wire", repository.PartMaterialFields.Single().MaterialName);
         Assert.Equal("WIRE-302", repository.PartMaterialFields.Single().MaterialPartNum);
         Assert.Equal("302 stainless wire", repository.PartMaterialFields.Single().MaterialDescription);
+    }
+
+    [Fact]
+    public void ImportCsv_AcceptsHumanReadableTemplateHeaders()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[] { "Section", "Part Number", "Part Description", "Product Group", "Inspection Phase", "Operation", "Item Name", "Inspection Type", "Material Part Number", "Material Description", "Unit", "Target", "Lower Spec", "Upper Spec", "Lower Control", "Upper Control", "Sample Size", "Frequency Type", "Frequency", "Frequency Unit", "Drift Rule", "COA Required", "COA Statistic", "Required", "Sort Order" };
+        string Row(params string[] values) => string.Join(",", values.Concat(Enumerable.Repeat("", header.Length)).Take(header.Length));
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row("Job Data", "P300", "Human Template Part", "Needles", "Startup", "", "Wire Shipment", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "true", "1"),
+            Row("Material", "P300", "Human Template Part", "Needles", "Startup", "", "Wire", "", "WIRE-302", "302 stainless wire", "", "", "", "", "", "", "", "", "", "", "", "", "", "true", "2"),
+            Row("Variable", "P300", "Human Template Part", "Needles", "Startup", "Needle Forming", "Outside Diameter", "", "", "", "mm", "5.0", "4.5", "5.5", "4.4", "5.6", "5", "Event", "1", "StartOfJob", "WesternElectric", "true", "Mean", "", ""),
+            Row("Attribute", "P300", "Human Template Part", "Needles", "Startup", "Needle Forming", "Comparator Check", "", "", "", "Accept/Reject", "", "", "", "", "", "5", "Event", "1", "StartOfJob", "WesternElectric", "false", "", "", ""),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Contains(repository.PartJobDataFields, field => field.FieldName == "Wire Shipment");
+        Assert.Contains(repository.PartMaterialFields, field => field.MaterialPartNum == "WIRE-302");
+        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Outside Diameter" && characteristic.Type == CharacteristicType.Variable);
+        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Comparator Check" && characteristic.Type == CharacteristicType.Attribute);
     }
 
     private static string ValidCsv(

@@ -69,18 +69,18 @@ Example requests are in `docs/api-examples.http`.
 
 The setup import is row-type based so one file can define the complete inspection plan for a part.
 
-Required common columns:
+The human-facing template uses readable column names:
 
-`RowType, PartNum, PartDescription, ProductGroup, InspectionPhase`
+`Section, Part Number, Part Description, Product Group, Inspection Phase, Operation, Item Name, Inspection Type, Material Part Number, Material Description, Unit, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Sample Size, Frequency Type, Frequency, Frequency Unit, Drift Rule, COA Required, COA Statistic, Required, Sort Order`
 
-Supported `RowType` values:
+Supported `Section` values:
 
-- `JobData`: use `FieldName`, `IsRequired`, and `DisplayOrder`.
-- `Material`: use `MaterialName`, `MaterialPartNum`, `MaterialDescription`, `IsRequired`, and `DisplayOrder`.
-- `Variable`: use `Operation`, `CharacteristicName`, `CharacteristicType=Variable`, `Nominal`, `LSL`, `USL`, optional `LCL/UCL`, `UnitOfMeasure`, sample/frequency columns, drift rule, and COA columns.
-- `Attribute`: use `Operation`, `CharacteristicName`, `CharacteristicType=Attribute`, sample/frequency columns, drift rule, and COA columns.
+- `Job Data`: use `Item Name`, `Required`, and `Sort Order`.
+- `Material`: use `Item Name`, `Material Part Number`, `Material Description`, `Required`, and `Sort Order`.
+- `Variable`: use `Operation`, `Item Name`, `Unit`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, drift rule, and COA columns.
+- `Attribute`: use `Operation`, `Item Name`, `Unit=Accept/Reject`, sample/frequency columns, drift rule, and COA columns.
 
-The in-app `Load Template` button inserts the current standard template.
+The importer also accepts the older technical column names for compatibility, but the in-app `Load Template` button inserts the human-readable version.
 
 Initial endpoints include:
 

@@ -29,7 +29,7 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     public ServiceResult ImportCsv(string csv)
     {
-        var rows = CsvSupport.ReadRows(csv);
+        var rows = NormalizeRows(CsvSupport.ReadRows(csv));
         var errors = ValidateRows(rows);
         if (errors.Count > 0)
         {
@@ -44,7 +44,93 @@ public sealed class SetupImportService(ISpcRepository repository)
         return ServiceResult.Ok();
     }
 
-    public IReadOnlyList<string> ValidateCsv(string csv) => ValidateRows(CsvSupport.ReadRows(csv));
+    public IReadOnlyList<string> ValidateCsv(string csv) => ValidateRows(NormalizeRows(CsvSupport.ReadRows(csv)));
+
+    private static IReadOnlyList<Dictionary<string, string>> NormalizeRows(IReadOnlyList<Dictionary<string, string>> rows)
+    {
+        return rows.Select(NormalizeRow).ToArray();
+    }
+
+    private static Dictionary<string, string> NormalizeRow(Dictionary<string, string> row)
+    {
+        var normalized = new Dictionary<string, string>(row, StringComparer.OrdinalIgnoreCase);
+        CopyAlias(normalized, "RowType", "Section", "Type");
+        CopyAlias(normalized, "PartNum", "Part Number", "Part #", "Part No");
+        CopyAlias(normalized, "PartDescription", "Part Description");
+        CopyAlias(normalized, "ProductGroup", "Product Group");
+        CopyAlias(normalized, "InspectionPhase", "Phase", "Inspection Phase");
+        CopyAlias(normalized, "Operation", "Operation Name");
+        CopyAlias(normalized, "MaterialPartNum", "Material Part Number", "Material Part #", "Material Part No");
+        CopyAlias(normalized, "MaterialDescription", "Material Description");
+        CopyAlias(normalized, "CharacteristicType", "Inspection Type");
+        CopyAlias(normalized, "Nominal", "Target");
+        CopyAlias(normalized, "LSL", "Lower Spec", "Lower Spec Limit");
+        CopyAlias(normalized, "USL", "Upper Spec", "Upper Spec Limit");
+        CopyAlias(normalized, "LCL", "Lower Control", "Lower Control Limit");
+        CopyAlias(normalized, "UCL", "Upper Control", "Upper Control Limit");
+        CopyAlias(normalized, "UnitOfMeasure", "Unit", "Units");
+        CopyAlias(normalized, "SampleSize", "Sample Size");
+        CopyAlias(normalized, "FrequencyType", "Frequency Type");
+        CopyAlias(normalized, "FrequencyValue", "Frequency");
+        CopyAlias(normalized, "FrequencyUnit", "Frequency Unit");
+        CopyAlias(normalized, "AlertRuleSet", "Drift Rule", "Rule Set");
+        CopyAlias(normalized, "IsRequiredForCOA", "COA Required");
+        CopyAlias(normalized, "COAStatistic", "COA Statistic");
+        CopyAlias(normalized, "IsRequired", "Required");
+        CopyAlias(normalized, "DisplayOrder", "Sort Order");
+
+        var itemName = Value(normalized, "Item Name", "Name");
+        var rowType = CanonicalRowType(normalized.GetValueOrDefault("RowType"));
+        if (!string.IsNullOrWhiteSpace(itemName))
+        {
+            if (rowType == "JobData")
+            {
+                normalized["FieldName"] = itemName;
+            }
+            else if (rowType == "Material")
+            {
+                normalized["MaterialName"] = itemName;
+            }
+            else if (rowType is "Variable" or "Attribute")
+            {
+                normalized["CharacteristicName"] = itemName;
+            }
+        }
+
+        if (rowType is "Variable" or "Attribute" && string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("CharacteristicType")))
+        {
+            normalized["CharacteristicType"] = rowType;
+        }
+
+        return normalized;
+    }
+
+    private static void CopyAlias(Dictionary<string, string> row, string canonicalField, params string[] aliases)
+    {
+        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault(canonicalField)))
+        {
+            return;
+        }
+
+        var value = Value(row, aliases);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            row[canonicalField] = value;
+        }
+    }
+
+    private static string Value(Dictionary<string, string> row, params string[] fields)
+    {
+        foreach (var field in fields)
+        {
+            if (row.TryGetValue(field, out var value))
+            {
+                return value;
+            }
+        }
+
+        return "";
+    }
 
     private static List<string> ValidateRows(IReadOnlyList<Dictionary<string, string>> rows)
     {
@@ -566,17 +652,17 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         var clean = value.Trim().Replace(" ", "", StringComparison.OrdinalIgnoreCase);
-        if (clean.Equals("AcceptReject", StringComparison.OrdinalIgnoreCase) || clean.Equals("Accept/Reject", StringComparison.OrdinalIgnoreCase))
+        if (clean.Equals("AcceptReject", StringComparison.OrdinalIgnoreCase) || clean.Equals("Accept/Reject", StringComparison.OrdinalIgnoreCase) || clean.Equals("Attributes", StringComparison.OrdinalIgnoreCase))
         {
             return "Attribute";
         }
 
         return clean switch
         {
-            _ when clean.Equals("Variable", StringComparison.OrdinalIgnoreCase) => "Variable",
+            _ when clean.Equals("Variable", StringComparison.OrdinalIgnoreCase) || clean.Equals("Variables", StringComparison.OrdinalIgnoreCase) => "Variable",
             _ when clean.Equals("Attribute", StringComparison.OrdinalIgnoreCase) => "Attribute",
             _ when clean.Equals("JobData", StringComparison.OrdinalIgnoreCase) => "JobData",
-            _ when clean.Equals("Material", StringComparison.OrdinalIgnoreCase) => "Material",
+            _ when clean.Equals("Material", StringComparison.OrdinalIgnoreCase) || clean.Equals("Materials", StringComparison.OrdinalIgnoreCase) => "Material",
             _ => value.Trim()
         };
     }

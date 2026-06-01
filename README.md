@@ -71,16 +71,14 @@ The setup import is row-type based so one file can define the complete inspectio
 
 The in-app `Load Blank Template` button inserts headers only, with no sample part data.
 
-The blank template uses readable column names grouped for manual entry:
+The blank template uses readable columns grouped for manual entry. There is no `Section` column; SPC Star infers the row type from the column you fill in.
 
-`Part Number, Part Description, Product Group, Inspection Phase, Section, Operation, Item Name, Required, Sort Order, Material Part Number, Material Description, Unit, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Sample Size, Frequency Type, Frequency, Frequency Unit, Drift Rule, COA Required, COA Statistic`
+`Part Number, Part Description, Product Group, Inspection Phase, Operation, Job Data Field, Material Name, Material Part Number, Material Description, Variable Name, Attribute Name, Required, Sort Order, Unit, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Sample Size, Frequency Type, Frequency, Frequency Unit, Drift Rule, COA Required, COA Statistic`
 
-Supported `Section` values:
-
-- `Job Data`: use `Item Name`, `Required`, and `Sort Order`.
-- `Material`: use `Item Name`, `Material Part Number`, `Material Description`, `Required`, and `Sort Order`.
-- `Variable`: use `Operation`, `Item Name`, `Unit`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, drift rule, and COA columns.
-- `Attribute`: use `Operation`, `Item Name`, `Unit=Accept/Reject`, sample/frequency columns, drift rule, and COA columns.
+- Job data rows use `Job Data Field`, `Required`, and `Sort Order`.
+- Material rows use `Material Name`, `Material Part Number`, `Material Description`, `Required`, and `Sort Order`.
+- Variable rows use `Variable Name`, `Operation`, `Unit`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, drift rule, and COA columns.
+- Attribute rows use `Attribute Name`, `Operation`, `Unit=Accept/Reject`, sample/frequency columns, drift rule, and COA columns.
 
 The importer also accepts the older technical column names for compatibility.
 

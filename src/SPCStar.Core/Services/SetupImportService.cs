@@ -7,7 +7,6 @@ public sealed class SetupImportService(ISpcRepository repository)
 {
     private static readonly string[] BaseRequiredFields =
     [
-        "RowType",
         "PartNum",
         "PartDescription",
         "ProductGroup",
@@ -79,8 +78,19 @@ public sealed class SetupImportService(ISpcRepository repository)
         CopyAlias(normalized, "IsRequired", "Required");
         CopyAlias(normalized, "DisplayOrder", "Sort Order");
 
+        CopyAlias(normalized, "FieldName", "Job Data Field", "Job Data Field Name");
+        CopyAlias(normalized, "MaterialName", "Material Name");
+        CopyAlias(normalized, "CharacteristicName", "Variable Name", "Attribute Name");
         var itemName = Value(normalized, "Item Name", "Name");
         var rowType = CanonicalRowType(normalized.GetValueOrDefault("RowType"));
+        if (!IsValidRowType(rowType))
+        {
+            rowType = InferRowType(normalized);
+            if (IsValidRowType(rowType))
+            {
+                normalized["RowType"] = rowType;
+            }
+        }
         if (!string.IsNullOrWhiteSpace(itemName))
         {
             if (rowType == "JobData")
@@ -103,6 +113,36 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         return normalized;
+    }
+
+    private static string InferRowType(Dictionary<string, string> row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("Variable Name")))
+        {
+            row["CharacteristicName"] = row["Variable Name"];
+            row["CharacteristicType"] = "Variable";
+            return "Variable";
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("Attribute Name")))
+        {
+            row["CharacteristicName"] = row["Attribute Name"];
+            row["CharacteristicType"] = "Attribute";
+            return "Attribute";
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("MaterialName")) ||
+            !string.IsNullOrWhiteSpace(row.GetValueOrDefault("MaterialPartNum")))
+        {
+            return "Material";
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("FieldName")))
+        {
+            return "JobData";
+        }
+
+        return "";
     }
 
     private static void CopyAlias(Dictionary<string, string> row, string canonicalField, params string[] aliases)
@@ -648,7 +688,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return "Variable";
+            return "";
         }
 
         var clean = value.Trim().Replace(" ", "", StringComparison.OrdinalIgnoreCase);

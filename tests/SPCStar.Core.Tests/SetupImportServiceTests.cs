@@ -113,15 +113,15 @@ public sealed class SetupImportServiceTests
     {
         var repository = new InMemorySpcRepository();
         var service = new SetupImportService(repository);
-        var header = new[] { "Part Number", "Part Description", "Product Group", "Inspection Phase", "Section", "Operation", "Item Name", "Required", "Sort Order", "Material Part Number", "Material Description", "Unit", "Target", "Lower Spec", "Upper Spec", "Lower Control", "Upper Control", "Sample Size", "Frequency Type", "Frequency", "Frequency Unit", "Drift Rule", "COA Required", "COA Statistic" };
+        var header = new[] { "Part Number", "Part Description", "Product Group", "Inspection Phase", "Operation", "Job Data Field", "Material Name", "Material Part Number", "Material Description", "Variable Name", "Attribute Name", "Required", "Sort Order", "Unit", "Target", "Lower Spec", "Upper Spec", "Lower Control", "Upper Control", "Sample Size", "Frequency Type", "Frequency", "Frequency Unit", "Drift Rule", "COA Required", "COA Statistic" };
         string Row(params string[] values) => string.Join(",", values.Concat(Enumerable.Repeat("", header.Length)).Take(header.Length));
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
             string.Join(",", header),
-            Row("P300", "Human Template Part", "Needles", "Startup", "Job Data", "", "Wire Shipment", "true", "1"),
-            Row("P300", "Human Template Part", "Needles", "Startup", "Material", "", "Wire", "true", "2", "WIRE-302", "302 stainless wire"),
-            Row("P300", "Human Template Part", "Needles", "Startup", "Variable", "Needle Forming", "Outside Diameter", "", "", "", "", "mm", "5.0", "4.5", "5.5", "4.4", "5.6", "5", "Event", "1", "StartOfJob", "WesternElectric", "true", "Mean"),
-            Row("P300", "Human Template Part", "Needles", "Startup", "Attribute", "Needle Forming", "Comparator Check", "", "", "", "", "Accept/Reject", "", "", "", "", "", "5", "Event", "1", "StartOfJob", "WesternElectric", "false"),
+            Row("P300", "Human Template Part", "Needles", "Startup", "", "Wire Shipment", "", "", "", "", "", "true", "1"),
+            Row("P300", "Human Template Part", "Needles", "Startup", "", "", "Wire", "WIRE-302", "302 stainless wire", "", "", "true", "2"),
+            Row("P300", "Human Template Part", "Needles", "Startup", "Needle Forming", "", "", "", "", "Outside Diameter", "", "", "", "mm", "5.0", "4.5", "5.5", "4.4", "5.6", "5", "Event", "1", "StartOfJob", "WesternElectric", "true", "Mean"),
+            Row("P300", "Human Template Part", "Needles", "Startup", "Needle Forming", "", "", "", "", "", "Comparator Check", "", "", "Accept/Reject", "", "", "", "", "", "5", "Event", "1", "StartOfJob", "WesternElectric", "false"),
             string.Empty
         ]));
 

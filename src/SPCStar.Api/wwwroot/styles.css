@@ -319,9 +319,22 @@ hr {
 }
 .material-form {
   display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 220px) auto;
   gap: 12px;
   align-items: end;
+}
+.material-field-rows {
+  display: grid;
+  gap: 12px;
+}
+.material-field-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 220px);
+  gap: 12px;
+  align-items: end;
+}
+.material-field-row h3 {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
 }
 .measurement-form { margin-top: 18px; }
 .override-form {
@@ -1101,7 +1114,8 @@ textarea {
   .status-row { justify-content: flex-start; }
   .job-data-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .job-data-form button { grid-column: span 2; }
-  .form-grid, .measurement-form, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form, .material-form { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form, .material-form, .material-field-row { grid-template-columns: 1fr; }
+  .material-field-row h3 { grid-column: auto; }
   .report-filter-form button { grid-column: auto; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-nav { padding-bottom: 8px; }

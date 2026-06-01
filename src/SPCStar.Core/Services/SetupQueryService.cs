@@ -76,6 +76,14 @@ public sealed record PartJobDataFieldSetupDto(
     bool IsRequired,
     int DisplayOrder);
 
+public sealed record PartMaterialFieldSetupDto(
+    string PartNum,
+    string InspectionPhase,
+    string MaterialName,
+    string MaterialPartNum,
+    bool IsRequired,
+    int DisplayOrder);
+
 public sealed record SetupSnapshotDto(
     DateTimeOffset GeneratedAt,
     string SetupVersion,
@@ -89,7 +97,8 @@ public sealed record SetupSnapshotDto(
     IReadOnlyList<ControlLimitSetupDto> ControlLimits,
     IReadOnlyList<JobSetupDto> Jobs,
     IReadOnlyList<ResourceSetupDto> Resources,
-    IReadOnlyList<PartJobDataFieldSetupDto> PartJobDataFields);
+    IReadOnlyList<PartJobDataFieldSetupDto> PartJobDataFields,
+    IReadOnlyList<PartMaterialFieldSetupDto> PartMaterialFields);
 
 public sealed class SetupQueryService(ISpcRepository repository)
 {
@@ -195,10 +204,16 @@ public sealed class SetupQueryService(ISpcRepository repository)
              orderby part.PartNum, field.InspectionPhase, field.DisplayOrder, field.FieldName
              select new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder))
             .ToArray();
+        var materialFields =
+            (from field in repository.PartMaterialFields
+             join part in repository.Parts on field.PartId equals part.Id
+             orderby part.PartNum, field.InspectionPhase, field.DisplayOrder, field.MaterialName
+             select new PartMaterialFieldSetupDto(part.PartNum, field.InspectionPhase, field.MaterialName, field.MaterialPartNum, field.IsRequired, field.DisplayOrder))
+            .ToArray();
 
         return new SetupSnapshotDto(
             generatedAt ?? DateTimeOffset.UtcNow,
-            BuildSetupVersion(SettingsDto(), parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources, jobDataFields),
+            BuildSetupVersion(SettingsDto(), parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources, jobDataFields, materialFields),
             SettingsDto(),
             parts,
             processes,
@@ -209,7 +224,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
             controlLimits,
             jobs,
             resources,
-            jobDataFields);
+            jobDataFields,
+            materialFields);
     }
 
     private SettingsSetupDto SettingsDto()
@@ -241,7 +257,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
         IReadOnlyList<ControlLimitSetupDto> controlLimits,
         IReadOnlyList<JobSetupDto> jobs,
         IReadOnlyList<ResourceSetupDto> resources,
-        IReadOnlyList<PartJobDataFieldSetupDto> jobDataFields)
+        IReadOnlyList<PartJobDataFieldSetupDto> jobDataFields,
+        IReadOnlyList<PartMaterialFieldSetupDto> materialFields)
     {
         var builder = new StringBuilder();
         builder.Append(nameof(SettingsSetupDto)).Append('|').Append(settings).AppendLine();
@@ -255,6 +272,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
         AppendRows(builder, jobs);
         AppendRows(builder, resources);
         AppendRows(builder, jobDataFields);
+        AppendRows(builder, materialFields);
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexString(hash)[..16];

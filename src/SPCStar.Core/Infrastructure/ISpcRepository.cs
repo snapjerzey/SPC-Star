@@ -21,6 +21,7 @@ public interface ISpcRepository
     List<JobNote> JobNotes { get; }
     List<JobTag> JobTags { get; }
     List<PartJobDataField> PartJobDataFields { get; }
+    List<PartMaterialField> PartMaterialFields { get; }
     List<ControlLimitSet> ControlLimits { get; }
     List<ProcessAlert> Alerts { get; }
     List<RuleViolation> RuleViolations { get; }

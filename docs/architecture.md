@@ -19,9 +19,9 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 
 ## Implemented services
 
-- `SetupImportService`: CSV setup validation and upsert.
+- `SetupImportService`: row-type CSV setup validation and upsert for job data, material requirements, measured variables, and accept/reject attributes.
 - `SetupManagementService`: users, global settings, manual part/operation/inspection setup, and part-specific job data field setup.
-- `SetupQueryService`: tablet setup snapshot, part lookup, job data field lookup, inspection plan lookup, and setup review data.
+- `SetupQueryService`: tablet setup snapshot, part lookup, job data field lookup, material field lookup, inspection plan lookup, and setup review data.
 - `AuthSessionService`: development login/session contract for role-aware UI flows.
 - `WorkContextService`: one-call inspection screen context for tablet entry, including live capability metrics.
 - `InspectionMeasurementService`: operator measurement entry, active lock enforcement, alert creation, inspection phase capture, and global/part-level drift rule resolution.
@@ -39,7 +39,7 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 
 ## Inspection UI behavior
 
-Inspection entry is organized around top-level job data, part-specific job tags, measured variables, and accept/reject attributes. The supported inspection phases are Startup, Setup, In Process, and Spool.
+Inspection entry is organized around top-level job data, part-specific job tags, material lot entries, measured variables, and accept/reject attributes. The supported inspection phases are Startup, Setup, In Process, and Spool.
 
 The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. Devices that require direct serial or HID communication should be added through a dedicated Web Serial/WebHID profile layer so the inspection workflow does not need to change.
 

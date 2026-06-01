@@ -21,6 +21,7 @@ public class InMemorySpcRepository : ISpcRepository
     public List<JobNote> JobNotes { get; } = [];
     public List<JobTag> JobTags { get; } = [];
     public List<PartJobDataField> PartJobDataFields { get; } = [];
+    public List<PartMaterialField> PartMaterialFields { get; } = [];
     public List<ControlLimitSet> ControlLimits { get; } = [];
     public List<ProcessAlert> Alerts { get; } = [];
     public List<RuleViolation> RuleViolations { get; } = [];

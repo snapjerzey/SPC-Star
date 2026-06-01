@@ -8,12 +8,13 @@ This repository currently contains a working local browser/tablet-first SPC appl
 
 - Core domain models for users, roles, permissions, setup data, jobs, inspection measurements, job notes, alerts, overrides, material traceability, and exports.
 - SQLite-oriented schema and seed scripts.
-- CSV setup import with validation and upsert behavior.
+- Standard CSV setup import with row types for job data, materials, measured variables, and accept/reject attributes.
 - Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, frequency, and COA-required variables.
 - User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
 - Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, and Spool.
 - Persistent job tag storage for part-specific context fields that will be driven by inspection setup.
+- Part-specific material requirements from setup/import, with lot entry on the inspection screen.
 - Multi-variable measurement entry with measured variables separated from accept/reject attribute checks.
 - Accept/Reject inspection support for comparator/template checks.
 - Live row-based min, max, mean, standard deviation, Cp, Cpk, Pp, and Ppk summary for every active measured variable.
@@ -63,6 +64,23 @@ http://localhost:5000/health
 ```
 
 Example requests are in `docs/api-examples.http`.
+
+## Standard setup import
+
+The setup import is row-type based so one file can define the complete inspection plan for a part.
+
+Required common columns:
+
+`RowType, PartNum, PartDescription, ProductGroup, InspectionPhase`
+
+Supported `RowType` values:
+
+- `JobData`: use `FieldName`, `IsRequired`, and `DisplayOrder`.
+- `Material`: use `MaterialName`, `MaterialPartNum`, `IsRequired`, and `DisplayOrder`.
+- `Variable`: use `Operation`, `CharacteristicName`, `CharacteristicType=Variable`, `Nominal`, `LSL`, `USL`, optional `LCL/UCL`, `UnitOfMeasure`, sample/frequency columns, drift rule, and COA columns.
+- `Attribute`: use `Operation`, `CharacteristicName`, `CharacteristicType=Attribute`, sample/frequency columns, drift rule, and COA columns.
+
+The in-app `Load Template` button inserts the current standard template.
 
 Initial endpoints include:
 

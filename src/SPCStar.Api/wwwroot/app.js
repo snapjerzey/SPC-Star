@@ -193,9 +193,7 @@ function renderEmptyContext(message = "") {
   $("jobTagsForm").innerHTML = "";
   $("jobTagsForm").classList.add("hidden");
   $("tagMessage").textContent = "";
-  $("materialPartNum").value = "";
-  $("materialNewLotNum").value = "";
-  $("materialReason").value = "Material change";
+  $("materialFieldRows").innerHTML = "";
   $("materialMessage").textContent = "";
   $("jobNoteText").value = "";
   $("jobNoteMessage").textContent = "";
@@ -225,6 +223,7 @@ function renderContext() {
   $("jobNotesPanel").classList.remove("hidden");
   $("materialPanel").classList.remove("hidden");
   renderConfiguredJobDataFields(set);
+  renderConfiguredMaterialFields(set);
   const hasConfiguredTags = document.querySelectorAll(".job-tag-input").length > 0;
   $("tagsDivider").classList.toggle("hidden", !hasConfiguredTags);
   $("tagsSection").classList.toggle("hidden", !hasConfiguredTags);
@@ -251,6 +250,40 @@ function renderConfiguredJobDataFields(set) {
       ${escapeHtml(field.fieldName)}
       <input class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" autocomplete="off" ${field.isRequired ? "required" : ""}>
     </label>`).join("") + (fields.length ? `<button type="submit" class="secondary">Save Job Data</button>` : "");
+}
+
+function renderConfiguredMaterialFields(set) {
+  const fields = (state.snapshot.partMaterialFields || [])
+    .filter((field) =>
+      field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
+      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase))
+    .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+  const rows = $("materialFieldRows");
+  const materialFields = fields.length ? fields : [{
+    materialName: "Material",
+    materialPartNum: "",
+    isRequired: true,
+    displayOrder: 0
+  }];
+  rows.innerHTML = materialFields.map((field, index) => `
+    <section class="material-field-row">
+      <h3>${escapeHtml(field.materialName)}</h3>
+      <label>
+        Material part number
+        <input class="material-part-input" data-material-index="${index}" autocomplete="off" inputmode="text" value="${escapeHtml(field.materialPartNum || "")}" ${field.isRequired ? "required" : ""}>
+      </label>
+      <label>
+        New lot number
+        <input class="material-lot-input" data-material-index="${index}" autocomplete="off" inputmode="text" ${field.isRequired ? "required" : ""}>
+      </label>
+      <label>
+        Reason
+        <select class="material-reason-input" data-material-index="${index}" required>
+          <option value="Material change">Material change</option>
+          <option value="Material issue at job start">Material issue at job start</option>
+        </select>
+      </label>
+    </section>`).join("");
 }
 
 function renderLock(activeLock) {
@@ -1003,41 +1036,50 @@ async function saveJobTags(event) {
 async function saveMaterialChange(event) {
   event.preventDefault();
   const { jobNum, resourceId, set } = selectedValues();
-  const materialPartNum = $("materialPartNum").value.trim();
-  const newLotNum = $("materialNewLotNum").value.trim();
+  const entries = [...document.querySelectorAll(".material-field-row")]
+    .map((row) => ({
+      materialPartNum: row.querySelector(".material-part-input").value.trim(),
+      newLotNum: row.querySelector(".material-lot-input").value.trim(),
+      reason: row.querySelector(".material-reason-input").value
+    }))
+    .filter((entry) => entry.materialPartNum || entry.newLotNum);
   if (!jobNum || !resourceId || !set) {
     $("materialMessage").textContent = "Start work before saving a material lot.";
     $("materialMessage").className = "message error";
     return;
   }
 
-  if (!materialPartNum || !newLotNum) {
-    $("materialMessage").textContent = "Material part number and new lot number are required.";
+  if (!entries.length || entries.some((entry) => !entry.materialPartNum || !entry.newLotNum)) {
+    $("materialMessage").textContent = "Material part number and new lot number are required for each material entry.";
     $("materialMessage").className = "message error";
     return;
   }
 
   try {
-    await api("/material-changes", {
-      method: "POST",
-      body: JSON.stringify({
-        jobNum,
-        partNum: set.partNum,
-        materialPartNum,
-        oldLotNum: "",
-        newLotNum,
-        quantityLoaded: null,
-        resourceId,
-        operatorUserId: state.user.userName,
-        timestamp: new Date().toISOString(),
-        reason: $("materialReason").value,
-        deviceId: "browser-dev",
-        clientRecordId: newClientRecordId(),
-        submittedAt: new Date().toISOString()
+    for (const entry of entries) {
+      await api("/material-changes", {
+        method: "POST",
+        body: JSON.stringify({
+          jobNum,
+          partNum: set.partNum,
+          materialPartNum: entry.materialPartNum,
+          oldLotNum: "",
+          newLotNum: entry.newLotNum,
+          quantityLoaded: null,
+          resourceId,
+          operatorUserId: state.user.userName,
+          timestamp: new Date().toISOString(),
+          reason: entry.reason,
+          deviceId: "browser-dev",
+          clientRecordId: newClientRecordId(),
+          submittedAt: new Date().toISOString()
+        })
       })
+    }
+    document.querySelectorAll(".material-lot-input").forEach((input) => {
+      input.value = "";
     });
-    $("materialNewLotNum").value = "";
-    $("materialMessage").textContent = "Material lot saved.";
+    $("materialMessage").textContent = `${entries.length} material lot${entries.length === 1 ? "" : "s"} saved.`;
     $("materialMessage").className = "message ok";
     await loadJobNotes(jobNum);
   } catch (error) {
@@ -2429,9 +2471,12 @@ function newClientRecordId() {
 
 function loadCsvTemplate() {
   $("csvImportText").value = [
-    "PartNum,PartDescription,ProductGroup,ProcessCode,ProcessDescription,OperationSeq,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,InspectionPhase,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic",
-    "P200,Example part,General,MOLD,Molding,10,Measurement 1,Variable,5.0,4.5,5.5,4.4,5.6,mm,Startup,5,Event,1,StartOfJob,WesternElectric,true,Mean",
-    "P200,Example part,General,MOLD,Molding,10,Measurement 2,Variable,42.0,41.5,42.5,41.0,43.0,mm,In Process,5,Quantity,10000,Pieces,NelsonRules,true,StandardDeviation"
+    "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic,IsRequired,DisplayOrder",
+    "JobData,P200,Example part,Needles,Startup,,Wire Shipment,,,,,,,,,,,,,,,,,,true,1",
+    "Material,P200,Example part,Needles,Startup,,,Wire,WIRE-302,,,,,,,,,,,,,,,,true,2",
+    "Variable,P200,Example part,Needles,Startup,Needle Forming,,,,Outside Diameter,Variable,5.0,4.5,5.5,4.4,5.6,mm,5,Event,1,StartOfJob,WesternElectric,true,Mean,,",
+    "Attribute,P200,Example part,Needles,Startup,Needle Forming,,,,Comparator Check,Attribute,,,,,,Accept/Reject,5,Event,1,StartOfJob,WesternElectric,false,,,",
+    "Variable,P200,Example part,Needles,In Process,Needle Forming,,,,Length,Variable,42.0,41.5,42.5,41.0,43.0,mm,5,Quantity,10000,Pieces,NelsonRules,true,StandardDeviation,,"
   ].join("\n");
 }
 

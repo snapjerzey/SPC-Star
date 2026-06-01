@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260601-materials-section">
+  <link rel="stylesheet" href="/styles.css?v=20260601-standard-import">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -100,21 +100,7 @@
             </div>
           </div>
           <form id="materialChangeForm" class="material-form">
-            <label>
-              Material part number
-              <input id="materialPartNum" autocomplete="off" inputmode="text" required>
-            </label>
-            <label>
-              New lot number
-              <input id="materialNewLotNum" autocomplete="off" inputmode="text" required>
-            </label>
-            <label>
-              Reason
-              <select id="materialReason" required>
-                <option value="Material change">Material change</option>
-                <option value="Material issue at job start">Material issue at job start</option>
-              </select>
-            </label>
+            <div id="materialFieldRows" class="material-field-rows"></div>
             <button type="submit" class="secondary">Save Material Lot</button>
           </form>
           <p id="materialMessage" class="message"></p>
@@ -521,9 +507,9 @@
         <div class="panel-heading horizontal">
           <div>
             <h2>CSV Import</h2>
-            <p>Load many parts, processes, operations, and variables at once.</p>
+            <p>Load complete part setup rows for job data, materials, variables, and attributes.</p>
           </div>
-          <button id="csvTemplateButton" type="button" class="secondary">Template</button>
+          <button id="csvTemplateButton" type="button" class="secondary">Load Template</button>
         </div>
         <form id="csvImportForm" class="stacked-form">
           <label>
@@ -672,6 +658,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260601-materials-section"></script>
+  <script src="/app.js?v=20260601-standard-import"></script>
 </body>
 </html>

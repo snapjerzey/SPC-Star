@@ -1548,21 +1548,29 @@ function parseJobNums() {
 async function runReport(event) {
   event.preventDefault();
   try {
-    const data = await api("/charts/data", {
-      method: "POST",
-      body: JSON.stringify({
-        chartType: "IndividualsMovingRange",
-        jobNum: $("reportJobNum").value.trim() || null,
-        partNum: $("reportPartNum").value.trim() || null,
-        resourceId: $("reportResourceId").value || null,
-        characteristicName: $("reportCharacteristicName").value.trim() || null,
-        from: dateTimeLocalValue("reportFrom"),
-        to: dateTimeLocalValue("reportTo"),
-        inspectionPhase: $("reportInspectionPhase").value || null
-      })
-    });
-    drawReport(data.points, data);
-    $("reportMessage").textContent = `${data.points.length} point${data.points.length === 1 ? "" : "s"} loaded.`;
+    const candidates = reportCharacteristicCandidates();
+    const results = [];
+    for (const characteristicName of candidates) {
+      const data = await api("/charts/data", {
+        method: "POST",
+        body: JSON.stringify(reportRequest(characteristicName))
+      });
+      if (data.points.length || $("reportCharacteristicName").value.trim()) {
+        results.push({ characteristicName, data });
+      }
+    }
+
+    if (!results.length) {
+      const data = await api("/charts/data", {
+        method: "POST",
+        body: JSON.stringify(reportRequest(candidates[0] || null))
+      });
+      results.push({ characteristicName: candidates[0] || $("reportCharacteristicName").value.trim() || "No matching variable", data });
+    }
+
+    renderReportCharts(results);
+    const pointCount = results.reduce((total, result) => total + result.data.points.length, 0);
+    $("reportMessage").textContent = `${results.length} chart${results.length === 1 ? "" : "s"} / ${pointCount} point${pointCount === 1 ? "" : "s"} loaded.`;
     $("reportMessage").className = "message ok";
   } catch (error) {
     $("reportMessage").textContent = readableError(error);
@@ -1570,13 +1578,62 @@ async function runReport(event) {
   }
 }
 
+function reportRequest(characteristicName) {
+  return {
+    chartType: "IndividualsMovingRange",
+    jobNum: $("reportJobNum").value.trim() || null,
+    partNum: $("reportPartNum").value.trim() || null,
+    resourceId: $("reportResourceId").value || null,
+    characteristicName,
+    from: dateTimeLocalValue("reportFrom"),
+    to: dateTimeLocalValue("reportTo"),
+    inspectionPhase: $("reportInspectionPhase").value || null
+  };
+}
+
+function reportCharacteristicCandidates() {
+  const entered = $("reportCharacteristicName").value.trim();
+  if (entered) {
+    return [entered];
+  }
+
+  const reportPart = $("reportPartNum").value.trim();
+  const reportJob = $("reportJobNum").value.trim();
+  const jobPart = state.snapshot.jobs.find((job) => job.jobNum.toLowerCase() === reportJob.toLowerCase())?.partNum || "";
+  const partFilter = reportPart || jobPart;
+  const phaseFilter = $("reportInspectionPhase").value;
+  const plans = state.snapshot.inspectionPlans.filter((plan) =>
+    (!partFilter || plan.partNum.toLowerCase() === partFilter.toLowerCase()) &&
+    (!phaseFilter || normalizeInspectionPhase(plan.inspectionPhase) === normalizeInspectionPhase(phaseFilter)));
+  const names = plans.map((plan) => plan.characteristicName);
+  const fallback = state.snapshot.characteristics.map((characteristic) => characteristic.name);
+  return [...new Set((names.length ? names : fallback).filter(Boolean))].sort();
+}
+
+function renderReportCharts(results) {
+  const grid = $("reportChartGrid");
+  grid.innerHTML = "";
+  results.forEach((result) => {
+    const card = document.createElement("section");
+    card.className = "report-chart-card";
+    card.innerHTML = `
+      <h3>${escapeHtml(result.characteristicName)}</h3>
+      <canvas class="trend-canvas" width="940" height="260"></canvas>`;
+    grid.appendChild(card);
+    drawReport(result.data.points, result.data, {
+      canvas: card.querySelector("canvas"),
+      characteristicName: result.characteristicName
+    });
+  });
+}
+
 function dateTimeLocalValue(id) {
   const value = $(id).value;
   return value ? new Date(value).toISOString() : null;
 }
 
-function drawReport(points, data = {}) {
-  const canvas = $("reportCanvas");
+function drawReport(points, data = {}, options = {}) {
+  const canvas = options.canvas;
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
@@ -1587,7 +1644,7 @@ function drawReport(points, data = {}) {
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const chartType = $("reportChartType").value;
-  drawReportHeader(ctx, width, points, data, chartType);
+  drawReportHeader(ctx, width, points, data, chartType, options.characteristicName);
   drawChartFrame(ctx, padding, plotWidth, plotHeight);
   if (!points.length) {
     drawEmptyChartMessage(ctx, width, height);
@@ -1634,7 +1691,7 @@ function drawReport(points, data = {}) {
   drawPointValueDetails(ctx, points, (point, index) => x(index), (point) => y(point.value));
 }
 
-function drawReportHeader(ctx, width, points, data, chartType) {
+function drawReportHeader(ctx, width, points, data, chartType, characteristicName) {
   const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
   const stats = values.length ? {
     count: values.length,
@@ -1646,7 +1703,7 @@ function drawReportHeader(ctx, width, points, data, chartType) {
   const filters = [
     $("reportPartNum").value.trim() || "All parts",
     $("reportJobNum").value.trim() || "All jobs",
-    $("reportCharacteristicName").value.trim() || "All variables",
+    characteristicName || $("reportCharacteristicName").value.trim() || "All variables",
     $("reportInspectionPhase").value || "All phases"
   ].join(" / ");
   ctx.fillStyle = "#0f172a";

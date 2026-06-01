@@ -543,6 +543,19 @@ textarea {
 .report-filter-form button {
   grid-column: span 4;
 }
+.report-chart-grid {
+  display: grid;
+  gap: 14px;
+}
+.report-chart-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 12px;
+}
+.report-chart-card h3 {
+  margin-bottom: 8px;
+}
 .review-filter-bar {
   display: grid;
   grid-template-columns: minmax(160px, 220px) minmax(180px, 260px) auto;

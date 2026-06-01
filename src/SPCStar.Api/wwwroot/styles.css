@@ -317,6 +317,12 @@ hr {
   gap: 12px;
   align-items: end;
 }
+.material-form {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 220px) auto;
+  gap: 12px;
+  align-items: end;
+}
 .measurement-form { margin-top: 18px; }
 .override-form {
   display: grid;
@@ -1095,7 +1101,7 @@ textarea {
   .status-row { justify-content: flex-start; }
   .job-data-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .job-data-form button { grid-column: span 2; }
-  .form-grid, .measurement-form, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form, .material-form { grid-template-columns: 1fr; }
   .report-filter-form button { grid-column: auto; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }
   .setup-nav { padding-bottom: 8px; }

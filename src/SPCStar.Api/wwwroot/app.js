@@ -181,6 +181,7 @@ function renderEmptyContext(message = "") {
   $("measurementForm").classList.add("hidden");
   $("trendPanel").classList.add("hidden");
   $("jobNotesPanel").classList.add("hidden");
+  $("materialPanel").classList.add("hidden");
   $("tagsDivider").classList.add("hidden");
   $("tagsSection").classList.add("hidden");
   $("measurementVariableList").innerHTML = "";
@@ -192,6 +193,10 @@ function renderEmptyContext(message = "") {
   $("jobTagsForm").innerHTML = "";
   $("jobTagsForm").classList.add("hidden");
   $("tagMessage").textContent = "";
+  $("materialPartNum").value = "";
+  $("materialNewLotNum").value = "";
+  $("materialReason").value = "Material change";
+  $("materialMessage").textContent = "";
   $("jobNoteText").value = "";
   $("jobNoteMessage").textContent = "";
   renderJobNotes([]);
@@ -218,6 +223,7 @@ function renderContext() {
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
   $("jobNotesPanel").classList.remove("hidden");
+  $("materialPanel").classList.remove("hidden");
   renderConfiguredJobDataFields(set);
   const hasConfiguredTags = document.querySelectorAll(".job-tag-input").length > 0;
   $("tagsDivider").classList.toggle("hidden", !hasConfiguredTags);
@@ -991,6 +997,52 @@ async function saveJobTags(event) {
   } catch (error) {
     $("tagMessage").textContent = readableError(error);
     $("tagMessage").className = "message error";
+  }
+}
+
+async function saveMaterialChange(event) {
+  event.preventDefault();
+  const { jobNum, resourceId, set } = selectedValues();
+  const materialPartNum = $("materialPartNum").value.trim();
+  const newLotNum = $("materialNewLotNum").value.trim();
+  if (!jobNum || !resourceId || !set) {
+    $("materialMessage").textContent = "Start work before saving a material lot.";
+    $("materialMessage").className = "message error";
+    return;
+  }
+
+  if (!materialPartNum || !newLotNum) {
+    $("materialMessage").textContent = "Material part number and new lot number are required.";
+    $("materialMessage").className = "message error";
+    return;
+  }
+
+  try {
+    await api("/material-changes", {
+      method: "POST",
+      body: JSON.stringify({
+        jobNum,
+        partNum: set.partNum,
+        materialPartNum,
+        oldLotNum: "",
+        newLotNum,
+        quantityLoaded: null,
+        resourceId,
+        operatorUserId: state.user.userName,
+        timestamp: new Date().toISOString(),
+        reason: $("materialReason").value,
+        deviceId: "browser-dev",
+        clientRecordId: newClientRecordId(),
+        submittedAt: new Date().toISOString()
+      })
+    });
+    $("materialNewLotNum").value = "";
+    $("materialMessage").textContent = "Material lot saved.";
+    $("materialMessage").className = "message ok";
+    await loadJobNotes(jobNum);
+  } catch (error) {
+    $("materialMessage").textContent = readableError(error);
+    $("materialMessage").className = "message error";
   }
 }
 
@@ -2462,6 +2514,7 @@ $("resourceId").addEventListener("change", clearWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("jobTagsForm").addEventListener("submit", saveJobTags);
+$("materialChangeForm").addEventListener("submit", saveMaterialChange);
 $("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
 $("overrideUserName").addEventListener("input", () => {

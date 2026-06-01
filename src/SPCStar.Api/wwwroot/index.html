@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260601-user-product-groups">
+  <link rel="stylesheet" href="/styles.css?v=20260601-materials-section">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -90,6 +90,34 @@
             <form id="jobTagsForm" class="job-data-form hidden"></form>
             <p id="tagMessage" class="message"></p>
           </div>
+        </section>
+
+        <section id="materialPanel" class="panel hidden">
+          <div class="panel-heading horizontal">
+            <div>
+              <h2>Materials</h2>
+              <p>Record material lot changes used on this job.</p>
+            </div>
+          </div>
+          <form id="materialChangeForm" class="material-form">
+            <label>
+              Material part number
+              <input id="materialPartNum" autocomplete="off" inputmode="text" required>
+            </label>
+            <label>
+              New lot number
+              <input id="materialNewLotNum" autocomplete="off" inputmode="text" required>
+            </label>
+            <label>
+              Reason
+              <select id="materialReason" required>
+                <option value="Material change">Material change</option>
+                <option value="Material issue at job start">Material issue at job start</option>
+              </select>
+            </label>
+            <button type="submit" class="secondary">Save Material Lot</button>
+          </form>
+          <p id="materialMessage" class="message"></p>
         </section>
 
         <div id="lockBanner" class="lock-banner hidden"></div>
@@ -310,6 +338,13 @@
                 <button id="addSetupJobDataFieldButton" type="button" class="secondary">Add Job Data Field</button>
               </div>
               <div id="setupJobDataFieldRows" class="setup-job-data-field-rows"></div>
+            </div>
+
+            <div class="setup-block">
+              <div class="panel-heading tight">
+                <h3>Materials</h3>
+                <p>Operators record material part number and lot number on the inspection screen whenever material changes on the job.</p>
+              </div>
             </div>
 
             <div class="setup-block variable-builder">
@@ -637,6 +672,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260601-user-product-groups"></script>
+  <script src="/app.js?v=20260601-materials-section"></script>
 </body>
 </html>

@@ -526,6 +526,62 @@ textarea {
   gap: 18px;
   align-items: start;
 }
+.permission-panel {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 12px;
+}
+.permission-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 10px;
+}
+.permission-heading strong,
+.permission-heading span {
+  display: block;
+}
+.permission-heading span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.permission-actions {
+  display: flex;
+  gap: 6px;
+}
+.product-group-picker {
+  display: grid;
+  gap: 8px;
+  max-height: 250px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.product-group-picker.empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+.product-group-option {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 9px 10px;
+}
+.product-group-option input {
+  min-height: auto;
+}
+.setup-row small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .job-summary-form {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) minmax(160px, 220px) auto auto;

@@ -106,6 +106,7 @@ async function loadSnapshot() {
     renderPartReviewControls();
     renderReportControls();
     renderSetupEditChoices();
+    renderUserProductGroupPicker();
     renderPartReview();
   }
   clearWorkContext();
@@ -1253,6 +1254,7 @@ async function loadSetupAdmin() {
   state.roles = await api("/setup/roles");
   state.users = await api("/setup/users");
   fillSelect($("setupRole"), state.roles, (role) => role, (role) => role);
+  renderUserProductGroupPicker();
   renderUsers();
   if (!$("setupVariableRows").children.length) {
     addSetupVariableRow();
@@ -1838,10 +1840,12 @@ function renderUsers() {
   state.users.forEach((user) => {
     const row = document.createElement("div");
     row.className = "setup-row";
+    const productGroupText = user.productGroups?.length ? user.productGroups.join(", ") : "No product groups assigned";
     row.innerHTML = `
       <div>
         <strong>${user.userName}</strong>
-        <span>${user.roles.join(", ")} / ${user.productGroups?.length ? user.productGroups.join(", ") : "No product groups"}</span>
+        <span>${user.roles.join(", ")}</span>
+        <small>${productGroupText}</small>
       </div>
       <div class="row-actions">
         <button type="button" class="secondary compact-button user-edit-button">Edit</button>
@@ -1851,10 +1855,44 @@ function renderUsers() {
       $("setupUserName").value = user.userName;
       $("setupPassword").value = "";
       $("setupRole").value = user.roles[0] || state.roles[0] || "";
-      $("setupUserProductGroups").value = (user.productGroups || []).join(", ");
+      setUserProductGroupSelection(user.productGroups || []);
     });
     row.querySelector(".user-delete-button").addEventListener("click", () => deleteUser(user.userName));
     list.appendChild(row);
+  });
+}
+
+function renderUserProductGroupPicker(selectedGroups = selectedUserProductGroups()) {
+  const picker = $("setupUserProductGroups");
+  const groups = productGroups();
+  if (!groups.length) {
+    picker.className = "product-group-picker empty";
+    picker.textContent = "No product groups loaded.";
+    return;
+  }
+
+  picker.className = "product-group-picker";
+  picker.innerHTML = "";
+  groups.forEach((group) => {
+    const option = document.createElement("label");
+    option.className = "product-group-option";
+    option.innerHTML = `
+      <input type="checkbox" value="${escapeHtml(group)}">
+      <span>${escapeHtml(group)}</span>`;
+    option.querySelector("input").checked = selectedGroups.includes(group);
+    picker.appendChild(option);
+  });
+}
+
+function selectedUserProductGroups() {
+  return [...$("setupUserProductGroups").querySelectorAll("input[type='checkbox']:checked")]
+    .map((input) => input.value);
+}
+
+function setUserProductGroupSelection(groups) {
+  const selected = new Set(groups);
+  $("setupUserProductGroups").querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = selected.has(input.value);
   });
 }
 
@@ -1879,7 +1917,7 @@ async function saveUser(event) {
         userName: $("setupUserName").value.trim(),
         password: $("setupPassword").value,
         roles: [$("setupRole").value],
-        productGroups: parseCommaList($("setupUserProductGroups").value)
+        productGroups: selectedUserProductGroups()
       })
     });
     $("setupPassword").value = "";
@@ -2447,6 +2485,8 @@ $("setupReviewSectionTab").addEventListener("click", () => showSetupSection("Rev
 $("setupReportsSectionTab").addEventListener("click", () => showSetupSection("Reports"));
 $("setupJobDataSectionTab").addEventListener("click", () => showSetupSection("JobData"));
 $("userSetupForm").addEventListener("submit", saveUser);
+$("selectAllUserProductGroups").addEventListener("click", () => setUserProductGroupSelection(productGroups()));
+$("clearUserProductGroups").addEventListener("click", () => setUserProductGroupSelection([]));
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
 $("addSetupVariableButton").addEventListener("click", () => addSetupVariableRow());
 $("addSetupAttributeButton").addEventListener("click", () => addSetupVariableRow({}, "Attribute"));

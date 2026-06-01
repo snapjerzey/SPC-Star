@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260601-report-multi-charts">
+  <link rel="stylesheet" href="/styles.css?v=20260601-user-product-groups">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -375,10 +375,19 @@
                 Access level
                 <select id="setupRole"></select>
               </label>
-              <label>
-                Product groups
-                <input id="setupUserProductGroups" list="productGroupOptions" autocomplete="off" placeholder="General, Needles">
-              </label>
+              <div class="permission-panel">
+                <div class="permission-heading">
+                  <div>
+                    <strong>Allowed product groups</strong>
+                    <span>Controls which part families this user can inspect.</span>
+                  </div>
+                  <div class="permission-actions">
+                    <button id="selectAllUserProductGroups" type="button" class="secondary compact-button">All</button>
+                    <button id="clearUserProductGroups" type="button" class="secondary compact-button">Clear</button>
+                  </div>
+                </div>
+                <div id="setupUserProductGroups" class="product-group-picker empty">No product groups loaded.</div>
+              </div>
               <button type="submit">Save User</button>
             </form>
             <div>
@@ -628,6 +637,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260601-report-multi-charts"></script>
+  <script src="/app.js?v=20260601-user-product-groups"></script>
 </body>
 </html>

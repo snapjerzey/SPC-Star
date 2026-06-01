@@ -69,9 +69,11 @@ Example requests are in `docs/api-examples.http`.
 
 The setup import is row-type based so one file can define the complete inspection plan for a part.
 
-The human-facing template uses readable column names:
+The in-app `Load Blank Template` button inserts headers only, with no sample part data.
 
-`Section, Part Number, Part Description, Product Group, Inspection Phase, Operation, Item Name, Inspection Type, Material Part Number, Material Description, Unit, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Sample Size, Frequency Type, Frequency, Frequency Unit, Drift Rule, COA Required, COA Statistic, Required, Sort Order`
+The blank template uses readable column names grouped for manual entry:
+
+`Part Number, Part Description, Product Group, Inspection Phase, Section, Operation, Item Name, Required, Sort Order, Material Part Number, Material Description, Unit, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Sample Size, Frequency Type, Frequency, Frequency Unit, Drift Rule, COA Required, COA Statistic`
 
 Supported `Section` values:
 
@@ -80,7 +82,7 @@ Supported `Section` values:
 - `Variable`: use `Operation`, `Item Name`, `Unit`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, drift rule, and COA columns.
 - `Attribute`: use `Operation`, `Item Name`, `Unit=Accept/Reject`, sample/frequency columns, drift rule, and COA columns.
 
-The importer also accepts the older technical column names for compatibility, but the in-app `Load Template` button inserts the human-readable version.
+The importer also accepts the older technical column names for compatibility.
 
 Initial endpoints include:
 

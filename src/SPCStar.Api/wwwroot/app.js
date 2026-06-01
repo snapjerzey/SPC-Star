@@ -2536,16 +2536,32 @@ function newClientRecordId() {
 }
 
 function loadCsvTemplate() {
-  const header = ["Section", "Part Number", "Part Description", "Product Group", "Inspection Phase", "Operation", "Item Name", "Inspection Type", "Material Part Number", "Material Description", "Unit", "Target", "Lower Spec", "Upper Spec", "Lower Control", "Upper Control", "Sample Size", "Frequency Type", "Frequency", "Frequency Unit", "Drift Rule", "COA Required", "COA Statistic", "Required", "Sort Order"];
-  const row = (values) => header.map((field) => values[field] ?? "").join(",");
   $("csvImportText").value = [
-    header.join(","),
-    row({ Section: "Job Data", "Part Number": "P200", "Part Description": "Example needle", "Product Group": "Needles", "Inspection Phase": "Startup", "Item Name": "Wire Shipment", Required: "true", "Sort Order": "1" }),
-    row({ Section: "Material", "Part Number": "P200", "Part Description": "Example needle", "Product Group": "Needles", "Inspection Phase": "Startup", "Item Name": "Wire", "Material Part Number": "WIRE-302", "Material Description": "302 stainless wire", Required: "true", "Sort Order": "2" }),
-    row({ Section: "Variable", "Part Number": "P200", "Part Description": "Example needle", "Product Group": "Needles", "Inspection Phase": "Startup", Operation: "Needle Forming", "Item Name": "Outside Diameter", Unit: "mm", Target: "5.0", "Lower Spec": "4.5", "Upper Spec": "5.5", "Lower Control": "4.4", "Upper Control": "5.6", "Sample Size": "5", "Frequency Type": "Event", Frequency: "1", "Frequency Unit": "StartOfJob", "Drift Rule": "WesternElectric", "COA Required": "true", "COA Statistic": "Mean" }),
-    row({ Section: "Attribute", "Part Number": "P200", "Part Description": "Example needle", "Product Group": "Needles", "Inspection Phase": "Startup", Operation: "Needle Forming", "Item Name": "Comparator Check", Unit: "Accept/Reject", "Sample Size": "5", "Frequency Type": "Event", Frequency: "1", "Frequency Unit": "StartOfJob", "Drift Rule": "WesternElectric", "COA Required": "false" }),
-    row({ Section: "Variable", "Part Number": "P200", "Part Description": "Example needle", "Product Group": "Needles", "Inspection Phase": "In Process", Operation: "Needle Forming", "Item Name": "Length", Unit: "mm", Target: "42.0", "Lower Spec": "41.5", "Upper Spec": "42.5", "Lower Control": "41.0", "Upper Control": "43.0", "Sample Size": "5", "Frequency Type": "Quantity", Frequency: "10000", "Frequency Unit": "Pieces", "Drift Rule": "NelsonRules", "COA Required": "true", "COA Statistic": "StandardDeviation" })
-  ].join("\n");
+    "Part Number",
+    "Part Description",
+    "Product Group",
+    "Inspection Phase",
+    "Section",
+    "Operation",
+    "Item Name",
+    "Required",
+    "Sort Order",
+    "Material Part Number",
+    "Material Description",
+    "Unit",
+    "Target",
+    "Lower Spec",
+    "Upper Spec",
+    "Lower Control",
+    "Upper Control",
+    "Sample Size",
+    "Frequency Type",
+    "Frequency",
+    "Frequency Unit",
+    "Drift Rule",
+    "COA Required",
+    "COA Statistic"
+  ].join(",");
 }
 
 function parseCommaList(value) {

@@ -141,6 +141,7 @@ public sealed class PartMaterialField
     public string InspectionPhase { get; set; } = "In Process";
     public required string MaterialName { get; set; }
     public required string MaterialPartNum { get; set; }
+    public string MaterialDescription { get; set; } = "";
     public bool IsRequired { get; set; }
     public int DisplayOrder { get; set; }
 }

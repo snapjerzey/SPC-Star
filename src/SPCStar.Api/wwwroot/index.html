@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260601-standard-import">
+  <link rel="stylesheet" href="/styles.css?v=20260601-material-setup">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -327,9 +327,18 @@
             </div>
 
             <div class="setup-block">
-              <div class="panel-heading tight">
-                <h3>Materials</h3>
-                <p>Operators record material part number and lot number on the inspection screen whenever material changes on the job.</p>
+              <div class="panel-heading horizontal tight">
+                <div>
+                  <h3>Materials</h3>
+                  <p>Add material part numbers and descriptions that operators can select when lot changes occur.</p>
+                </div>
+                <button id="addSetupMaterialButton" type="button" class="secondary">Add Material</button>
+              </div>
+              <div class="material-editor">
+                <div class="material-editor-header">
+                  <span>Material</span><span>Material part number</span><span>Description</span><span>Required</span><span></span>
+                </div>
+                <div id="setupMaterialRows" class="setup-material-rows"></div>
               </div>
             </div>
 
@@ -658,6 +667,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260601-standard-import"></script>
+  <script src="/app.js?v=20260601-material-setup"></script>
 </body>
 </html>

@@ -262,12 +262,13 @@ function renderConfiguredMaterialFields(set) {
   const materialFields = fields.length ? fields : [{
     materialName: "Material",
     materialPartNum: "",
+    materialDescription: "",
     isRequired: true,
     displayOrder: 0
   }];
   rows.innerHTML = materialFields.map((field, index) => `
     <section class="material-field-row">
-      <h3>${escapeHtml(field.materialName)}</h3>
+      <h3>${escapeHtml(field.materialName)}${field.materialDescription ? ` - ${escapeHtml(field.materialDescription)}` : ""}</h3>
       <label>
         Material part number
         <input class="material-part-input" data-material-index="${index}" autocomplete="off" inputmode="text" value="${escapeHtml(field.materialPartNum || "")}" ${field.isRequired ? "required" : ""}>
@@ -2070,6 +2071,21 @@ function setupJobDataFieldTemplate() {
     <button type="button" class="secondary compact-button remove-job-data-field-button">Remove</button>`;
 }
 
+function setupMaterialRowTemplate() {
+  return `
+    <label><span>Material</span><input class="setup-material-name" required></label>
+    <label><span>Material part number</span><input class="setup-material-part-num" required></label>
+    <label><span>Description</span><input class="setup-material-description" required></label>
+    <label>
+      <span>Required</span>
+      <select class="setup-material-required">
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    </label>
+    <button type="button" class="secondary compact-button remove-material-button">Remove</button>`;
+}
+
 function addSetupJobDataFieldRow(values = {}) {
   const row = document.createElement("div");
   row.className = "setup-job-data-field-row";
@@ -2079,6 +2095,19 @@ function addSetupJobDataFieldRow(values = {}) {
   row.querySelector(".setup-job-data-required").value = String(values.isRequired ?? true);
   row.querySelector(".remove-job-data-field-button").addEventListener("click", () => row.remove());
   $("setupJobDataFieldRows").appendChild(row);
+}
+
+function addSetupMaterialRow(values = {}) {
+  const row = document.createElement("div");
+  row.className = "setup-material-row";
+  row.dataset.originalMaterialName = values.materialName || "";
+  row.innerHTML = setupMaterialRowTemplate();
+  row.querySelector(".setup-material-name").value = values.materialName || "";
+  row.querySelector(".setup-material-part-num").value = values.materialPartNum || "";
+  row.querySelector(".setup-material-description").value = values.materialDescription || "";
+  row.querySelector(".setup-material-required").value = String(values.isRequired ?? true);
+  row.querySelector(".remove-material-button").addEventListener("click", () => row.remove());
+  $("setupMaterialRows").appendChild(row);
 }
 
 function addSetupVariableRow(values = {}, type = values.characteristicType || "Variable") {
@@ -2174,6 +2203,12 @@ function loadSelectedPartSetup() {
       field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
       normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(firstPlan.inspectionPhase))
     .forEach((field) => addSetupJobDataFieldRow(field));
+  $("setupMaterialRows").innerHTML = "";
+  (state.snapshot.partMaterialFields || [])
+    .filter((field) =>
+      field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
+      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(firstPlan.inspectionPhase))
+    .forEach((field) => addSetupMaterialRow(field));
   $("inspectionSetupMessage").textContent = `${set.partNum} loaded for editing.`;
   $("inspectionSetupMessage").className = "message ok";
 }
@@ -2196,6 +2231,7 @@ function clearInspectionSetupForm() {
   $("setupVariableRows").innerHTML = "";
   $("setupAttributeRows").innerHTML = "";
   $("setupJobDataFieldRows").innerHTML = "";
+  $("setupMaterialRows").innerHTML = "";
   addSetupVariableRow();
   $("inspectionSetupMessage").textContent = "";
   $("inspectionSetupMessage").className = "message";
@@ -2357,6 +2393,19 @@ function setupJobDataFieldRows() {
     .filter((row) => row.fieldName);
 }
 
+function setupMaterialRows() {
+  return [...document.querySelectorAll(".setup-material-row")]
+    .map((row, index) => ({
+      originalMaterialName: row.dataset.originalMaterialName || null,
+      materialName: row.querySelector(".setup-material-name").value.trim(),
+      materialPartNum: row.querySelector(".setup-material-part-num").value.trim(),
+      materialDescription: row.querySelector(".setup-material-description").value.trim(),
+      isRequired: row.querySelector(".setup-material-required").value === "true",
+      displayOrder: index
+    }))
+    .filter((row) => row.materialName || row.materialPartNum || row.materialDescription);
+}
+
 function optionalInputNumber(input) {
   const value = input.value.trim();
   return value ? Number(value) : null;
@@ -2366,6 +2415,7 @@ async function saveInspectionSetup(event) {
   event.preventDefault();
   const variables = setupVariableRows();
   const jobDataFields = setupJobDataFieldRows();
+  const materialFields = setupMaterialRows();
   if (!variables.length || variables.some((variable) => !variable.characteristicName)) {
     $("inspectionSetupMessage").textContent = "Add at least one measurement name.";
     $("inspectionSetupMessage").className = "message error";
@@ -2398,6 +2448,22 @@ async function saveInspectionSetup(event) {
           isRequired: field.isRequired,
           displayOrder: field.displayOrder,
           originalFieldName: field.originalFieldName
+        })
+      });
+    }
+
+    for (const field of materialFields) {
+      await api("/setup/material-fields", {
+        method: "POST",
+        body: JSON.stringify({
+          partNum: baseRequest.partNum,
+          inspectionPhase: baseRequest.inspectionPhase,
+          materialName: field.materialName,
+          materialPartNum: field.materialPartNum,
+          materialDescription: field.materialDescription,
+          isRequired: field.isRequired,
+          displayOrder: field.displayOrder,
+          originalMaterialName: field.originalMaterialName
         })
       });
     }
@@ -2470,13 +2536,15 @@ function newClientRecordId() {
 }
 
 function loadCsvTemplate() {
+  const header = ["RowType", "PartNum", "PartDescription", "ProductGroup", "InspectionPhase", "Operation", "FieldName", "MaterialName", "MaterialPartNum", "MaterialDescription", "CharacteristicName", "CharacteristicType", "Nominal", "LSL", "USL", "LCL", "UCL", "UnitOfMeasure", "SampleSize", "FrequencyType", "FrequencyValue", "FrequencyUnit", "AlertRuleSet", "IsRequiredForCOA", "COAStatistic", "IsRequired", "DisplayOrder"];
+  const row = (values) => header.map((field) => values[field] ?? "").join(",");
   $("csvImportText").value = [
-    "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic,IsRequired,DisplayOrder",
-    "JobData,P200,Example part,Needles,Startup,,Wire Shipment,,,,,,,,,,,,,,,,,,true,1",
-    "Material,P200,Example part,Needles,Startup,,,Wire,WIRE-302,,,,,,,,,,,,,,,,true,2",
-    "Variable,P200,Example part,Needles,Startup,Needle Forming,,,,Outside Diameter,Variable,5.0,4.5,5.5,4.4,5.6,mm,5,Event,1,StartOfJob,WesternElectric,true,Mean,,",
-    "Attribute,P200,Example part,Needles,Startup,Needle Forming,,,,Comparator Check,Attribute,,,,,,Accept/Reject,5,Event,1,StartOfJob,WesternElectric,false,,,",
-    "Variable,P200,Example part,Needles,In Process,Needle Forming,,,,Length,Variable,42.0,41.5,42.5,41.0,43.0,mm,5,Quantity,10000,Pieces,NelsonRules,true,StandardDeviation,,"
+    header.join(","),
+    row({ RowType: "JobData", PartNum: "P200", PartDescription: "Example part", ProductGroup: "Needles", InspectionPhase: "Startup", FieldName: "Wire Shipment", IsRequired: "true", DisplayOrder: "1" }),
+    row({ RowType: "Material", PartNum: "P200", PartDescription: "Example part", ProductGroup: "Needles", InspectionPhase: "Startup", MaterialName: "Wire", MaterialPartNum: "WIRE-302", MaterialDescription: "302 stainless wire", IsRequired: "true", DisplayOrder: "2" }),
+    row({ RowType: "Variable", PartNum: "P200", PartDescription: "Example part", ProductGroup: "Needles", InspectionPhase: "Startup", Operation: "Needle Forming", CharacteristicName: "Outside Diameter", CharacteristicType: "Variable", Nominal: "5.0", LSL: "4.5", USL: "5.5", LCL: "4.4", UCL: "5.6", UnitOfMeasure: "mm", SampleSize: "5", FrequencyType: "Event", FrequencyValue: "1", FrequencyUnit: "StartOfJob", AlertRuleSet: "WesternElectric", IsRequiredForCOA: "true", COAStatistic: "Mean" }),
+    row({ RowType: "Attribute", PartNum: "P200", PartDescription: "Example part", ProductGroup: "Needles", InspectionPhase: "Startup", Operation: "Needle Forming", CharacteristicName: "Comparator Check", CharacteristicType: "Attribute", UnitOfMeasure: "Accept/Reject", SampleSize: "5", FrequencyType: "Event", FrequencyValue: "1", FrequencyUnit: "StartOfJob", AlertRuleSet: "WesternElectric", IsRequiredForCOA: "false" }),
+    row({ RowType: "Variable", PartNum: "P200", PartDescription: "Example part", ProductGroup: "Needles", InspectionPhase: "In Process", Operation: "Needle Forming", CharacteristicName: "Length", CharacteristicType: "Variable", Nominal: "42.0", LSL: "41.5", USL: "42.5", LCL: "41.0", UCL: "43.0", UnitOfMeasure: "mm", SampleSize: "5", FrequencyType: "Quantity", FrequencyValue: "10000", FrequencyUnit: "Pieces", AlertRuleSet: "NelsonRules", IsRequiredForCOA: "true", COAStatistic: "StandardDeviation" })
   ].join("\n");
 }
 
@@ -2589,6 +2657,7 @@ $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
 $("addSetupVariableButton").addEventListener("click", () => addSetupVariableRow());
 $("addSetupAttributeButton").addEventListener("click", () => addSetupVariableRow({}, "Attribute"));
 $("addSetupJobDataFieldButton").addEventListener("click", () => addSetupJobDataFieldRow());
+$("addSetupMaterialButton").addEventListener("click", () => addSetupMaterialRow());
 $("clearInspectionSetupButton").addEventListener("click", clearInspectionSetupForm);
 $("loadPartSetupButton").addEventListener("click", loadSelectedPartSetup);
 $("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);

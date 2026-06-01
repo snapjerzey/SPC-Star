@@ -76,7 +76,7 @@ Required common columns:
 Supported `RowType` values:
 
 - `JobData`: use `FieldName`, `IsRequired`, and `DisplayOrder`.
-- `Material`: use `MaterialName`, `MaterialPartNum`, `IsRequired`, and `DisplayOrder`.
+- `Material`: use `MaterialName`, `MaterialPartNum`, `MaterialDescription`, `IsRequired`, and `DisplayOrder`.
 - `Variable`: use `Operation`, `CharacteristicName`, `CharacteristicType=Variable`, `Nominal`, `LSL`, `USL`, optional `LCL/UCL`, `UnitOfMeasure`, sample/frequency columns, drift rule, and COA columns.
 - `Attribute`: use `Operation`, `CharacteristicName`, `CharacteristicType=Attribute`, sample/frequency columns, drift rule, and COA columns.
 
@@ -96,6 +96,7 @@ Initial endpoints include:
 - `DELETE /setup/users/{userName}`
 - `POST /setup/inspection-plans`
 - `POST /setup/job-data-fields`
+- `POST /setup/material-fields`
 - `GET /setup/parts`
 - `GET /setup/inspection-plans`
 - `GET /sync/setup-snapshot`

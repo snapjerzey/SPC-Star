@@ -181,6 +181,25 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertPartMaterialField_SavesMaterialForPartAndPhase()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        Assert.True(service.UpsertInspectionSetup(Request("MOLD", "Diameter")).Succeeded);
+
+        var result = service.UpsertPartMaterialField(new UpsertPartMaterialFieldRequest("P200", "Startup", "Wire", "WIRE-302", "302 stainless wire", true, 0));
+
+        Assert.True(result.Succeeded);
+        var field = Assert.Single(repository.PartMaterialFields);
+        Assert.Equal("Wire", field.MaterialName);
+        Assert.Equal("WIRE-302", field.MaterialPartNum);
+        Assert.Equal("302 stainless wire", field.MaterialDescription);
+        Assert.Equal("Startup", field.InspectionPhase);
+        var snapshot = new SetupQueryService(repository).GetSetupSnapshot();
+        Assert.Contains(snapshot.PartMaterialFields, item => item.PartNum == "P200" && item.MaterialPartNum == "WIRE-302" && item.MaterialDescription == "302 stainless wire");
+    }
+
+    [Fact]
     public void UpsertInspectionSetup_RenamesExistingOperationWithoutCreatingDuplicate()
     {
         var repository = new InMemorySpcRepository();

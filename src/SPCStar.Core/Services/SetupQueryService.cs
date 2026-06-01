@@ -81,6 +81,7 @@ public sealed record PartMaterialFieldSetupDto(
     string InspectionPhase,
     string MaterialName,
     string MaterialPartNum,
+    string MaterialDescription,
     bool IsRequired,
     int DisplayOrder);
 
@@ -208,7 +209,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
             (from field in repository.PartMaterialFields
              join part in repository.Parts on field.PartId equals part.Id
              orderby part.PartNum, field.InspectionPhase, field.DisplayOrder, field.MaterialName
-             select new PartMaterialFieldSetupDto(part.PartNum, field.InspectionPhase, field.MaterialName, field.MaterialPartNum, field.IsRequired, field.DisplayOrder))
+             select new PartMaterialFieldSetupDto(part.PartNum, field.InspectionPhase, field.MaterialName, field.MaterialPartNum, field.MaterialDescription, field.IsRequired, field.DisplayOrder))
             .ToArray();
 
         return new SetupSnapshotDto(

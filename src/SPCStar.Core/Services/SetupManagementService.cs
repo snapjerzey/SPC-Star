@@ -44,6 +44,16 @@ public sealed record UpsertPartJobDataFieldRequest(
     int DisplayOrder,
     string? OriginalFieldName = null);
 
+public sealed record UpsertPartMaterialFieldRequest(
+    string PartNum,
+    string InspectionPhase,
+    string MaterialName,
+    string MaterialPartNum,
+    string MaterialDescription,
+    bool IsRequired,
+    int DisplayOrder,
+    string? OriginalMaterialName = null);
+
 public sealed class SetupManagementService(ISpcRepository repository)
 {
     public IReadOnlyList<UserSetupDto> GetUsers()
@@ -395,6 +405,54 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return ServiceResult<PartJobDataFieldSetupDto>.Ok(new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder));
     }
 
+    public ServiceResult<PartMaterialFieldSetupDto> UpsertPartMaterialField(UpsertPartMaterialFieldRequest request)
+    {
+        var errors = ValidateMaterialField(request);
+        if (errors.Count > 0)
+        {
+            return ServiceResult<PartMaterialFieldSetupDto>.Fail(errors);
+        }
+
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (part is null)
+        {
+            part = new Part { PartNum = request.PartNum.Trim(), Description = request.PartNum.Trim() };
+            repository.Parts.Add(part);
+        }
+
+        var inspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
+        var originalName = string.IsNullOrWhiteSpace(request.OriginalMaterialName) ? request.MaterialName.Trim() : request.OriginalMaterialName.Trim();
+        var field = repository.PartMaterialFields.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
+            item.MaterialName.Equals(originalName, StringComparison.OrdinalIgnoreCase));
+        if (field is null)
+        {
+            field = new PartMaterialField
+            {
+                PartId = part.Id,
+                InspectionPhase = inspectionPhase,
+                MaterialName = request.MaterialName.Trim(),
+                MaterialPartNum = request.MaterialPartNum.Trim(),
+                MaterialDescription = request.MaterialDescription.Trim(),
+                IsRequired = request.IsRequired,
+                DisplayOrder = request.DisplayOrder
+            };
+            repository.PartMaterialFields.Add(field);
+        }
+        else
+        {
+            field.InspectionPhase = inspectionPhase;
+            field.MaterialName = request.MaterialName.Trim();
+            field.MaterialPartNum = request.MaterialPartNum.Trim();
+            field.MaterialDescription = request.MaterialDescription.Trim();
+            field.IsRequired = request.IsRequired;
+            field.DisplayOrder = request.DisplayOrder;
+        }
+
+        return ServiceResult<PartMaterialFieldSetupDto>.Ok(new PartMaterialFieldSetupDto(part.PartNum, field.InspectionPhase, field.MaterialName, field.MaterialPartNum, field.MaterialDescription, field.IsRequired, field.DisplayOrder));
+    }
+
     private void UpsertControlLimit(UpsertInspectionSetupRequest request)
     {
         var lcl = request.Lcl ?? request.Lsl;
@@ -527,6 +585,26 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var errors = new List<string>();
         Required(request.PartNum, nameof(request.PartNum), errors);
         Required(request.FieldName, nameof(request.FieldName), errors);
+        if (!IsValidInspectionPhase(request.InspectionPhase))
+        {
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, or Spool.");
+        }
+
+        if (request.DisplayOrder < 0)
+        {
+            errors.Add("DisplayOrder must be zero or greater.");
+        }
+
+        return errors;
+    }
+
+    private static List<string> ValidateMaterialField(UpsertPartMaterialFieldRequest request)
+    {
+        var errors = new List<string>();
+        Required(request.PartNum, nameof(request.PartNum), errors);
+        Required(request.MaterialName, nameof(request.MaterialName), errors);
+        Required(request.MaterialPartNum, nameof(request.MaterialPartNum), errors);
+        Required(request.MaterialDescription, nameof(request.MaterialDescription), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
             errors.Add("InspectionPhase must be Startup, Setup, In Process, or Spool.");

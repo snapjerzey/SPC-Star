@@ -196,6 +196,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     {
         Required(row, "MaterialName", rowNumber, errors);
         Required(row, "MaterialPartNum", rowNumber, errors);
+        Required(row, "MaterialDescription", rowNumber, errors);
         ValidateRequiredFlag(row, rowNumber, errors);
         ValidateDisplayOrder(row, rowNumber, errors);
     }
@@ -385,12 +386,14 @@ public sealed class SetupImportService(ISpcRepository repository)
                 PartId = part.Id,
                 InspectionPhase = inspectionPhase,
                 MaterialName = materialName,
-                MaterialPartNum = row["MaterialPartNum"].Trim()
+                MaterialPartNum = row["MaterialPartNum"].Trim(),
+                MaterialDescription = row["MaterialDescription"].Trim()
             };
             repository.PartMaterialFields.Add(field);
         }
 
         field.MaterialPartNum = row["MaterialPartNum"].Trim();
+        field.MaterialDescription = row["MaterialDescription"].Trim();
         field.IsRequired = OptionalBool(row, "IsRequired", true);
         field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartMaterialFields.Count(item => item.PartId == part.Id && item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)));
     }

@@ -479,6 +479,35 @@ textarea {
   padding: 12px;
   background: #ffffff;
 }
+.material-editor {
+  display: grid;
+  gap: 10px;
+}
+.material-editor-header,
+.setup-material-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(170px, 1fr) minmax(220px, 1.2fr) minmax(110px, 140px) auto;
+  gap: 8px;
+  align-items: end;
+}
+.material-editor-header {
+  display: none;
+  background: #f1f6fb;
+  color: #35516f;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.setup-material-rows {
+  display: grid;
+  gap: 10px;
+}
+.setup-material-row {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  background: #ffffff;
+}
 .variable-editor-header {
   display: none;
   background: #f1f6fb;
@@ -524,13 +553,16 @@ textarea {
 .setup-variable-row label span {
   display: block;
 }
-.setup-job-data-field-row label span {
+.setup-job-data-field-row label span,
+.setup-material-row label span {
   display: block;
 }
 .setup-variable-row input,
 .setup-variable-row select,
 .setup-job-data-field-row input,
-.setup-job-data-field-row select {
+.setup-job-data-field-row select,
+.setup-material-row input,
+.setup-material-row select {
   min-height: 38px;
 }
 .form-actions {
@@ -1124,6 +1156,9 @@ textarea {
     margin-bottom: 10px;
   }
   .setup-job-data-field-row {
+    grid-template-columns: 1fr;
+  }
+  .setup-material-row {
     grid-template-columns: 1fr;
   }
   .setup-name-field,

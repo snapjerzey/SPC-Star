@@ -45,7 +45,7 @@ public sealed class SetupImportServiceTests
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
             Header(),
-            "Variable,P100,Widget,General,In Process,MOLD,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true,Mean,,",
+            "Variable,P100,Widget,General,In Process,MOLD,,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true,Mean,,",
             string.Empty
         ]));
 
@@ -63,7 +63,7 @@ public sealed class SetupImportServiceTests
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
             Header(),
-            "Variable,P100,Widget,General,In Process,MOLD,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true,StandardDeviation,,",
+            "Variable,P100,Widget,General,In Process,MOLD,,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true,StandardDeviation,,",
             string.Empty
         ]));
 
@@ -93,9 +93,9 @@ public sealed class SetupImportServiceTests
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
             Header(),
-            "JobData,P200,Needle,Needles,Startup,,Wire Shipment,,,,,,,,,,,,,,,,,,true,1",
-            "Material,P200,Needle,Needles,Startup,,,Wire,WIRE-302,,,,,,,,,,,,,,,,true,2",
-            "Variable,P200,Needle,Needles,Startup,Needle Forming,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,5,Event,1,StartOfJob,WesternElectric,true,Mean,,",
+            "JobData,P200,Needle,Needles,Startup,,Wire Shipment,,,,,,,,,,,,,,,,,,,true,1",
+            "Material,P200,Needle,Needles,Startup,,,Wire,WIRE-302,302 stainless wire,,,,,,,,,,,,,,,,true,2",
+            "Variable,P200,Needle,Needles,Startup,Needle Forming,,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,5,Event,1,StartOfJob,WesternElectric,true,Mean,,",
             string.Empty
         ]));
 
@@ -105,6 +105,7 @@ public sealed class SetupImportServiceTests
         Assert.Single(repository.PartMaterialFields);
         Assert.Equal("Wire", repository.PartMaterialFields.Single().MaterialName);
         Assert.Equal("WIRE-302", repository.PartMaterialFields.Single().MaterialPartNum);
+        Assert.Equal("302 stainless wire", repository.PartMaterialFields.Single().MaterialDescription);
     }
 
     private static string ValidCsv(
@@ -115,13 +116,13 @@ public sealed class SetupImportServiceTests
     {
         return string.Join(Environment.NewLine, [
             Header(),
-            $"Variable,P100,{description},General,In Process,MOLD,,,,Diameter,Variable,5.0,{lsl},{usl},,,mm,{sampleSize},Time,30,Minutes,WesternElectric,true,Mean,,",
+            $"Variable,P100,{description},General,In Process,MOLD,,,,,Diameter,Variable,5.0,{lsl},{usl},,,mm,{sampleSize},Time,30,Minutes,WesternElectric,true,Mean,,",
             string.Empty
         ]);
     }
 
     private static string Header()
     {
-        return "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic,IsRequired,DisplayOrder";
+        return "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,MaterialDescription,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic,IsRequired,DisplayOrder";
     }
 }

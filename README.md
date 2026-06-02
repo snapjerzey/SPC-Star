@@ -129,6 +129,38 @@ Initial endpoints include:
 
 The API also serves the browser/tablet inspection UI at `/`.
 
+## Deploy on local network
+
+For the fastest internal testing rollout, install SPC-Star on one Windows server and let operators open it through a browser from shop-floor computers.
+
+Server install from the project folder:
+
+```powershell
+.\deploy\install-server.ps1
+```
+
+Server update after pulling newer code:
+
+```powershell
+.\deploy\update-server.ps1
+```
+
+Backup current local data:
+
+```powershell
+.\deploy\backup-data.ps1
+```
+
+The default server URL is:
+
+```text
+http://SERVER-NAME:5000/
+```
+
+The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar-data.json`, keep backups in `C:\SPCStar\backups`, and create a Windows Scheduled Task named `SPC-Star Server`.
+
+See `deploy/README.md` for the deployment workflow.
+
 The API seeds demo security users and one sample inspection plan:
 
 - Users `operator1`, `linetech1`, `qa1`, `admin1`, and `god1`

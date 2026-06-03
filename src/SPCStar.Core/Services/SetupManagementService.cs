@@ -34,7 +34,10 @@ public sealed record UpsertInspectionSetupRequest(
     int? OriginalOperationSeq = null,
     string? OriginalCharacteristicName = null,
     CoaStatisticType CoaStatisticType = CoaStatisticType.Mean,
-    string InspectionPhase = "In Process");
+    string InspectionPhase = "In Process",
+    string? Location = null,
+    string? InspectionMethod = null,
+    int? DisplayOrder = null);
 
 public sealed record UpsertPartJobDataFieldRequest(
     string PartNum,
@@ -297,6 +300,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 Name = request.CharacteristicName.Trim(),
                 Type = request.CharacteristicType,
                 UnitOfMeasure = request.UnitOfMeasure.Trim(),
+                Location = CleanOptional(request.Location),
+                InspectionMethod = CleanOptional(request.InspectionMethod),
                 IsRequiredForCoa = request.IsRequiredForCoa,
                 CoaStatisticType = request.CoaStatisticType
             };
@@ -308,6 +313,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
             characteristic.Name = request.CharacteristicName.Trim();
             characteristic.Type = request.CharacteristicType;
             characteristic.UnitOfMeasure = request.UnitOfMeasure.Trim();
+            characteristic.Location = CleanOptional(request.Location);
+            characteristic.InspectionMethod = CleanOptional(request.InspectionMethod);
             characteristic.IsRequiredForCoa = request.IsRequiredForCoa;
             characteristic.CoaStatisticType = request.CoaStatisticType;
             RenameControlLimitCharacteristic(request, oldCharacteristicName);
@@ -336,6 +343,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 CharacteristicId = characteristic.Id,
                 InspectionPhase = inspectionPhase,
                 SampleSize = request.SampleSize,
+                DisplayOrder = request.DisplayOrder.GetValueOrDefault(repository.InspectionPlans.Count(item => item.CharacteristicId == characteristic.Id)),
                 AlertRuleSet = request.AlertRuleSet.Trim()
             };
             repository.InspectionPlans.Add(plan);
@@ -343,6 +351,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
         plan.InspectionPhase = inspectionPhase;
         plan.SampleSize = request.SampleSize;
+        plan.DisplayOrder = request.DisplayOrder.GetValueOrDefault(plan.DisplayOrder);
         plan.AlertRuleSet = request.AlertRuleSet.Trim();
         plan.Frequency = new InspectionFrequency { Type = request.FrequencyType, Value = request.FrequencyValue, Unit = request.FrequencyUnit };
         if (request.CharacteristicType == CharacteristicType.Variable)
@@ -689,6 +698,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
     }
 
     private static string CleanProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
+
+    private static string CleanOptional(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value.Trim();
 
     private static IReadOnlyList<string> CleanProductGroups(IReadOnlyList<string>? values)
     {

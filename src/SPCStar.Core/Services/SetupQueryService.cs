@@ -20,8 +20,11 @@ public sealed record InspectionPlanSetupDto(
     decimal Lsl,
     decimal Usl,
     string UnitOfMeasure,
+    string Location,
+    string InspectionMethod,
     string InspectionPhase,
     int SampleSize,
+    int DisplayOrder,
     FrequencyType FrequencyType,
     int FrequencyValue,
     FrequencyUnit FrequencyUnit,
@@ -39,6 +42,8 @@ public sealed record CharacteristicSetupDto(
     string Name,
     CharacteristicType Type,
     string UnitOfMeasure,
+    string Location,
+    string InspectionMethod,
     bool IsRequiredForCoa,
     CoaStatisticType CoaStatisticType);
 
@@ -121,7 +126,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
             join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
             join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
             where string.IsNullOrWhiteSpace(partNum) || part.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase)
-            orderby part.PartNum, operation.OperationSeq, characteristic.Name
+            orderby part.PartNum, operation.OperationSeq, plan.InspectionPhase, plan.DisplayOrder, characteristic.Name
             select new InspectionPlanSetupDto(
                 part.PartNum,
                 part.Description,
@@ -135,8 +140,11 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 spec.Lsl,
                 spec.Usl,
                 characteristic.UnitOfMeasure,
+                characteristic.Location,
+                characteristic.InspectionMethod,
                 plan.InspectionPhase,
                 plan.SampleSize,
+                plan.DisplayOrder,
                 plan.Frequency.Type,
                 plan.Frequency.Value,
                 plan.Frequency.Unit,
@@ -169,6 +177,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 characteristic.Name,
                 characteristic.Type,
                 characteristic.UnitOfMeasure,
+                characteristic.Location,
+                characteristic.InspectionMethod,
                 characteristic.IsRequiredForCoa,
                 characteristic.CoaStatisticType))
             .ToArray();

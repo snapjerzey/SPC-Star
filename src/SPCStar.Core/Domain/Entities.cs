@@ -47,6 +47,8 @@ public sealed class Characteristic
     public required string Name { get; set; }
     public CharacteristicType Type { get; set; }
     public required string UnitOfMeasure { get; set; }
+    public string Location { get; set; } = "";
+    public string InspectionMethod { get; set; } = "";
     public bool IsRequiredForCoa { get; set; }
     public CoaStatisticType CoaStatisticType { get; set; } = CoaStatisticType.Mean;
 }
@@ -65,6 +67,7 @@ public sealed class InspectionPlan
     public Guid CharacteristicId { get; set; }
     public string InspectionPhase { get; set; } = "In Process";
     public int SampleSize { get; set; }
+    public int DisplayOrder { get; set; }
     public required string AlertRuleSet { get; set; }
     public InspectionFrequency Frequency { get; set; } = new();
 }

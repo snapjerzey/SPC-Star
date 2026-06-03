@@ -59,9 +59,45 @@ function inspectionSets() {
 function selectedInspectionSet() {
   const partNum = $("partNum").value.trim();
   const phase = $("inspectionPhase").value;
-  return inspectionSets().find((set) =>
+  const activeSet = inspectionSets().find((set) =>
     set.partNum.toLowerCase() === partNum.toLowerCase() &&
     normalizeInspectionPhase(set.inspectionPhase) === normalizeInspectionPhase(phase)) || null;
+  const partPlans = (state.snapshot?.inspectionPlans || [])
+    .filter((plan) => plan.partNum.toLowerCase() === partNum.toLowerCase());
+  if (!partPlans.length) {
+    return null;
+  }
+
+  const base = activeSet || inspectionSets().find((set) => set.partNum.toLowerCase() === partNum.toLowerCase());
+  return {
+    ...base,
+    inspectionPhase: phase,
+    activePhase: phase,
+    plans: displayPlansForPhase(partPlans, phase)
+  };
+}
+
+function displayPlansForPhase(plans, phase) {
+  const activePhase = normalizeInspectionPhase(phase);
+  const byCharacteristic = new Map();
+  plans
+    .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.characteristicName.localeCompare(b.characteristicName))
+    .forEach((plan) => {
+      const key = `${plan.processCode}|${plan.operationSeq}|${plan.characteristicName}`;
+      const current = byCharacteristic.get(key);
+      const isActive = normalizeInspectionPhase(plan.inspectionPhase) === activePhase;
+      if (!current || isActive || (!current.isActiveForSelectedPhase && (plan.displayOrder ?? 0) < (current.displayOrder ?? 0))) {
+        byCharacteristic.set(key, {
+          ...plan,
+          isActiveForSelectedPhase: isActive,
+          selectedInspectionPhase: phase
+        });
+      }
+    });
+  return [...byCharacteristic.values()]
+    .sort((a, b) =>
+      (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+      a.characteristicName.localeCompare(b.characteristicName));
 }
 
 function selectedValues() {
@@ -165,7 +201,7 @@ async function loadContext(event) {
   if (!set) {
     state.selectedPlans = [];
     state.contexts = [];
-    renderEmptyContext(`Part ${partNum} is not set up for ${$("inspectionPhase").value} inspections. Ask Admin or GOD to add that inspection phase before inspecting.`);
+    renderEmptyContext(`Part ${partNum} is not set up. Ask Admin or GOD to add the inspection plan before inspecting.`);
     return;
   }
 
@@ -217,7 +253,7 @@ async function loadVariableContext(jobNum, resourceId, plan) {
 function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
   $("contextTitle").textContent = "Variables";
-  $("contextSubtitle").textContent = `${jobNum} / ${resourceId} / ${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.inspectionPhase}`;
+  $("contextSubtitle").textContent = `${jobNum} / ${resourceId} / ${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.activePhase || set.inspectionPhase}`;
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
   $("jobNotesPanel").classList.remove("hidden");
@@ -316,12 +352,12 @@ function renderVariables() {
   const attributeList = $("attributeVariableList");
   measurementList.innerHTML = "";
   attributeList.innerHTML = "";
-  measurementList.appendChild(sectionHeading("Variables"));
-  attributeList.appendChild(sectionHeading("Attributes"));
+  attributeList.classList.add("hidden");
   state.selectedPlans.forEach((plan, index) => {
     const context = state.contexts[index];
     const card = document.createElement("section");
-    card.className = "variable-card";
+    const isInactive = plan.isActiveForSelectedPhase === false;
+    card.className = `variable-card${isInactive ? " inactive-plan-card" : ""}`;
     const isAttribute = plan.characteristicType === "Attribute";
     card.innerHTML = `
       <div>
@@ -331,7 +367,7 @@ function renderVariables() {
             <span>${isAttribute ? "Accept / Reject" : plan.unitOfMeasure}</span>
           </div>
           <div class="sample-meta">
-            <span>${plan.inspectionPhase || "In Process"}</span>
+            <span>${isInactive ? `Not required for ${escapeHtml(plan.selectedInspectionPhase || $("inspectionPhase").value)}` : (plan.inspectionPhase || "In Process")}</span>
             <span>Sample size ${plan.sampleSize}</span>
             <span>${formatFrequency(plan)}</span>
           </div>
@@ -360,13 +396,14 @@ function renderVariables() {
               <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0000">`}
           </label>`).join("")}
       </div>`;
-    (isAttribute ? attributeList : measurementList).appendChild(card);
+    if (isInactive) {
+      card.querySelectorAll(".measurement-input").forEach((input) => {
+        input.disabled = true;
+        input.title = `Not required for ${plan.selectedInspectionPhase || $("inspectionPhase").value}`;
+      });
+    }
+    measurementList.appendChild(card);
   });
-  if (!attributeList.querySelector(".variable-card")) {
-    attributeList.classList.add("hidden");
-  } else {
-    attributeList.classList.remove("hidden");
-  }
   wireMeasurementDeviceInputs();
 }
 
@@ -2027,34 +2064,36 @@ async function saveUser(event) {
 
 function setupVariableRowTemplate() {
   return `
-    <label class="setup-name-field"><span>Measurement</span><input class="setup-characteristic-name" required></label>
+    <label class="setup-name-field"><span>Inspection item</span><input class="setup-characteristic-name" required></label>
     <label class="setup-type-field">
-      <span>Inspection type</span>
+      <span>Type</span>
       <select class="setup-characteristic-type">
         <option value="Variable">Measured</option>
         <option value="Attribute">Accept / Reject</option>
       </select>
     </label>
     <label class="setup-unit-field"><span>Unit</span><input class="setup-unit" required></label>
+    <label class="setup-location-field"><span>Requirement / context</span><input class="setup-location" placeholder="Front, Back, 2 places, if weld pool is present"></label>
+    <label class="setup-method-field"><span>Method / tool</span><input class="setup-method" placeholder="Caliper, comparator FX194, template T-071"></label>
+    <label class="setup-sample-field"><span>Sample size</span><input class="setup-row-sample-size" type="number" min="1" required></label>
+    <label class="setup-frequency-type-field">
+      <span>Frequency type</span>
+      <select class="setup-row-frequency-type">
+        <option value="Quantity">Quantity</option>
+        <option value="Time">Time</option>
+        <option value="Event">Event</option>
+      </select>
+    </label>
+    <label class="setup-frequency-value-field"><span>Frequency</span><input class="setup-row-frequency-value" type="number" min="1" required></label>
+    <label class="setup-frequency-unit-field">
+      <span>Frequency unit</span>
+      <select class="setup-row-frequency-unit"></select>
+    </label>
     <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
     <label class="numeric-setup-field"><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
-    <label class="setup-coa-field">
-      <span>COA</span>
-      <select class="setup-coa-required">
-        <option value="true">Yes</option>
-        <option value="false">No</option>
-      </select>
-    </label>
-    <label class="setup-coa-stat-field">
-      <span>COA stat</span>
-      <select class="setup-coa-statistic">
-        <option value="Mean">Mean</option>
-        <option value="StandardDeviation">Std dev</option>
-      </select>
-    </label>
     <button type="button" class="secondary compact-button remove-variable-button">Remove</button>`;
 }
 
@@ -2118,25 +2157,32 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || "V
   row.querySelector(".setup-characteristic-name").value = values.characteristicName || "";
   row.querySelector(".setup-characteristic-type").value = type;
   row.querySelector(".setup-unit").value = values.unitOfMeasure || "";
+  row.querySelector(".setup-location").value = values.location || "";
+  row.querySelector(".setup-method").value = values.inspectionMethod || "";
+  row.querySelector(".setup-row-sample-size").value = String(values.sampleSize || $("setupSampleSize").value || 1);
+  row.querySelector(".setup-row-frequency-type").value = values.frequencyType || $("setupFrequencyType").value || "Quantity";
+  updateRowFrequencyUnits(row, values.frequencyUnit || $("setupFrequencyUnit").value || "Pieces");
+  row.querySelector(".setup-row-frequency-value").value = String(values.frequencyValue || $("setupFrequencyValue").value || 1);
   row.querySelector(".setup-nominal").value = values.nominal ?? "";
   row.querySelector(".setup-lsl").value = values.lsl ?? "";
   row.querySelector(".setup-usl").value = values.usl ?? "";
   row.querySelector(".setup-lcl").value = values.lcl ?? "";
   row.querySelector(".setup-ucl").value = values.ucl ?? "";
-  row.querySelector(".setup-coa-required").value = String(values.isRequiredForCoa ?? true);
-  row.querySelector(".setup-coa-statistic").value = values.coaStatisticType || "Mean";
   row.querySelector(".setup-characteristic-type").addEventListener("change", () => updateSetupVariableType(row));
+  row.querySelector(".setup-row-frequency-type").addEventListener("change", () => updateRowFrequencyUnits(row));
   row.querySelector(".remove-variable-button").addEventListener("click", () => {
     const container = row.parentElement;
     if (container?.children.length === 1 && container.id === "setupVariableRows") {
       row.querySelectorAll("input").forEach((input) => { input.value = ""; });
-      row.querySelector(".setup-coa-required").value = "true";
-      row.querySelector(".setup-coa-statistic").value = "Mean";
+      row.querySelector(".setup-row-sample-size").value = String($("setupSampleSize").value || 1);
+      row.querySelector(".setup-row-frequency-type").value = $("setupFrequencyType").value || "Quantity";
+      updateRowFrequencyUnits(row, $("setupFrequencyUnit").value || "Pieces");
+      row.querySelector(".setup-row-frequency-value").value = String($("setupFrequencyValue").value || 1);
       return;
     }
     row.remove();
   });
-  $(type === "Attribute" ? "setupAttributeRows" : "setupVariableRows").appendChild(row);
+  $("setupVariableRows").appendChild(row);
   updateSetupVariableType(row);
 }
 
@@ -2195,7 +2241,6 @@ function loadSelectedPartSetup() {
   $("setupAlertRuleSet").value = firstPlan.alertRuleSet || "WesternElectric";
   updateRuleDescription();
   $("setupVariableRows").innerHTML = "";
-  $("setupAttributeRows").innerHTML = "";
   set.plans.forEach((plan) => addSetupVariableRow(plan, plan.characteristicType));
   $("setupJobDataFieldRows").innerHTML = "";
   (state.snapshot.partJobDataFields || [])
@@ -2229,7 +2274,6 @@ function clearInspectionSetupForm() {
   updateRuleDescription();
   updateSetupFrequencyUnits();
   $("setupVariableRows").innerHTML = "";
-  $("setupAttributeRows").innerHTML = "";
   $("setupJobDataFieldRows").innerHTML = "";
   $("setupMaterialRows").innerHTML = "";
   addSetupVariableRow();
@@ -2271,6 +2315,20 @@ async function saveGlobalRule(event) {
   } catch (error) {
     $("globalRuleMessage").textContent = readableError(error);
     $("globalRuleMessage").className = "message error";
+  }
+}
+
+function updateRowFrequencyUnits(row, requestedUnit = null) {
+  const unitsByType = {
+    Quantity: [["Pieces", "Pieces"]],
+    Time: [["Minutes", "Minutes"], ["Hours", "Hours"]],
+    Event: [["StartOfJob", "Start of job"], ["MaterialChange", "Material change"], ["ToolChange", "Tool change"], ["Restart", "Restart"]]
+  };
+  const current = requestedUnit || row.querySelector(".setup-row-frequency-unit").value;
+  const units = unitsByType[row.querySelector(".setup-row-frequency-type").value] || unitsByType.Quantity;
+  fillSelect(row.querySelector(".setup-row-frequency-unit"), units, (unit) => unit[0], (unit) => unit[1]);
+  if (units.some((unit) => unit[0] === current)) {
+    row.querySelector(".setup-row-frequency-unit").value = current;
   }
 }
 
@@ -2367,18 +2425,25 @@ function updateSetupFrequencyUnits() {
 }
 
 function setupVariableRows() {
-  return [...document.querySelectorAll(".setup-variable-row")].map((row) => ({
+  return [...document.querySelectorAll(".setup-variable-row")].map((row, index) => ({
     originalCharacteristicName: row.dataset.originalCharacteristicName || null,
     characteristicName: row.querySelector(".setup-characteristic-name").value.trim(),
     characteristicType: row.querySelector(".setup-characteristic-type").value,
     unitOfMeasure: row.querySelector(".setup-unit").value.trim(),
+    location: row.querySelector(".setup-location").value.trim(),
+    inspectionMethod: row.querySelector(".setup-method").value.trim(),
+    sampleSize: Number(row.querySelector(".setup-row-sample-size").value),
+    frequencyType: row.querySelector(".setup-row-frequency-type").value,
+    frequencyValue: Number(row.querySelector(".setup-row-frequency-value").value),
+    frequencyUnit: row.querySelector(".setup-row-frequency-unit").value,
     nominal: Number(row.querySelector(".setup-nominal").value),
     lsl: Number(row.querySelector(".setup-lsl").value),
     usl: Number(row.querySelector(".setup-usl").value),
     lcl: optionalInputNumber(row.querySelector(".setup-lcl")),
     ucl: optionalInputNumber(row.querySelector(".setup-ucl")),
-    isRequiredForCoa: row.querySelector(".setup-coa-required").value === "true",
-    coaStatisticType: row.querySelector(".setup-coa-statistic").value
+    isRequiredForCoa: false,
+    coaStatisticType: "Mean",
+    displayOrder: index + 1
   }));
 }
 
@@ -2431,10 +2496,6 @@ async function saveInspectionSetup(event) {
       processDescription: $("setupProcessCode").value.trim(),
       operationSeq: Number($("setupOperationSeq").value),
       inspectionPhase: $("setupInspectionPhase").value,
-      sampleSize: Number($("setupSampleSize").value),
-      frequencyType: $("setupFrequencyType").value,
-      frequencyValue: Number($("setupFrequencyValue").value),
-      frequencyUnit: $("setupFrequencyUnit").value,
       alertRuleSet: $("setupAlertRuleSet").value
     };
 
@@ -2481,6 +2542,13 @@ async function saveInspectionSetup(event) {
           lcl: variable.lcl,
           ucl: variable.ucl,
           unitOfMeasure: variable.unitOfMeasure,
+          location: variable.location,
+          inspectionMethod: variable.inspectionMethod,
+          displayOrder: variable.displayOrder,
+          sampleSize: variable.sampleSize,
+          frequencyType: variable.frequencyType,
+          frequencyValue: variable.frequencyValue,
+          frequencyUnit: variable.frequencyUnit,
           isRequiredForCoa: variable.isRequiredForCoa,
           coaStatisticType: variable.coaStatisticType,
           originalProcessCode: state.editingSetup?.processCode || null,
@@ -2490,7 +2558,7 @@ async function saveInspectionSetup(event) {
       });
     }
 
-    $("inspectionSetupMessage").textContent = `${variables.length} variable${variables.length === 1 ? "" : "s"} saved for ${baseRequest.partNum}.`;
+    $("inspectionSetupMessage").textContent = `${variables.length} inspection item${variables.length === 1 ? "" : "s"} saved for ${baseRequest.partNum}.`;
     $("inspectionSetupMessage").className = "message ok";
     state.editingSetup = {
       processCode: baseRequest.processCode,
@@ -2551,18 +2619,31 @@ function loadCsvTemplate() {
     "Required",
     "Sort Order",
     "Unit",
+    "Location",
+    "Inspection Method",
     "Target",
     "Lower Spec",
     "Upper Spec",
     "Lower Control",
     "Upper Control",
-    "Sample Size",
-    "Frequency Type",
-    "Frequency",
-    "Frequency Unit",
     "Drift Rule",
     "COA Required",
-    "COA Statistic"
+    "COA Statistic",
+    "Startup Required",
+    "Startup Sample Size",
+    "Startup Frequency Type",
+    "Startup Frequency",
+    "Startup Frequency Unit",
+    "Setup Required",
+    "Setup Sample Size",
+    "Setup Frequency Type",
+    "Setup Frequency",
+    "Setup Frequency Unit",
+    "In Process Required",
+    "In Process Sample Size",
+    "In Process Frequency Type",
+    "In Process Frequency",
+    "In Process Frequency Unit"
   ].join(",");
 }
 
@@ -2673,7 +2754,6 @@ $("selectAllUserProductGroups").addEventListener("click", () => setUserProductGr
 $("clearUserProductGroups").addEventListener("click", () => setUserProductGroupSelection([]));
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);
 $("addSetupVariableButton").addEventListener("click", () => addSetupVariableRow());
-$("addSetupAttributeButton").addEventListener("click", () => addSetupVariableRow({}, "Attribute"));
 $("addSetupJobDataFieldButton").addEventListener("click", () => addSetupJobDataFieldRow());
 $("addSetupMaterialButton").addEventListener("click", () => addSetupMaterialRow());
 $("clearInspectionSetupButton").addEventListener("click", clearInspectionSetupForm);

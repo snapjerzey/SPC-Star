@@ -9,8 +9,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     [
         "PartNum",
         "PartDescription",
-        "ProductGroup",
-        "InspectionPhase"
+        "ProductGroup"
     ];
 
     private static readonly string[] CharacteristicRequiredFields =
@@ -19,9 +18,6 @@ public sealed class SetupImportService(ISpcRepository repository)
         "CharacteristicName",
         "CharacteristicType",
         "SampleSize",
-        "FrequencyType",
-        "FrequencyValue",
-        "FrequencyUnit",
         "AlertRuleSet",
         "IsRequiredForCOA"
     ];
@@ -47,42 +43,205 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static IReadOnlyList<Dictionary<string, string>> NormalizeRows(IReadOnlyList<Dictionary<string, string>> rows)
     {
-        return rows.Select(NormalizeRow).ToArray();
+        return rows
+            .Select(NormalizeRow)
+            .SelectMany(ExpandPhaseMatrixRow)
+            .ToArray();
+    }
+
+    private static IEnumerable<Dictionary<string, string>> ExpandPhaseMatrixRow(Dictionary<string, string> row)
+    {
+        var rowType = RowType(row);
+        if (rowType is not ("Variable" or "Attribute") || !HasPhaseMatrix(row))
+        {
+            yield return row;
+            yield break;
+        }
+
+        var expanded = false;
+        foreach (var phase in PhaseMatrixDefinitions())
+        {
+            if (!PhaseIsRequired(row, phase))
+            {
+                continue;
+            }
+
+            var clone = new Dictionary<string, string>(row, StringComparer.OrdinalIgnoreCase)
+            {
+                ["InspectionPhase"] = phase.CanonicalName
+            };
+            CopyPhaseValue(row, clone, phase, "SampleSize", "Sample Size");
+            CopyPhaseValue(row, clone, phase, "FrequencyType", "Frequency Type");
+            CopyPhaseValue(row, clone, phase, "FrequencyValue", "Frequency");
+            CopyPhaseValue(row, clone, phase, "FrequencyUnit", "Frequency Unit");
+            ApplyPhaseDefaults(clone, phase.CanonicalName);
+            expanded = true;
+            yield return clone;
+        }
+
+        if (!expanded)
+        {
+            yield return row;
+        }
+    }
+
+    private static bool HasPhaseMatrix(Dictionary<string, string> row)
+    {
+        return PhaseMatrixDefinitions().Any(phase =>
+            PhaseFieldValue(row, phase, "Required") != "" ||
+            PhaseFieldValue(row, phase, "Sample Size") != "" ||
+            PhaseFieldValue(row, phase, "Frequency Type") != "" ||
+            PhaseFieldValue(row, phase, "Frequency") != "" ||
+            PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
+            PhaseFieldValue(row, phase, "Frequency Unit") != "");
+    }
+
+    private static bool PhaseIsRequired(Dictionary<string, string> row, PhaseMatrixDefinition phase)
+    {
+        var required = PhaseFieldValue(row, phase, "Required");
+        if (!string.IsNullOrWhiteSpace(required))
+        {
+            return IsTruthy(required);
+        }
+
+        return PhaseFieldValue(row, phase, "Sample Size") != "" ||
+            PhaseFieldValue(row, phase, "Frequency Type") != "" ||
+            PhaseFieldValue(row, phase, "Frequency") != "" ||
+            PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
+            PhaseFieldValue(row, phase, "Frequency Unit") != "";
+    }
+
+    private static bool IsTruthy(string value)
+    {
+        return value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("y", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("required", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("x", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("1", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void CopyPhaseValue(Dictionary<string, string> source, Dictionary<string, string> target, PhaseMatrixDefinition phase, string canonicalField, string suffix)
+    {
+        var value = PhaseFieldValue(source, phase, suffix);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            target[canonicalField] = value;
+        }
+    }
+
+    private static string PhaseFieldValue(Dictionary<string, string> row, PhaseMatrixDefinition phase, string suffix)
+    {
+        foreach (var prefix in phase.Prefixes)
+        {
+            foreach (var field in PhaseFieldNames(prefix, suffix))
+            {
+                if (row.TryGetValue(field, out var value) && !string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+        }
+
+        return "";
+    }
+
+    private static IEnumerable<string> PhaseFieldNames(string prefix, string suffix)
+    {
+        yield return $"{prefix} {suffix}";
+        yield return $"{prefix}{suffix.Replace(" ", "", StringComparison.OrdinalIgnoreCase)}";
+        if (suffix.Equals("Frequency", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return $"{prefix} Frequency Qty";
+            yield return $"{prefix} Frequency Value";
+            yield return $"{prefix}FrequencyQty";
+            yield return $"{prefix}FrequencyValue";
+        }
+    }
+
+    private static IReadOnlyList<PhaseMatrixDefinition> PhaseMatrixDefinitions()
+    {
+        return
+        [
+            new("Startup", ["Startup", "Start Up"]),
+            new("Setup", ["Setup", "Set Up"]),
+            new("In Process", ["In Process", "InProcess"]),
+            new("Coil Change", ["Coil Change", "CoilChange"]),
+            new("Spool", ["Spool"])
+        ];
+    }
+
+    private static void ApplyPhaseDefaults(Dictionary<string, string> row, string phase)
+    {
+        if (string.IsNullOrWhiteSpace(row.GetValueOrDefault("FrequencyType")))
+        {
+            row["FrequencyType"] = phase.Equals("In Process", StringComparison.OrdinalIgnoreCase) ? "Quantity" : "Event";
+        }
+
+        if (string.IsNullOrWhiteSpace(row.GetValueOrDefault("FrequencyValue")))
+        {
+            row["FrequencyValue"] = "1";
+        }
+
+        if (string.IsNullOrWhiteSpace(row.GetValueOrDefault("FrequencyUnit")))
+        {
+            row["FrequencyUnit"] = phase.Equals("In Process", StringComparison.OrdinalIgnoreCase)
+                ? "Pieces"
+                : phase.Equals("Coil Change", StringComparison.OrdinalIgnoreCase)
+                    ? "MaterialChange"
+                    : phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
+                        ? "ToolChange"
+                        : "StartOfJob";
+        }
+
+        NormalizeTimingFields(row);
     }
 
     private static Dictionary<string, string> NormalizeRow(Dictionary<string, string> row)
     {
         var normalized = new Dictionary<string, string>(row, StringComparer.OrdinalIgnoreCase);
-        CopyAlias(normalized, "RowType", "Section", "Type");
+        CopyAlias(normalized, "RowType", "RecordType", "Section", "Type");
         CopyAlias(normalized, "PartNum", "Part Number", "Part #", "Part No");
         CopyAlias(normalized, "PartDescription", "Part Description");
         CopyAlias(normalized, "ProductGroup", "Product Group");
         CopyAlias(normalized, "InspectionPhase", "Phase", "Inspection Phase");
         CopyAlias(normalized, "Operation", "Operation Name");
+        CopyAlias(normalized, "CustomerPartNum", "Customer Part Number", "Customer Part #", "Customer Part No");
         CopyAlias(normalized, "MaterialPartNum", "Material Part Number", "Material Part #", "Material Part No");
         CopyAlias(normalized, "MaterialDescription", "Material Description");
-        CopyAlias(normalized, "CharacteristicType", "Inspection Type");
-        CopyAlias(normalized, "Nominal", "Target");
-        CopyAlias(normalized, "LSL", "Lower Spec", "Lower Spec Limit");
-        CopyAlias(normalized, "USL", "Upper Spec", "Upper Spec Limit");
+        CopyAlias(normalized, "CharacteristicType", "Attribute/Variable", "DataType", "Inspection Type");
+        CopyAlias(normalized, "Nominal", "NominalSpec", "Target");
+        CopyAlias(normalized, "LSL", "LowerSpec", "Lower Spec", "Lower Spec Limit");
+        CopyAlias(normalized, "USL", "UpperSpec", "Upper Spec", "Upper Spec Limit");
         CopyAlias(normalized, "LCL", "Lower Control", "Lower Control Limit");
         CopyAlias(normalized, "UCL", "Upper Control", "Upper Control Limit");
-        CopyAlias(normalized, "UnitOfMeasure", "Unit", "Units");
+        CopyAlias(normalized, "UnitOfMeasure", "UOM", "Unit", "Units");
         CopyAlias(normalized, "SampleSize", "Sample Size");
         CopyAlias(normalized, "FrequencyType", "Frequency Type");
-        CopyAlias(normalized, "FrequencyValue", "Frequency");
+        CopyAlias(normalized, "FrequencyValue", "FrequencyQty", "Frequency Value", "Frequency");
         CopyAlias(normalized, "FrequencyUnit", "Frequency Unit");
         CopyAlias(normalized, "AlertRuleSet", "Drift Rule", "Rule Set");
         CopyAlias(normalized, "IsRequiredForCOA", "COA Required");
         CopyAlias(normalized, "COAStatistic", "COA Statistic");
-        CopyAlias(normalized, "IsRequired", "Required");
-        CopyAlias(normalized, "DisplayOrder", "Sort Order");
+        CopyAlias(normalized, "IsRequired", "RequiresLotEntry", "Required");
+        CopyAlias(normalized, "DisplayOrder", "ParameterSeq", "Sort Order");
+        CopyAlias(normalized, "Location", "SampleContext", "RequirementText", "Location", "Side", "Sample Location");
+        CopyAlias(normalized, "InspectionMethod", "ToolUsed", "Tool Used", "ToolMethod", "Inspection Method", "Measurement Method", "Tool", "Gauge", "Gage");
 
         CopyAlias(normalized, "FieldName", "Job Data Field", "Job Data Field Name");
-        CopyAlias(normalized, "MaterialName", "Material Name");
-        CopyAlias(normalized, "CharacteristicName", "Variable Name", "Attribute Name");
+        CopyAlias(normalized, "MaterialName", "MaterialRole", "Material Name");
+        CopyAlias(normalized, "CharacteristicName", "InspectionParameter", "Variable Name", "Attribute Name");
         var itemName = Value(normalized, "Item Name", "Name");
         var rowType = CanonicalRowType(normalized.GetValueOrDefault("RowType"));
+        if (rowType == "Inspection")
+        {
+            rowType = CanonicalRowType(normalized.GetValueOrDefault("CharacteristicType"));
+            if (IsValidRowType(rowType))
+            {
+                normalized["RowType"] = rowType;
+                normalized["CharacteristicType"] = rowType;
+            }
+        }
         if (!IsValidRowType(rowType))
         {
             rowType = InferRowType(normalized);
@@ -112,7 +271,90 @@ public sealed class SetupImportService(ISpcRepository repository)
             normalized["CharacteristicType"] = rowType;
         }
 
+        normalized["AlertRuleSet"] = string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("AlertRuleSet")) ? "GlobalDefault" : normalized["AlertRuleSet"].Trim();
+        normalized["IsRequiredForCOA"] = string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("IsRequiredForCOA")) ? "false" : normalized["IsRequiredForCOA"].Trim();
+        normalized["COAStatistic"] = string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("COAStatistic")) ? "Mean" : normalized["COAStatistic"].Trim();
+        ApplySpecDefaults(normalized);
+        NormalizeTimingFields(normalized);
+
         return normalized;
+    }
+
+    private static void NormalizeTimingFields(Dictionary<string, string> row)
+    {
+        NormalizeLeadingInt(row, "SampleSize");
+        NormalizeLeadingInt(row, "FrequencyValue");
+
+        var unit = row.GetValueOrDefault("FrequencyUnit");
+        if (string.IsNullOrWhiteSpace(unit))
+        {
+            return;
+        }
+
+        var clean = unit.Trim().Replace(" ", "", StringComparison.OrdinalIgnoreCase).Replace("/", "", StringComparison.OrdinalIgnoreCase);
+        if (clean.Contains("pc", StringComparison.OrdinalIgnoreCase) || clean.Contains("piece", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "Pieces";
+        }
+        else if (clean.Contains("minute", StringComparison.OrdinalIgnoreCase) || clean.Equals("min", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "Minutes";
+        }
+        else if (clean.Contains("hour", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "Hours";
+        }
+        else if (clean.Contains("material", StringComparison.OrdinalIgnoreCase) || clean.Contains("coil", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "MaterialChange";
+        }
+        else if (clean.Contains("tool", StringComparison.OrdinalIgnoreCase) || clean.Contains("setup", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "ToolChange";
+        }
+    }
+
+    private static void NormalizeLeadingInt(Dictionary<string, string> row, string field)
+    {
+        var value = row.GetValueOrDefault(field);
+        if (string.IsNullOrWhiteSpace(value) || int.TryParse(value, out _))
+        {
+            return;
+        }
+
+        var digits = new string(value.Trim().TakeWhile(char.IsDigit).ToArray());
+        if (!string.IsNullOrWhiteSpace(digits))
+        {
+            row[field] = digits;
+        }
+    }
+
+    private static void ApplySpecDefaults(Dictionary<string, string> row)
+    {
+        if (CanonicalRowType(row.GetValueOrDefault("RowType")) != "Variable")
+        {
+            return;
+        }
+
+        var lsl = row.GetValueOrDefault("LSL");
+        var usl = row.GetValueOrDefault("USL");
+        var nominal = row.GetValueOrDefault("Nominal");
+        if (string.IsNullOrWhiteSpace(lsl) && !string.IsNullOrWhiteSpace(usl))
+        {
+            row["LSL"] = "0";
+        }
+
+        if (string.IsNullOrWhiteSpace(usl) && !string.IsNullOrWhiteSpace(lsl))
+        {
+            row["USL"] = "9999";
+        }
+
+        if (string.IsNullOrWhiteSpace(nominal) &&
+            decimal.TryParse(row.GetValueOrDefault("LSL"), out var parsedLsl) &&
+            decimal.TryParse(row.GetValueOrDefault("USL"), out var parsedUsl))
+        {
+            row["Nominal"] = ((parsedLsl + parsedUsl) / 2m).ToString("0.####");
+        }
     }
 
     private static string InferRowType(Dictionary<string, string> row)
@@ -190,13 +432,13 @@ public sealed class SetupImportService(ISpcRepository repository)
 
             if (!IsValidRowType(rowType))
             {
-                errors.Add($"Row {rowNumber}: RowType must be Variable, Attribute, JobData, or Material.");
+                errors.Add($"Row {rowNumber}: RowType must be Part, Variable, Attribute, JobData, or Material.");
                 continue;
             }
 
-            if (!IsValidInspectionPhase(row.GetValueOrDefault("InspectionPhase")))
+            if (rowType != "Part" && !IsValidInspectionPhase(row.GetValueOrDefault("InspectionPhase")))
             {
-                errors.Add($"Row {rowNumber}: InspectionPhase must be Startup, Setup, In Process, or Spool.");
+                errors.Add($"Row {rowNumber}: InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
             }
 
             switch (rowType)
@@ -330,7 +572,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     private static void ValidateRequiredFlag(Dictionary<string, string> row, int rowNumber, List<string> errors)
     {
         if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("IsRequired")) &&
-            !bool.TryParse(row.GetValueOrDefault("IsRequired"), out _))
+            !IsBooleanLike(row.GetValueOrDefault("IsRequired")))
         {
             errors.Add($"Row {rowNumber}: IsRequired must be true or false when provided.");
         }
@@ -415,6 +657,8 @@ public sealed class SetupImportService(ISpcRepository repository)
                 Name = row["CharacteristicName"].Trim(),
                 Type = Enum.Parse<CharacteristicType>(row["CharacteristicType"], true),
                 UnitOfMeasure = row.GetValueOrDefault("UnitOfMeasure")?.Trim() ?? "",
+                Location = row.GetValueOrDefault("Location")?.Trim() ?? "",
+                InspectionMethod = row.GetValueOrDefault("InspectionMethod")?.Trim() ?? "",
                 IsRequiredForCoa = bool.Parse(row["IsRequiredForCOA"]),
                 CoaStatisticType = CoaStatistic(row)
             };
@@ -424,6 +668,8 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             characteristic.Type = Enum.Parse<CharacteristicType>(row["CharacteristicType"], true);
             characteristic.UnitOfMeasure = row.GetValueOrDefault("UnitOfMeasure")?.Trim() ?? "";
+            characteristic.Location = row.GetValueOrDefault("Location")?.Trim() ?? "";
+            characteristic.InspectionMethod = row.GetValueOrDefault("InspectionMethod")?.Trim() ?? "";
             characteristic.IsRequiredForCoa = bool.Parse(row["IsRequiredForCOA"]);
             characteristic.CoaStatisticType = CoaStatistic(row);
         }
@@ -467,6 +713,7 @@ public sealed class SetupImportService(ISpcRepository repository)
                 CharacteristicId = characteristic.Id,
                 InspectionPhase = inspectionPhase,
                 SampleSize = int.Parse(row["SampleSize"]),
+                DisplayOrder = OptionalInt(row, "DisplayOrder", repository.InspectionPlans.Count(item => item.CharacteristicId == characteristic.Id)),
                 AlertRuleSet = row["AlertRuleSet"].Trim(),
                 Frequency = BuildFrequency(row)
             });
@@ -475,6 +722,7 @@ public sealed class SetupImportService(ISpcRepository repository)
 
         plan.InspectionPhase = inspectionPhase;
         plan.SampleSize = int.Parse(row["SampleSize"]);
+        plan.DisplayOrder = OptionalInt(row, "DisplayOrder", plan.DisplayOrder);
         plan.AlertRuleSet = row["AlertRuleSet"].Trim();
         plan.Frequency = BuildFrequency(row);
     }
@@ -533,6 +781,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             "Variable" or "Attribute" => $"{rowType}|{part}|{row.GetValueOrDefault("Operation")}|{phase}|{row.GetValueOrDefault("CharacteristicName")}",
             "JobData" => $"{rowType}|{part}|{phase}|{row.GetValueOrDefault("FieldName")}",
             "Material" => $"{rowType}|{part}|{phase}|{row.GetValueOrDefault("MaterialName")}",
+            "Part" => $"{rowType}|{part}",
             _ => $"{rowType}|{part}|{phase}"
         };
     }
@@ -568,6 +817,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Coil Change", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||
@@ -591,6 +841,10 @@ public sealed class SetupImportService(ISpcRepository repository)
             phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
         {
             return "Spool";
+        }
+        if (phase.Equals("Coil Change", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Coil Change";
         }
 
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
@@ -666,7 +920,12 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static bool OptionalBool(Dictionary<string, string> row, string field, bool fallback)
     {
-        return row.TryGetValue(field, out var value) && bool.TryParse(value, out var parsed) ? parsed : fallback;
+        if (!row.TryGetValue(field, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        return IsTruthy(value);
     }
 
     private static int OptionalInt(Dictionary<string, string> row, string field, int fallback)
@@ -701,13 +960,31 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             _ when clean.Equals("Variable", StringComparison.OrdinalIgnoreCase) || clean.Equals("Variables", StringComparison.OrdinalIgnoreCase) => "Variable",
             _ when clean.Equals("Attribute", StringComparison.OrdinalIgnoreCase) => "Attribute",
+            _ when clean.Equals("Part", StringComparison.OrdinalIgnoreCase) => "Part",
+            _ when clean.Equals("Inspection", StringComparison.OrdinalIgnoreCase) => "Inspection",
             _ when clean.Equals("JobData", StringComparison.OrdinalIgnoreCase) => "JobData",
             _ when clean.Equals("Material", StringComparison.OrdinalIgnoreCase) || clean.Equals("Materials", StringComparison.OrdinalIgnoreCase) => "Material",
             _ => value.Trim()
         };
     }
 
-    private static bool IsValidRowType(string rowType) => rowType is "Variable" or "Attribute" or "JobData" or "Material";
+    private static bool IsBooleanLike(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.Trim().Equals("false", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("no", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("n", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("0", StringComparison.OrdinalIgnoreCase) ||
+            IsTruthy(value);
+    }
+
+    private static bool IsValidRowType(string rowType) => rowType is "Part" or "Variable" or "Attribute" or "JobData" or "Material";
 
     private static string CleanProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
 }
+
+internal sealed record PhaseMatrixDefinition(string CanonicalName, IReadOnlyList<string> Prefixes);

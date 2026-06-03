@@ -519,15 +519,22 @@ textarea {
 .setup-variable-row {
   border: 1px solid var(--line);
   border-radius: 6px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px;
   padding: 12px;
   background: #ffffff;
 }
 .setup-name-field { grid-column: span 4; }
 .setup-type-field { grid-column: span 3; }
 .setup-unit-field { grid-column: span 2; }
+.setup-location-field { grid-column: span 5; }
+.setup-method-field { grid-column: span 3; }
+.setup-sample-field { grid-column: span 2; }
+.setup-frequency-type-field { grid-column: span 2; }
+.setup-frequency-value-field { grid-column: span 2; }
+.setup-frequency-unit-field { grid-column: span 2; }
 .numeric-setup-field { grid-column: span 2; }
-.setup-coa-field { grid-column: span 1; }
-.setup-coa-stat-field { grid-column: span 2; }
 .remove-variable-button { grid-column: span 2; }
 .setup-type-field select {
   border-color: #93c5fd;
@@ -546,8 +553,7 @@ textarea {
 .setup-variable-row.attribute-row .numeric-setup-field {
   display: none;
 }
-.setup-variable-row.attribute-row .setup-unit-field,
-.setup-variable-row.attribute-row .setup-coa-stat-field {
+.setup-variable-row.attribute-row .setup-unit-field {
   display: none;
 }
 .setup-variable-row label span {
@@ -891,6 +897,22 @@ textarea {
   border-color: #60a5fa;
   box-shadow: 0 0 0 3px rgba(96, 165, 250, .22);
 }
+.variable-card.inactive-plan-card {
+  background: #f4f7fa;
+  border-color: #d8e1ea;
+  color: #687587;
+}
+.variable-card.inactive-plan-card .limit-grid,
+.variable-card.inactive-plan-card .sample-inputs {
+  opacity: .58;
+}
+.variable-card.inactive-plan-card input,
+.variable-card.inactive-plan-card select {
+  background: #e8edf2;
+  border-color: #cfd8e3;
+  color: #6b7280;
+  cursor: not-allowed;
+}
 .mean-summary {
   display: block;
   margin-top: 16px;
@@ -1165,8 +1187,6 @@ textarea {
   .setup-type-field,
   .setup-unit-field,
   .numeric-setup-field,
-  .setup-coa-field,
-  .setup-coa-stat-field,
   .setup-variable-row .remove-variable-button {
     grid-column: span 2;
   }

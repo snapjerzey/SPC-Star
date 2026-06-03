@@ -151,14 +151,14 @@
         <section id="measurementPanel" class="panel">
           <div class="panel-heading horizontal">
             <div>
-              <h2 id="contextTitle">Variables</h2>
+              <h2 id="contextTitle">Inspection Items</h2>
               <p id="contextSubtitle">Enter a job number, machine, and part number, then start inspecting.</p>
             </div>
           </div>
 
           <form id="measurementForm" class="measurement-form hidden">
             <div id="measurementVariableList" class="variable-list"></div>
-            <div id="attributeVariableList" class="variable-list attribute-list"></div>
+            <div id="attributeVariableList" class="variable-list attribute-list hidden"></div>
           </form>
           <p id="entryMessage" class="message"></p>
 
@@ -345,32 +345,16 @@
             <div class="setup-block variable-builder">
               <div class="panel-heading horizontal tight">
                 <div>
-                  <h3>Variables</h3>
-                  <p>Add measured values with limits, sample size, frequency, and COA requirements.</p>
+                  <h3>Inspection Items</h3>
+                  <p>Add measured variables and accept/reject attributes in the same order operators should inspect them.</p>
                 </div>
-                <button id="addSetupVariableButton" type="button" class="secondary">Add Variable</button>
+                <button id="addSetupVariableButton" type="button" class="secondary">Add Inspection Item</button>
               </div>
               <div class="variable-editor">
                 <div class="variable-editor-header">
-                  <span>Measurement</span><span>Inspection type</span><span>Unit</span><span>Target</span><span>LSL</span><span>USL</span><span>LCL</span><span>UCL</span><span>COA</span><span>COA stat</span><span></span>
+                  <span>Inspection item</span><span>Type</span><span>Requirement / context</span><span>Tool</span><span>Unit</span><span>Sample</span><span>Frequency</span><span>Target</span><span>LSL</span><span>USL</span><span>LCL</span><span>UCL</span><span></span>
                 </div>
                 <div id="setupVariableRows" class="setup-variable-rows"></div>
-              </div>
-            </div>
-
-            <div class="setup-block variable-builder">
-              <div class="panel-heading horizontal tight">
-                <div>
-                  <h3>Attributes</h3>
-                  <p>Add accept/reject checks such as comparator or template inspections.</p>
-                </div>
-                <button id="addSetupAttributeButton" type="button" class="secondary">Add Attribute</button>
-              </div>
-              <div class="variable-editor">
-                <div class="variable-editor-header attribute-editor-header">
-                  <span>Attribute</span><span>Inspection type</span><span>COA</span><span></span>
-                </div>
-                <div id="setupAttributeRows" class="setup-variable-rows"></div>
               </div>
             </div>
 

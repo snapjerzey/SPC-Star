@@ -16,9 +16,9 @@ public sealed record InspectionPlanSetupDto(
     int OperationSeq,
     string CharacteristicName,
     CharacteristicType CharacteristicType,
-    decimal Nominal,
-    decimal Lsl,
-    decimal Usl,
+    decimal? Nominal,
+    decimal? Lsl,
+    decimal? Usl,
     string UnitOfMeasure,
     string Location,
     string InspectionMethod,
@@ -123,7 +123,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
             join operation in repository.Operations on part.Id equals operation.PartId
             join process in repository.Processes on operation.ProcessId equals process.Id
             join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
-            join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
+            join specLimit in repository.SpecLimits on characteristic.Id equals specLimit.CharacteristicId into specLimits
+            from spec in specLimits.DefaultIfEmpty()
             join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
             where string.IsNullOrWhiteSpace(partNum) || part.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase)
             orderby part.PartNum, operation.OperationSeq, plan.InspectionPhase, plan.DisplayOrder, characteristic.Name
@@ -136,9 +137,9 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 operation.OperationSeq,
                 characteristic.Name,
                 characteristic.Type,
-                spec.Nominal,
-                spec.Lsl,
-                spec.Usl,
+                spec?.Nominal,
+                spec?.Lsl,
+                spec?.Usl,
                 characteristic.UnitOfMeasure,
                 characteristic.Location,
                 characteristic.InspectionMethod,

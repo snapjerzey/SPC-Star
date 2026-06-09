@@ -21,7 +21,8 @@ public enum FrequencyUnit
     StartOfJob,
     MaterialChange,
     ToolChange,
-    Restart
+    Restart,
+    Shift
 }
 
 public enum AlertStatus

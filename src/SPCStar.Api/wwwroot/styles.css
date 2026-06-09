@@ -874,10 +874,6 @@ textarea {
   gap: 10px;
   margin-bottom: 14px;
 }
-.attribute-list {
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
 .inspection-section-heading {
   color: #35516f;
   font-size: 12px;
@@ -1000,6 +996,27 @@ textarea {
   font-weight: 750;
   padding: 4px 9px;
 }
+.record-only-note {
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #0f4f8f;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 9px;
+}
+.record-only-cell {
+  grid-column: span 4;
+  border-radius: 999px;
+  background: #eaf1f8;
+  color: #35516f;
+  display: inline-flex;
+  justify-content: center;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 850;
+}
 .sample-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1013,6 +1030,23 @@ textarea {
   font-size: 12px;
   font-weight: 650;
   padding: 3px 8px;
+}
+.sample-meta .inactive-required-badge {
+  background: #eef2f6;
+  border-color: #cdd5df;
+  color: #475467;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.inactive-plan-note {
+  background: #eef2f6;
+  border: 1px dashed #cdd5df;
+  border-radius: 6px;
+  color: #475467;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 10px;
+  padding: 10px 12px;
 }
 .sample-inputs {
   display: grid;

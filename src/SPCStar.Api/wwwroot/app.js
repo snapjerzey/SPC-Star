@@ -176,6 +176,7 @@ function normalizeInspectionPhase(value) {
   const phase = value.trim().toLowerCase();
   if (phase === "startup") return "Startup";
   if (phase === "set up" || phase === "setup") return "Setup";
+  if (phase === "coil change" || phase === "coilchange") return "Coil Change";
   if (phase === "spool" || phase === "spool start" || phase === "spool end") return "Spool";
   return "In Process";
 }
@@ -211,7 +212,7 @@ async function loadContext(event) {
 }
 
 function renderEmptyContext(message = "") {
-  $("contextTitle").textContent = "Variables";
+  $("contextTitle").textContent = "Inspection Items";
   $("contextSubtitle").textContent = "Enter a job number, machine, and part number, then start inspecting.";
   renderLock(null);
   $("measurementForm").classList.add("hidden");
@@ -221,7 +222,6 @@ function renderEmptyContext(message = "") {
   $("tagsDivider").classList.add("hidden");
   $("tagsSection").classList.add("hidden");
   $("measurementVariableList").innerHTML = "";
-  $("attributeVariableList").innerHTML = "";
   $("meanSummary").innerHTML = "";
   $("trendCharacteristic").innerHTML = "";
   $("entryMessage").textContent = message;
@@ -252,7 +252,7 @@ async function loadVariableContext(jobNum, resourceId, plan) {
 
 function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
-  $("contextTitle").textContent = "Variables";
+  $("contextTitle").textContent = "Inspection Items";
   $("contextSubtitle").textContent = `${jobNum} / ${resourceId} / ${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.activePhase || set.inspectionPhase}`;
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
@@ -291,8 +291,7 @@ function renderConfiguredJobDataFields(set) {
 function renderConfiguredMaterialFields(set) {
   const fields = (state.snapshot.partMaterialFields || [])
     .filter((field) =>
-      field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
-      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase))
+      field.partNum.toLowerCase() === set.partNum.toLowerCase())
     .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   const rows = $("materialFieldRows");
   const materialFields = fields.length ? fields : [{
@@ -349,31 +348,33 @@ function renderLock(activeLock) {
 
 function renderVariables() {
   const measurementList = $("measurementVariableList");
-  const attributeList = $("attributeVariableList");
   measurementList.innerHTML = "";
-  attributeList.innerHTML = "";
-  attributeList.classList.add("hidden");
   state.selectedPlans.forEach((plan, index) => {
     const context = state.contexts[index];
     const card = document.createElement("section");
     const isInactive = plan.isActiveForSelectedPhase === false;
     card.className = `variable-card${isInactive ? " inactive-plan-card" : ""}`;
     const isAttribute = plan.characteristicType === "Attribute";
+    const isRecordOnly = !isAttribute && !hasSpecLimits(plan, context);
     card.innerHTML = `
       <div>
         <div class="variable-header">
           <div class="variable-title">
             <strong>${plan.characteristicName}</strong>
-            <span>${isAttribute ? "Accept / Reject" : plan.unitOfMeasure}</span>
+            <span>${isAttribute ? "Accept / Reject" : isRecordOnly ? `Record only${plan.unitOfMeasure ? ` (${plan.unitOfMeasure})` : ""}` : plan.unitOfMeasure}</span>
           </div>
           <div class="sample-meta">
-            <span>${isInactive ? `Not required for ${escapeHtml(plan.selectedInspectionPhase || $("inspectionPhase").value)}` : (plan.inspectionPhase || "In Process")}</span>
-            <span>Sample size ${plan.sampleSize}</span>
-            <span>${formatFrequency(plan)}</span>
+            ${isInactive ? `
+              <span class="inactive-required-badge">Not required for ${escapeHtml(plan.selectedInspectionPhase || $("inspectionPhase").value)}</span>` : `
+              <span>${plan.inspectionPhase || "In Process"}</span>
+              <span>Sample size ${plan.sampleSize}</span>
+              <span>${formatFrequency(plan)}</span>`}
           </div>
         </div>
         ${isAttribute ? `
           <div class="attribute-note">Comparator/template check</div>` : `
+          ${isRecordOnly ? `
+          <div class="record-only-note">Record only - no specification limits or capability calculations are applied.</div>` : `
           <div class="limit-grid">
             <div><span>LSL</span><strong>${formatNumber(context.lowerSpecLimit)}</strong></div>
             <div><span>Target</span><strong>${formatNumber(plan.nominal)}</strong></div>
@@ -381,21 +382,23 @@ function renderVariables() {
             <div><span>LCL</span><strong>${formatNumber(context.lowerControlLimit)}</strong></div>
             <div><span>Center</span><strong>${formatNumber(plan.nominal)}</strong></div>
             <div><span>UCL</span><strong>${formatNumber(context.upperControlLimit)}</strong></div>
-          </div>`}
+          </div>`}`}
       </div>
-      <div class="sample-inputs">
-        ${Array.from({ length: plan.sampleSize }, (_, sampleIndex) => `
-          <label>
-            Sample ${sampleIndex + 1}
-            ${isAttribute ? `
-              <select class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Attribute">
-                <option value="">Select</option>
-                <option value="1">Accept</option>
-                <option value="0">Reject</option>
-              </select>` : `
-              <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0000">`}
-          </label>`).join("")}
-      </div>`;
+      ${isInactive ? `
+        <div class="inactive-plan-note">This item is part of the full inspection plan, but it is not entered during this inspection type.</div>` : `
+        <div class="sample-inputs">
+          ${Array.from({ length: plan.sampleSize }, (_, sampleIndex) => `
+            <label>
+              Sample ${sampleIndex + 1}
+              ${isAttribute ? `
+                <select class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Attribute">
+                  <option value="">Select</option>
+                  <option value="1">Accept</option>
+                  <option value="0">Reject</option>
+                </select>` : `
+                <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0000">`}
+            </label>`).join("")}
+        </div>`}`;
     if (isInactive) {
       card.querySelectorAll(".measurement-input").forEach((input) => {
         input.disabled = true;
@@ -458,18 +461,33 @@ function renderMeanSummary() {
     }
     const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
     const capability = state.contexts[index]?.capability || {};
+    const isRecordOnly = !hasSpecLimits(plan, state.contexts[index]);
     item.innerHTML = `
       <span>${plan.characteristicName}</span>
       <span>${formatNumber(values.length ? Math.min(...values) : null)}</span>
       <span>${formatNumber(values.length ? Math.max(...values) : null)}</span>
       <span>${formatNumber(mean)}</span>
       <span>${formatNumber(standardDeviation(values))}</span>
+      ${isRecordOnly ? `
+      <span class="record-only-cell">Record only</span>` : `
       <span>${capabilityBadge(capability.cp)}</span>
       <span>${capabilityBadge(capability.cpk)}</span>
       <span>${capabilityBadge(capability.pp)}</span>
-      <span>${capabilityBadge(capability.ppk)}</span>`;
+      <span>${capabilityBadge(capability.ppk)}</span>`}`;
     summary.appendChild(item);
   });
+}
+
+function hasSpecLimits(plan, context) {
+  return isFiniteValue(plan?.lsl) ||
+    isFiniteValue(plan?.usl) ||
+    isFiniteValue(plan?.nominal) ||
+    isFiniteValue(context?.lowerSpecLimit) ||
+    isFiniteValue(context?.upperSpecLimit);
+}
+
+function isFiniteValue(value) {
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
 }
 
 function capabilityBadge(value) {
@@ -498,7 +516,8 @@ function formatFrequency(plan) {
     StartOfJob: "start of job",
     MaterialChange: "material change",
     ToolChange: "tool change",
-    Restart: "restart"
+    Restart: "restart",
+    Shift: "shift"
   }[plan.frequencyUnit] || plan.frequencyUnit;
 
   if (plan.frequencyType === "Quantity") {

@@ -107,7 +107,7 @@ public sealed class WorkContextService(
 
     private WorkCapabilityDto BuildCapability(WorkContextRequest request, InspectionPlanSetupDto? plan)
     {
-        if (plan is null || plan.CharacteristicType == CharacteristicType.Attribute)
+        if (plan is null || plan.CharacteristicType == CharacteristicType.Attribute || !plan.Lsl.HasValue || !plan.Usl.HasValue || plan.Lsl.Value == plan.Usl.Value)
         {
             return new WorkCapabilityDto(null, null, null, null, 0);
         }
@@ -119,8 +119,8 @@ public sealed class WorkContextService(
                 measurement.ResourceId.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
                 measurement.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase) &&
                 measurement.InspectionPhase.Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase) &&
-                measurement.Value >= plan.Lsl &&
-                measurement.Value <= plan.Usl)
+                measurement.Value >= plan.Lsl.Value &&
+                measurement.Value <= plan.Usl.Value)
             .Select(measurement => measurement.Value)
             .ToArray();
         var stdDev = StandardDeviation(values);
@@ -130,8 +130,8 @@ public sealed class WorkContextService(
         }
 
         var mean = values.Average();
-        var cp = (plan.Usl - plan.Lsl) / (6 * stdDev.Value);
-        var cpk = Math.Min((mean - plan.Lsl) / (3 * stdDev.Value), (plan.Usl - mean) / (3 * stdDev.Value));
+        var cp = (plan.Usl.Value - plan.Lsl.Value) / (6 * stdDev.Value);
+        var cpk = Math.Min((mean - plan.Lsl.Value) / (3 * stdDev.Value), (plan.Usl.Value - mean) / (3 * stdDev.Value));
         return new WorkCapabilityDto(cp, cpk, cp, cpk, values.Length);
     }
 

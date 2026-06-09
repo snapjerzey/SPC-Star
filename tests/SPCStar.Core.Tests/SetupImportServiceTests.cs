@@ -16,7 +16,7 @@ public sealed class SetupImportServiceTests
         var result = service.ImportCsv(ValidCsv(lsl: "10", usl: "5"));
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("LSL must be less than USL", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("LSL must be less than or equal to USL", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(repository.Parts);
     }
 
@@ -53,6 +53,50 @@ public sealed class SetupImportServiceTests
         var limit = Assert.Single(repository.ControlLimits);
         Assert.Equal(4.25m, limit.Lcl);
         Assert.Equal(5.75m, limit.Ucl);
+    }
+
+    [Fact]
+    public void ImportCsv_AllowsRecordOnlyVariablesWithoutSpecLimits()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "Variable,P100,Widget,General,Setup,MOLD,,,,,Speed / Time in Acid,Variable,,,,,,sec,1,Event,1,ToolChange,None,false,Mean,,1",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var characteristic = Assert.Single(repository.Characteristics);
+        Assert.Equal("Speed / Time in Acid", characteristic.Name);
+        Assert.Empty(repository.SpecLimits);
+        Assert.Empty(repository.ControlLimits);
+
+        var plan = Assert.Single(new SetupQueryService(repository).GetInspectionPlans("P100"));
+        Assert.Equal("Speed / Time in Acid", plan.CharacteristicName);
+        Assert.Null(plan.Nominal);
+        Assert.Null(plan.Lsl);
+        Assert.Null(plan.Usl);
+    }
+
+    [Fact]
+    public void ImportCsv_ImportsShiftFrequencyForTwicePerShiftChecks()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "Attribute,P100,Widget,General,In Process,MOLD,,,,,Tip Sensor,Attribute,,,,,,,1,Quantity,2,shift,GlobalDefault,false,Mean,,1",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var plan = Assert.Single(repository.InspectionPlans);
+        Assert.Equal(FrequencyType.Event, plan.Frequency.Type);
+        Assert.Equal(2, plan.Frequency.Value);
+        Assert.Equal(FrequencyUnit.Shift, plan.Frequency.Unit);
     }
 
     [Fact]

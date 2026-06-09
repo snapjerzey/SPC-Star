@@ -312,6 +312,11 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             row["FrequencyUnit"] = "ToolChange";
         }
+        else if (clean.Contains("shift", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "Shift";
+            row["FrequencyType"] = "Event";
+        }
     }
 
     private static void NormalizeLeadingInt(Dictionary<string, string> row, string field)
@@ -532,17 +537,29 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static void ValidateVariableLimits(Dictionary<string, string> row, int rowNumber, List<string> errors)
     {
+        var hasAnySpec = HasAnySpecValue(row);
+        if (!hasAnySpec)
+        {
+            ValidateControlLimits(row, rowNumber, errors);
+            return;
+        }
+
         if (!decimal.TryParse(row.GetValueOrDefault("LSL"), out var lsl) ||
             !decimal.TryParse(row.GetValueOrDefault("USL"), out var usl) ||
             !decimal.TryParse(row.GetValueOrDefault("Nominal"), out _))
         {
-            errors.Add($"Row {rowNumber}: Nominal, LSL, and USL must be numeric for Variable rows.");
+            errors.Add($"Row {rowNumber}: Nominal, LSL, and USL must be numeric when any spec value is provided for Variable rows.");
         }
-        else if (lsl >= usl)
+        else if (lsl > usl)
         {
-            errors.Add($"Row {rowNumber}: Invalid spec limits. LSL must be less than USL.");
+            errors.Add($"Row {rowNumber}: Invalid spec limits. LSL must be less than or equal to USL.");
         }
 
+        ValidateControlLimits(row, rowNumber, errors);
+    }
+
+    private static void ValidateControlLimits(Dictionary<string, string> row, int rowNumber, List<string> errors)
+    {
         if (!OptionalDecimal(row, "LCL", out var lcl) || !OptionalDecimal(row, "UCL", out var ucl))
         {
             errors.Add($"Row {rowNumber}: LCL and UCL must be numeric when provided.");
@@ -685,6 +702,12 @@ public sealed class SetupImportService(ISpcRepository repository)
     private void UpsertSpecLimit(Dictionary<string, string> row, Characteristic characteristic)
     {
         var isVariable = characteristic.Type == CharacteristicType.Variable;
+        if (isVariable && !HasAnySpecValue(row))
+        {
+            repository.SpecLimits.RemoveAll(s => s.CharacteristicId == characteristic.Id);
+            return;
+        }
+
         var nominal = isVariable ? decimal.Parse(row["Nominal"]) : 1m;
         var lsl = isVariable ? decimal.Parse(row["LSL"]) : 1m;
         var usl = isVariable ? decimal.Parse(row["USL"]) : 1m;
@@ -792,7 +815,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             FrequencyType.Time => unit is FrequencyUnit.Minutes or FrequencyUnit.Hours,
             FrequencyType.Quantity => unit is FrequencyUnit.Pieces,
-            FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart,
+            FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart or FrequencyUnit.Shift,
             _ => false
         };
     }
@@ -855,6 +878,16 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private void UpsertControlLimit(Dictionary<string, string> row, Part part, ManufacturingProcess process, int operationSeq)
     {
+        if (!HasAnySpecValue(row))
+        {
+            repository.ControlLimits.RemoveAll(limit =>
+                limit.PartNum.Equals(part.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                limit.ProcessCode.Equals(process.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                limit.OperationSeq == operationSeq &&
+                limit.CharacteristicName.Equals(row["CharacteristicName"], StringComparison.OrdinalIgnoreCase));
+            return;
+        }
+
         var nominal = decimal.Parse(row["Nominal"]);
         var lcl = OptionalDecimal(row, "LCL", out var parsedLcl) && parsedLcl.HasValue ? parsedLcl.Value : decimal.Parse(row["LSL"]);
         var ucl = OptionalDecimal(row, "UCL", out var parsedUcl) && parsedUcl.HasValue ? parsedUcl.Value : decimal.Parse(row["USL"]);
@@ -882,6 +915,13 @@ public sealed class SetupImportService(ISpcRepository repository)
         limit.CenterLine = nominal;
         limit.Lcl = lcl;
         limit.Ucl = ucl;
+    }
+
+    private static bool HasAnySpecValue(Dictionary<string, string> row)
+    {
+        return !string.IsNullOrWhiteSpace(row.GetValueOrDefault("Nominal")) ||
+            !string.IsNullOrWhiteSpace(row.GetValueOrDefault("LSL")) ||
+            !string.IsNullOrWhiteSpace(row.GetValueOrDefault("USL"));
     }
 
     private static InspectionFrequency BuildFrequency(Dictionary<string, string> row)

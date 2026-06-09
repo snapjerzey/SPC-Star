@@ -423,7 +423,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
     private static CapabilityMetrics Capability(IReadOnlyCollection<decimal> values, decimal lsl, decimal usl)
     {
         var stdDev = StandardDeviation(values);
-        if (!stdDev.HasValue || stdDev.Value <= 0 || values.Count < 2)
+        if (!stdDev.HasValue || stdDev.Value <= 0 || values.Count < 2 || lsl == usl)
         {
             return new CapabilityMetrics(stdDev, null, null, null, null);
         }

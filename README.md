@@ -175,9 +175,11 @@ The API seeds demo security users and one sample inspection plan:
 
 ## Current gaps / next work
 
+- Excel setup import is now supported. Upload workbooks with a sheet named `SPC-Star Import`; CSV import remains available as a fallback.
+- Cutting Edge inspection families have been prepared and loaded into the local test data set: Needlemaker, Test Polish, Strip Polish, and Drilled.
+- Next inspection-family import work: Taperpoint.
 - Authentication provider integration.
 - EF Core DbContext/migrations.
-- XLSX import/export.
 - Production database deployment and user/session hardening.
 - Full offline queue UI with conflict handling.
 - Custom drift-rule editor for admin-defined thresholds and warning behavior.

@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260601-material-setup">
+  <link rel="stylesheet" href="/styles.css?v=20260610-operation-selector">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -71,6 +71,12 @@
               Part Number
               <input id="partNum" list="partOptions" autocomplete="off" inputmode="text" required>
               <datalist id="partOptions"></datalist>
+            </label>
+            <label>
+              Operation
+              <select id="operationCode" required>
+                <option value="">Select operation</option>
+              </select>
             </label>
             <label>
               Inspection Phase
@@ -153,7 +159,7 @@
           <div class="panel-heading horizontal">
             <div>
               <h2 id="contextTitle">Inspection Items</h2>
-              <p id="contextSubtitle">Enter a job number, machine, and part number, then start inspecting.</p>
+              <p id="contextSubtitle">Enter a job number, machine, part number, and operation, then start inspecting.</p>
             </div>
           </div>
 
@@ -651,6 +657,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260601-material-setup"></script>
+  <script src="/app.js?v=20260610-operation-selector"></script>
 </body>
 </html>

@@ -58,23 +58,71 @@ function inspectionSets() {
 
 function selectedInspectionSet() {
   const partNum = $("partNum").value.trim();
+  const operationKey = $("operationCode").value;
   const phase = $("inspectionPhase").value;
   const activeSet = inspectionSets().find((set) =>
     set.partNum.toLowerCase() === partNum.toLowerCase() &&
+    operationKeyFor(set) === operationKey &&
     normalizeInspectionPhase(set.inspectionPhase) === normalizeInspectionPhase(phase)) || null;
   const partPlans = (state.snapshot?.inspectionPlans || [])
-    .filter((plan) => plan.partNum.toLowerCase() === partNum.toLowerCase());
+    .filter((plan) =>
+      plan.partNum.toLowerCase() === partNum.toLowerCase() &&
+      operationKeyFor(plan) === operationKey);
   if (!partPlans.length) {
     return null;
   }
 
-  const base = activeSet || inspectionSets().find((set) => set.partNum.toLowerCase() === partNum.toLowerCase());
+  const base = activeSet || inspectionSets().find((set) =>
+    set.partNum.toLowerCase() === partNum.toLowerCase() &&
+    operationKeyFor(set) === operationKey);
   return {
     ...base,
     inspectionPhase: phase,
     activePhase: phase,
     plans: displayPlansForPhase(partPlans, phase)
   };
+}
+
+function operationKeyFor(item) {
+  return `${item.processCode}|${item.operationSeq}`;
+}
+
+function operationLabelFor(item) {
+  const description = item.processDescription && item.processDescription !== item.processCode
+    ? ` - ${item.processDescription}`
+    : "";
+  return `${item.processCode}${description}`;
+}
+
+function operationsForPart(partNum) {
+  const operations = new Map();
+  (state.snapshot?.inspectionPlans || [])
+    .filter((plan) => plan.partNum.toLowerCase() === partNum.toLowerCase())
+    .forEach((plan) => {
+      const key = operationKeyFor(plan);
+      if (!operations.has(key)) {
+        operations.set(key, plan);
+      }
+    });
+  return [...operations.values()]
+    .sort((a, b) => a.processCode.localeCompare(b.processCode) || (a.operationSeq ?? 0) - (b.operationSeq ?? 0));
+}
+
+function refreshOperationChoices({ preserve = true } = {}) {
+  const select = $("operationCode");
+  const previous = preserve ? select.value : "";
+  const partNum = $("partNum").value.trim();
+  const operations = partNum ? operationsForPart(partNum) : [];
+  fillSelect(select, [{ processCode: "", operationSeq: "", processDescription: "Select operation" }, ...operations],
+    (operation) => operation.processCode ? operationKeyFor(operation) : "",
+    (operation) => operation.processCode ? operationLabelFor(operation) : operation.processDescription);
+  if (operations.some((operation) => operationKeyFor(operation) === previous)) {
+    select.value = previous;
+  } else if (operations.length === 1) {
+    select.value = operationKeyFor(operations[0]);
+  } else {
+    select.value = "";
+  }
 }
 
 function displayPlansForPhase(plans, phase) {
@@ -137,6 +185,7 @@ async function loadSnapshot() {
   fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
   fillDatalist($("productGroupOptions"), productGroups(), (group) => group);
   $("partNum").value = "";
+  refreshOperationChoices({ preserve: false });
   if (canManageSetup()) {
     renderGlobalRuleSetting();
     renderPartReviewControls();
@@ -185,6 +234,7 @@ function updatePartFromJob() {
   const job = state.snapshot.jobs.find((item) => item.jobNum.toLowerCase() === $("jobNum").value.trim().toLowerCase());
   if (job && state.snapshot.parts.some((part) => part.partNum.toLowerCase() === job.partNum.toLowerCase())) {
     $("partNum").value = job.partNum;
+    refreshOperationChoices({ preserve: false });
   }
 }
 
@@ -192,7 +242,8 @@ async function loadContext(event) {
   event?.preventDefault();
   const { jobNum, resourceId, set } = selectedValues();
   const partNum = $("partNum").value.trim();
-  if (!jobNum || !resourceId || !partNum) {
+  const operationKey = $("operationCode").value;
+  if (!jobNum || !resourceId || !partNum || !operationKey) {
     state.selectedPlans = [];
     state.contexts = [];
     renderEmptyContext();
@@ -213,7 +264,7 @@ async function loadContext(event) {
 
 function renderEmptyContext(message = "") {
   $("contextTitle").textContent = "Inspection Items";
-  $("contextSubtitle").textContent = "Enter a job number, machine, and part number, then start inspecting.";
+  $("contextSubtitle").textContent = "Enter a job number, machine, part number, and operation, then start inspecting.";
   renderLock(null);
   $("measurementForm").classList.add("hidden");
   $("trendPanel").classList.add("hidden");
@@ -2739,8 +2790,16 @@ window.addEventListener("online", () => setStatus($("syncStatus"), "Online", "ok
 window.addEventListener("offline", () => setStatus($("syncStatus"), "Offline", "warn"));
 $("loginForm").addEventListener("submit", login);
 $("contextForm").addEventListener("submit", loadContext);
-$("jobNum").addEventListener("input", clearWorkContext);
-$("partNum").addEventListener("input", clearWorkContext);
+$("jobNum").addEventListener("input", () => {
+  updatePartFromJob();
+  clearWorkContext();
+});
+$("partNum").addEventListener("input", () => {
+  refreshOperationChoices({ preserve: false });
+  clearWorkContext();
+});
+$("operationCode").addEventListener("change", clearWorkContext);
+$("inspectionPhase").addEventListener("change", clearWorkContext);
 $("resourceId").addEventListener("change", clearWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);

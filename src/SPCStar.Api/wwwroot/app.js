@@ -127,25 +127,14 @@ function refreshOperationChoices({ preserve = true } = {}) {
 
 function displayPlansForPhase(plans, phase) {
   const activePhase = normalizeInspectionPhase(phase);
-  const byCharacteristic = new Map();
-  plans
+  return plans
+    .filter((plan) => normalizeInspectionPhase(plan.inspectionPhase) === activePhase)
     .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.characteristicName.localeCompare(b.characteristicName))
-    .forEach((plan) => {
-      const key = `${plan.processCode}|${plan.operationSeq}|${plan.characteristicName}`;
-      const current = byCharacteristic.get(key);
-      const isActive = normalizeInspectionPhase(plan.inspectionPhase) === activePhase;
-      if (!current || isActive || (!current.isActiveForSelectedPhase && (plan.displayOrder ?? 0) < (current.displayOrder ?? 0))) {
-        byCharacteristic.set(key, {
-          ...plan,
-          isActiveForSelectedPhase: isActive,
-          selectedInspectionPhase: phase
-        });
-      }
-    });
-  return [...byCharacteristic.values()]
-    .sort((a, b) =>
-      (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
-      a.characteristicName.localeCompare(b.characteristicName));
+    .map((plan) => ({
+      ...plan,
+      isActiveForSelectedPhase: true,
+      selectedInspectionPhase: phase
+    }));
 }
 
 function selectedValues() {
@@ -254,6 +243,13 @@ async function loadContext(event) {
     state.selectedPlans = [];
     state.contexts = [];
     renderEmptyContext(`Part ${partNum} is not set up. Ask Admin or GOD to add the inspection plan before inspecting.`);
+    return;
+  }
+
+  if (!set.plans.length) {
+    state.selectedPlans = [];
+    state.contexts = [];
+    renderEmptyContext(`No inspection items are required for ${$("inspectionPhase").value} on ${partNum} / ${operationLabelFor(set)}.`);
     return;
   }
 

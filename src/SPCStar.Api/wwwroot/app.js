@@ -15,8 +15,9 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 async function api(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: { ...(isFormData ? {} : { "Content-Type": "application/json" }), ...(options.headers || {}) },
     ...options
   });
   if (!response.ok) {
@@ -2637,6 +2638,32 @@ async function saveInspectionSetup(event) {
   }
 }
 
+async function importXlsx(event) {
+  event.preventDefault();
+  const file = $("xlsxImportFile").files[0];
+  if (!file) {
+    $("csvImportMessage").textContent = "Select an Excel workbook to import.";
+    $("csvImportMessage").className = "message error";
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    await api("/setup/import-xlsx", {
+      method: "POST",
+      body: formData
+    });
+    $("csvImportMessage").textContent = "Excel workbook imported.";
+    $("csvImportMessage").className = "message ok";
+    $("xlsxImportFile").value = "";
+    await loadSnapshot();
+  } catch (error) {
+    $("csvImportMessage").textContent = readableError(error);
+    $("csvImportMessage").className = "message error";
+  }
+}
+
 async function importCsv(event) {
   event.preventDefault();
   try {
@@ -2847,6 +2874,7 @@ $("ruleDetailModal").addEventListener("click", (event) => {
 });
 $("customRuleForm").addEventListener("submit", saveCustomRule);
 $("csvImportForm").addEventListener("submit", importCsv);
+$("xlsxImportForm").addEventListener("submit", importXlsx);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
 $("partReviewFilter").addEventListener("change", loadReview);
 $("reviewLoadButton").addEventListener("click", loadReview);

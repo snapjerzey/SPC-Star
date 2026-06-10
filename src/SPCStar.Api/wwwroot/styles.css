@@ -386,6 +386,11 @@ textarea {
   font-family: Consolas, "Courier New", monospace;
   font-size: 13px;
 }
+.import-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
+}
 
 .setup-nav {
   display: flex;

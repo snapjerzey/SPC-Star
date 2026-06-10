@@ -75,6 +75,33 @@ app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService s
         : Results.BadRequest(new { imported = false, errors = result.Errors });
 });
 
+app.MapPost("/setup/import-xlsx", async (IFormFile file, SetupImportService service, IRepositoryPersistence persistence) =>
+{
+    if (file.Length == 0)
+    {
+        return Results.BadRequest(new { imported = false, errors = new[] { "Select an Excel workbook to import." } });
+    }
+
+    try
+    {
+        await using var stream = file.OpenReadStream();
+        var csv = XlsxImportSupport.ReadImportSheetAsCsv(stream);
+        var result = service.ImportCsv(csv);
+        if (result.Succeeded)
+        {
+            persistence.SaveChanges();
+        }
+
+        return result.Succeeded
+            ? Results.Ok(new { imported = true })
+            : Results.BadRequest(new { imported = false, errors = result.Errors });
+    }
+    catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { imported = false, errors = new[] { ex.Message } });
+    }
+}).DisableAntiforgery();
+
 app.MapGet("/setup/users", (SetupManagementService service) =>
 {
     return Results.Ok(service.GetUsers());

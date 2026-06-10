@@ -505,14 +505,22 @@
       <section class="panel">
         <div class="panel-heading horizontal">
           <div>
-            <h2>CSV Import</h2>
-            <p>Use the named columns for job data fields, materials, variables, and attributes.</p>
+            <h2>Excel Import</h2>
+            <p>Upload the SPC-Star workbook. The import uses the sheet named SPC-Star Import.</p>
           </div>
           <button id="csvTemplateButton" type="button" class="secondary">Load Blank Template</button>
         </div>
+        <form id="xlsxImportForm" class="stacked-form">
+          <label>
+            Excel workbook
+            <input id="xlsxImportFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          </label>
+          <button type="submit">Import Excel Workbook</button>
+        </form>
+        <div class="import-divider"></div>
         <form id="csvImportForm" class="stacked-form">
           <label>
-            CSV data
+            CSV data fallback
             <textarea id="csvImportText" rows="7" spellcheck="false"></textarea>
           </label>
           <button type="submit">Import CSV</button>

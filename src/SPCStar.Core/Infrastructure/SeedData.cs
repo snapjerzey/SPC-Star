@@ -7,7 +7,6 @@ public static class SeedData
     public static void SeedAll(ISpcRepository repository)
     {
         SeedSecurity(repository);
-        SeedSampleInspectionPlans(repository);
     }
 
     public static void SeedSecurity(ISpcRepository repository)
@@ -38,8 +37,8 @@ public static class SeedData
             PermissionNames.CanManageUsers,
             PermissionNames.CanUseGodMode);
 
-        AddDefaultUser(repository, "operator1", "operator1", operatorRole, "General");
-        AddDefaultUser(repository, "linetech1", "linetech1", lineTech, "General");
+        AddDefaultUser(repository, "operator1", "operator1", operatorRole);
+        AddDefaultUser(repository, "linetech1", "linetech1", lineTech);
         AddDefaultUser(repository, "qa1", "qa1", qa);
         AddDefaultUser(repository, "admin1", "admin1", admin);
         AddDefaultUser(repository, "god1", "god1", god);
@@ -47,6 +46,9 @@ public static class SeedData
 
     public static void SeedSampleInspectionPlans(ISpcRepository repository)
     {
+        AddProductGroupToDemoUser(repository, "operator1", "General");
+        AddProductGroupToDemoUser(repository, "linetech1", "General");
+
         if (repository.Parts.Any(part => part.PartNum.Equals("P100", StringComparison.OrdinalIgnoreCase)))
         {
             return;
@@ -164,5 +166,14 @@ public static class SeedData
             Lcl = lcl,
             Ucl = ucl
         });
+    }
+
+    private static void AddProductGroupToDemoUser(ISpcRepository repository, string userName, string productGroup)
+    {
+        var user = repository.Users.FirstOrDefault(user => user.UserName.Equals(userName, StringComparison.OrdinalIgnoreCase));
+        if (user is not null && !user.ProductGroups.Contains(productGroup, StringComparer.OrdinalIgnoreCase))
+        {
+            user.ProductGroups.Add(productGroup);
+        }
     }
 }

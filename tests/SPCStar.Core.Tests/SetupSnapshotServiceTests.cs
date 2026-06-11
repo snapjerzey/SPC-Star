@@ -11,6 +11,7 @@ public sealed class SetupSnapshotServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedAll(repository);
+        SeedData.SeedSampleInspectionPlans(repository);
 
         var snapshot = new SetupQueryService(repository)
             .GetSetupSnapshot(DateTimeOffset.Parse("2026-01-01T00:00:00Z"));
@@ -33,6 +34,7 @@ public sealed class SetupSnapshotServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedAll(repository);
+        SeedData.SeedSampleInspectionPlans(repository);
         var service = new SetupQueryService(repository);
         var before = service.GetSetupSnapshot();
 

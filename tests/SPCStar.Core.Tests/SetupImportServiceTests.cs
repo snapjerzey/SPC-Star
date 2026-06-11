@@ -294,6 +294,83 @@ public sealed class SetupImportServiceTests
         Assert.Equal(["Material Thickness", "Jaw Profile (No Clip)", "Brazed Contact to Jaw"], plans.Where(plan => plan.InspectionPhase == "Startup").Select(plan => plan.CharacteristicName).ToArray());
     }
 
+    [Fact]
+    public void ImportCsv_ImportsJobDataFromUniversalTemplateRows()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "PartNum", "PartDescription", "ProductGroup", "Operation", "CustomerPartNum",
+            "MaterialRole", "MaterialPartNum", "MaterialDescription", "RequiresLotEntry",
+            "ParameterSeq", "InspectionParameter", "Attribute/Variable", "EntryType", "RequirementText", "Tool Used",
+            "LowerSpec", "UpperSpec", "NominalSpec", "UOM", "SampleContext",
+            "StartupRequired", "StartupSampleSize", "SetupRequired", "SetupSampleSize",
+            "InProcessRequired", "InProcessSampleSize", "InProcessFrequencyQty", "InProcessFrequencyUnit",
+            "CoilChangeRequired", "CoilChangeSampleSize", "SpoolRequired", "SpoolSampleSize"
+        };
+        string Row(params (string Field, string Value)[] values)
+        {
+            var row = header.ToDictionary(field => field, _ => "", StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, value) in values)
+            {
+                row[field] = value;
+            }
+
+            return string.Join(",", header.Select(field => row[field]));
+        }
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("RecordType", "JOBDATA"), ("PartNum", "61135"), ("PartDescription", "22MIL SH-1 Undrilled"), ("ProductGroup", "Ethicon Taperpoint"), ("Operation", "Needlemaker"), ("ParameterSeq", "1"), ("InspectionParameter", "Vendor Coil #"), ("SetupRequired", "Y"), ("InProcessRequired", "Y"), ("SpoolRequired", "Y")),
+            Row(("RecordType", "JOBDATA"), ("PartNum", "61135"), ("PartDescription", "22MIL SH-1 Undrilled"), ("ProductGroup", "Ethicon Taperpoint"), ("Operation", "Needlemaker"), ("ParameterSeq", "2"), ("InspectionParameter", "Wire Shipment (W/S) #"), ("SetupRequired", "Y"), ("InProcessRequired", "Y"), ("SpoolRequired", "Y")),
+            Row(("RecordType", "INSPECTION"), ("PartNum", "61135"), ("PartDescription", "22MIL SH-1 Undrilled"), ("ProductGroup", "Ethicon Taperpoint"), ("Operation", "Needlemaker"), ("ParameterSeq", "3"), ("InspectionParameter", "T Dim"), ("Attribute/Variable", "Variable"), ("EntryType", "Actual measurement"), ("Tool Used", "Comparator"), ("LowerSpec", ".020"), ("UpperSpec", ".024"), ("NominalSpec", ".022"), ("UOM", "in"), ("SetupRequired", "Y"), ("SetupSampleSize", "4"), ("InProcessRequired", "Y"), ("InProcessSampleSize", "4"), ("InProcessFrequencyQty", "1"), ("InProcessFrequencyUnit", "Shift")),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(6, repository.PartJobDataFields.Count);
+        Assert.Contains(repository.PartJobDataFields, field => field.FieldName == "Vendor Coil #" && field.InspectionPhase == "Setup");
+        Assert.Contains(repository.PartJobDataFields, field => field.FieldName == "Vendor Coil #" && field.InspectionPhase == "In Process");
+        Assert.Contains(repository.PartJobDataFields, field => field.FieldName == "Wire Shipment (W/S) #" && field.InspectionPhase == "Spool");
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.SampleSize == 4);
+    }
+
+    [Fact]
+    public void ImportCsv_UsesPhaseSpecificDisplayOrderFromUniversalTemplateRows()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "PartNum", "PartDescription", "ProductGroup", "Operation",
+            "ParameterSeq", "InspectionParameter", "Attribute/Variable", "Tool Used",
+            "LowerSpec", "UpperSpec", "NominalSpec",
+            "SetupRequired", "SetupSampleSize", "SetupDisplayOrder",
+            "SpoolRequired", "SpoolSampleSize", "SpoolDisplayOrder"
+        };
+        string Row(params (string Field, string Value)[] values)
+        {
+            var row = header.ToDictionary(field => field, _ => "", StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, value) in values)
+            {
+                row[field] = value;
+            }
+
+            return string.Join(",", header.Select(field => row[field]));
+        }
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("RecordType", "INSPECTION"), ("PartNum", "61135"), ("PartDescription", "22MIL SH-1 Undrilled"), ("ProductGroup", "Ethicon Taperpoint"), ("Operation", "Needlemaker"), ("ParameterSeq", "22"), ("InspectionParameter", "Rough Taper Profile"), ("Attribute/Variable", "Attribute"), ("Tool Used", "Comparator FX19"), ("SetupRequired", "Y"), ("SetupSampleSize", "4"), ("SetupDisplayOrder", "1"), ("SpoolRequired", "Y"), ("SpoolSampleSize", "2"), ("SpoolDisplayOrder", "14")),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.DisplayOrder == 1);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Spool" && plan.DisplayOrder == 14);
+    }
+
     private static string ValidCsv(
         string description = "Widget",
         string lsl = "4.5",

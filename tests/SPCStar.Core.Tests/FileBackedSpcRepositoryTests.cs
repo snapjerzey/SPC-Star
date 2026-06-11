@@ -15,6 +15,7 @@ public sealed class FileBackedSpcRepositoryTests
         {
             var repository = new FileBackedSpcRepository(storagePath);
             SeedData.SeedAll(repository);
+            SeedData.SeedSampleInspectionPlans(repository);
             repository.Measurements.Add(new InspectionMeasurement
             {
                 JobNum = "J100",

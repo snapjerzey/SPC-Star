@@ -52,7 +52,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     private static IEnumerable<Dictionary<string, string>> ExpandPhaseMatrixRow(Dictionary<string, string> row)
     {
         var rowType = RowType(row);
-        if (rowType is not ("Variable" or "Attribute") || !HasPhaseMatrix(row))
+        if (rowType is not ("Variable" or "Attribute" or "JobData") || !HasPhaseMatrix(row))
         {
             yield return row;
             yield break;
@@ -74,6 +74,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             CopyPhaseValue(row, clone, phase, "FrequencyType", "Frequency Type");
             CopyPhaseValue(row, clone, phase, "FrequencyValue", "Frequency");
             CopyPhaseValue(row, clone, phase, "FrequencyUnit", "Frequency Unit");
+            CopyPhaseValue(row, clone, phase, "DisplayOrder", "Display Order");
             ApplyPhaseDefaults(clone, phase.CanonicalName);
             expanded = true;
             yield return clone;
@@ -93,7 +94,8 @@ public sealed class SetupImportService(ISpcRepository repository)
             PhaseFieldValue(row, phase, "Frequency Type") != "" ||
             PhaseFieldValue(row, phase, "Frequency") != "" ||
             PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
-            PhaseFieldValue(row, phase, "Frequency Unit") != "");
+            PhaseFieldValue(row, phase, "Frequency Unit") != "" ||
+            PhaseFieldValue(row, phase, "Display Order") != "");
     }
 
     private static bool PhaseIsRequired(Dictionary<string, string> row, PhaseMatrixDefinition phase)
@@ -108,7 +110,8 @@ public sealed class SetupImportService(ISpcRepository repository)
             PhaseFieldValue(row, phase, "Frequency Type") != "" ||
             PhaseFieldValue(row, phase, "Frequency") != "" ||
             PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
-            PhaseFieldValue(row, phase, "Frequency Unit") != "";
+            PhaseFieldValue(row, phase, "Frequency Unit") != "" ||
+            PhaseFieldValue(row, phase, "Display Order") != "";
     }
 
     private static bool IsTruthy(string value)
@@ -156,6 +159,12 @@ public sealed class SetupImportService(ISpcRepository repository)
             yield return $"{prefix} Frequency Value";
             yield return $"{prefix}FrequencyQty";
             yield return $"{prefix}FrequencyValue";
+        }
+        if (suffix.Equals("Display Order", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return $"{prefix} Order";
+            yield return $"{prefix} DisplayOrder";
+            yield return $"{prefix}Order";
         }
     }
 
@@ -250,6 +259,10 @@ public sealed class SetupImportService(ISpcRepository repository)
                 normalized["RowType"] = rowType;
             }
         }
+        if (IsValidRowType(rowType))
+        {
+            normalized["RowType"] = rowType;
+        }
         if (!string.IsNullOrWhiteSpace(itemName))
         {
             if (rowType == "JobData")
@@ -264,6 +277,13 @@ public sealed class SetupImportService(ISpcRepository repository)
             {
                 normalized["CharacteristicName"] = itemName;
             }
+        }
+
+        if (rowType == "JobData" &&
+            string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("FieldName")) &&
+            !string.IsNullOrWhiteSpace(Value(normalized, "InspectionParameter", "CharacteristicName")))
+        {
+            normalized["FieldName"] = Value(normalized, "InspectionParameter", "CharacteristicName").Trim();
         }
 
         if (rowType is "Variable" or "Attribute" && string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("CharacteristicType")))

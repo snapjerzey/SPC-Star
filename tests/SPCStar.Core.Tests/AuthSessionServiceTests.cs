@@ -49,7 +49,7 @@ public sealed class AuthSessionServiceTests
         Assert.Contains("LineTech", result.Value!.Roles);
         Assert.Contains("CanEnterInspections", result.Value.Permissions);
         Assert.Contains("CanOverrideDriftLock", result.Value.Permissions);
-        Assert.Contains("General", result.Value.ProductGroups);
+        Assert.Empty(result.Value.ProductGroups);
     }
 
     [Fact]

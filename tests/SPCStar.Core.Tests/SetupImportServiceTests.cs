@@ -119,6 +119,22 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_UsesRequirementTextWhenSampleContextIsBlank()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            "RecordType,PartNum,PartDescription,ProductGroup,Operation,InspectionParameter,Attribute/Variable,RequirementText,SampleContext,UOM,SampleSize,InProcessRequired,InProcessSampleSize,InProcessFrequencyQty,InProcessFrequencyUnit",
+            "INSPECTION,P100,Widget,General,MOLD,X,Variable,Reference only; target 0.007,,in,4,Y,4,2000,Pieces",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal("Reference only; target 0.007", repository.Characteristics.Single().Location);
+    }
+
+    [Fact]
     public void ImportCsv_ImportsCoaStatisticWhenProvided()
     {
         var repository = new InMemorySpcRepository();

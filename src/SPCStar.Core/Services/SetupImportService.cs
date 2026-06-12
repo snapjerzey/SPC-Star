@@ -434,7 +434,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     {
         foreach (var field in fields)
         {
-            if (row.TryGetValue(field, out var value))
+            if (row.TryGetValue(field, out var value) && !string.IsNullOrWhiteSpace(value))
             {
                 return value;
             }

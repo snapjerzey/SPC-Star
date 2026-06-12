@@ -632,7 +632,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return type switch
         {
             FrequencyType.Time => unit is FrequencyUnit.Minutes or FrequencyUnit.Hours,
-            FrequencyType.Quantity => unit is FrequencyUnit.Pieces,
+            FrequencyType.Quantity => unit is FrequencyUnit.Pieces or FrequencyUnit.Box,
             FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart,
             _ => false
         };

@@ -18,6 +18,7 @@ public enum FrequencyUnit
     Minutes,
     Hours,
     Pieces,
+    Box,
     StartOfJob,
     MaterialChange,
     ToolChange,

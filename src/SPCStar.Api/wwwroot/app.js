@@ -2387,7 +2387,7 @@ async function saveGlobalRule(event) {
 
 function updateRowFrequencyUnits(row, requestedUnit = null) {
   const unitsByType = {
-    Quantity: [["Pieces", "Pieces"]],
+    Quantity: [["Pieces", "Pieces"], ["Box", "Box"]],
     Time: [["Minutes", "Minutes"], ["Hours", "Hours"]],
     Event: [["StartOfJob", "Start of job"], ["MaterialChange", "Material change"], ["ToolChange", "Tool change"], ["Restart", "Restart"]]
   };
@@ -2479,7 +2479,7 @@ async function saveCustomRule(event) {
 
 function updateSetupFrequencyUnits() {
   const unitsByType = {
-    Quantity: [["Pieces", "Pieces"]],
+    Quantity: [["Pieces", "Pieces"], ["Box", "Box"]],
     Time: [["Minutes", "Minutes"], ["Hours", "Hours"]],
     Event: [["StartOfJob", "Start of job"], ["MaterialChange", "Material change"], ["ToolChange", "Tool change"], ["Restart", "Restart"]]
   };

@@ -316,6 +316,10 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             row["FrequencyUnit"] = "Pieces";
         }
+        else if (clean.Contains("box", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "Box";
+        }
         else if (clean.Contains("minute", StringComparison.OrdinalIgnoreCase) || clean.Equals("min", StringComparison.OrdinalIgnoreCase))
         {
             row["FrequencyUnit"] = "Minutes";
@@ -834,7 +838,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         return type switch
         {
             FrequencyType.Time => unit is FrequencyUnit.Minutes or FrequencyUnit.Hours,
-            FrequencyType.Quantity => unit is FrequencyUnit.Pieces,
+            FrequencyType.Quantity => unit is FrequencyUnit.Pieces or FrequencyUnit.Box,
             FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart or FrequencyUnit.Shift,
             _ => false
         };

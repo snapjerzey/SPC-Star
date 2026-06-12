@@ -100,6 +100,25 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_ImportsBoxFrequencyForPerBoxChecks()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "Attribute,P100,Widget,General,In Process,MOLD,,,,,Overall Visual,Attribute,,,,,,,1,Quantity,1,Box,GlobalDefault,false,Mean,,1",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var plan = Assert.Single(repository.InspectionPlans);
+        Assert.Equal(FrequencyType.Quantity, plan.Frequency.Type);
+        Assert.Equal(1, plan.Frequency.Value);
+        Assert.Equal(FrequencyUnit.Box, plan.Frequency.Unit);
+    }
+
+    [Fact]
     public void ImportCsv_ImportsCoaStatisticWhenProvided()
     {
         var repository = new InMemorySpcRepository();

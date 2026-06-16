@@ -31,6 +31,7 @@ public sealed record JobVariableMeanRow(
     string PartNum,
     string ProcessCode,
     int OperationSeq,
+    string InspectionPhases,
     string CharacteristicName,
     CharacteristicType CharacteristicType,
     string UnitOfMeasure,
@@ -132,10 +133,10 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
             where operation.PartId == part.Id && characteristic.Type == CharacteristicType.Variable
             orderby operation.OperationSeq, characteristic.Name
-            select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
+            select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Id, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         var rows = plans
-            .Select(plan => BuildCapabilityRow("All Jobs", plan.PartNum, plan.ProcessCode, plan.OperationSeq, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
+            .Select(plan => BuildCapabilityRow("All Jobs", plan.PartNum, plan.ProcessCode, plan.OperationSeq, PhaseText(plan.Id), plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
                 repository.Measurements
                     .Where(measurement =>
                         measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
@@ -199,6 +200,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             "PartNum",
             "ProcessCode",
             "OperationSeq",
+            "InspectionPhases",
             "CharacteristicName",
             "CharacteristicType",
             "UnitOfMeasure",
@@ -226,6 +228,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["PartNum"] = row.PartNum,
             ["ProcessCode"] = row.ProcessCode,
             ["OperationSeq"] = row.OperationSeq.ToString(),
+            ["InspectionPhases"] = row.InspectionPhases,
             ["CharacteristicName"] = row.CharacteristicName,
             ["CharacteristicType"] = row.CharacteristicType.ToString(),
             ["UnitOfMeasure"] = row.UnitOfMeasure,
@@ -262,10 +265,10 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase) &&
                 (!requiredOnly || characteristic.IsRequiredForCoa)
             orderby operation.OperationSeq, characteristic.Name
-            select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
+            select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Id, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         return plans.Select(plan =>
-            BuildCapabilityRow(job.JobNum, plan.PartNum, plan.ProcessCode, plan.OperationSeq, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
+            BuildCapabilityRow(job.JobNum, plan.PartNum, plan.ProcessCode, plan.OperationSeq, PhaseText(plan.Id), plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
                 repository.Measurements
                 .Where(measurement =>
                     measurement.JobNum.Equals(job.JobNum, StringComparison.OrdinalIgnoreCase) &&
@@ -282,6 +285,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         string partNum,
         string processCode,
         int operationSeq,
+        string inspectionPhases,
         string characteristicName,
         CharacteristicType characteristicType,
         string unitOfMeasure,
@@ -308,6 +312,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             partNum,
             processCode,
             operationSeq,
+            inspectionPhases,
             characteristicName,
             characteristicType,
             unitOfMeasure,
@@ -419,6 +424,33 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         return repository.Characteristics.FirstOrDefault(item =>
             item.OperationId == operation.Id &&
             item.Name.Equals(characteristicName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string PhaseText(Guid characteristicId)
+    {
+        var phases = repository.InspectionPlans
+            .Where(plan => plan.CharacteristicId == characteristicId)
+            .Select(plan => plan.InspectionPhase)
+            .Where(phase => !string.IsNullOrWhiteSpace(phase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(PhaseSort)
+            .ThenBy(phase => phase)
+            .ToArray();
+
+        return phases.Length == 0 ? "All phases" : string.Join(", ", phases);
+    }
+
+    private static int PhaseSort(string phase)
+    {
+        return phase.Trim().ToUpperInvariant() switch
+        {
+            "STARTUP" => 0,
+            "SETUP" => 1,
+            "IN PROCESS" => 2,
+            "SPOOL" => 3,
+            "COIL CHANGE" => 4,
+            _ => 99
+        };
     }
 
     private static decimal? StandardDeviation(IReadOnlyCollection<decimal> values)

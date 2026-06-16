@@ -143,6 +143,33 @@ app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService s
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapPost("/setup/users/import-xlsx", async (IFormFile file, SetupManagementService service, IRepositoryPersistence persistence) =>
+{
+    if (file.Length == 0)
+    {
+        return Results.BadRequest(new { imported = false, errors = new[] { "Select an Excel workbook to import." } });
+    }
+
+    try
+    {
+        await using var stream = file.OpenReadStream();
+        var csv = XlsxImportSupport.ReadImportSheetAsCsv(stream, "SPC-Star User Import");
+        var result = service.ImportUsersCsv(csv);
+        if (result.Succeeded)
+        {
+            persistence.SaveChanges();
+        }
+
+        return result.Succeeded
+            ? Results.Ok(new { imported = true, count = result.Value!.Imported })
+            : Results.BadRequest(new { imported = false, errors = result.Errors });
+    }
+    catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { imported = false, errors = new[] { ex.Message } });
+    }
+}).DisableAntiforgery();
+
 app.MapDelete("/setup/users/{userName}", (string userName, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
     var result = service.DeleteUser(userName);

@@ -381,6 +381,13 @@
               <p>Create accounts and assign access levels.</p>
             </div>
           </div>
+          <form id="userImportForm" class="stacked-form compact-form">
+            <label>
+              Import user permissions workbook
+              <input id="userImportFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            </label>
+            <button type="submit" class="secondary">Import Users</button>
+          </form>
           <div class="user-admin-layout">
             <form id="userSetupForm" class="stacked-form">
               <label>
@@ -412,6 +419,7 @@
             </form>
             <div>
               <p id="userSetupMessage" class="message"></p>
+              <p id="userImportMessage" class="message"></p>
               <div id="userList" class="setup-list empty">No users loaded.</div>
             </div>
           </div>

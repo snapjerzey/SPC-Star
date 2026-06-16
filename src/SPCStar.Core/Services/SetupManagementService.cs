@@ -7,6 +7,8 @@ public sealed record UserSetupDto(string UserName, IReadOnlyList<string> Roles, 
 
 public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string>? ProductGroups = null);
 
+public sealed record UserImportResult(int Imported);
+
 public sealed record UpdateSettingsRequest(string GlobalAlertRuleSet, CustomDriftRuleSetupDto? CustomDriftRule = null);
 
 public sealed record UpsertInspectionSetupRequest(
@@ -197,6 +199,62 @@ public sealed class SetupManagementService(ISpcRepository repository)
             user.ProductGroups.Add(group);
         }
         return ServiceResult<UserSetupDto>.Ok(GetUsers().First(item => item.UserName.Equals(user.UserName, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    public ServiceResult<UserImportResult> ImportUsersCsv(string csv)
+    {
+        var rows = CsvSupport.ReadRows(csv)
+            .Where(row => row.Values.Any(value => !string.IsNullOrWhiteSpace(value)))
+            .ToArray();
+        var requests = new List<UpsertUserRequest>();
+        var errors = new List<string>();
+        var rowNumber = 1;
+        var seenUsers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rows)
+        {
+            rowNumber++;
+            var request = UserRequestFromImportRow(row);
+            if (request is null)
+            {
+                errors.Add($"Row {rowNumber}: UserName is required.");
+                continue;
+            }
+
+            if (!seenUsers.Add(request.UserName.Trim()))
+            {
+                errors.Add($"Row {rowNumber}: Duplicate user {request.UserName}.");
+                continue;
+            }
+
+            errors.AddRange(ValidateUser(request).Select(error => $"Row {rowNumber}: {error}"));
+            if (request.ProductGroups is null || request.ProductGroups.Count == 0)
+            {
+                errors.Add($"Row {rowNumber}: At least one product group access column must be marked X.");
+            }
+
+            var unknownGroups = CleanProductGroups(request.ProductGroups)
+                .Where(group => !LoadedProductGroups().Contains(group, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+            foreach (var group in unknownGroups)
+            {
+                errors.Add($"Row {rowNumber}: Unknown product group {group}.");
+            }
+
+            requests.Add(request);
+        }
+
+        if (errors.Count > 0)
+        {
+            return ServiceResult<UserImportResult>.Fail(errors);
+        }
+
+        foreach (var request in requests)
+        {
+            UpsertUser(request);
+        }
+
+        return ServiceResult<UserImportResult>.Ok(new UserImportResult(requests.Count));
     }
 
     public ServiceResult DeleteUser(string userName)
@@ -553,6 +611,74 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         return errors;
+    }
+
+    private UpsertUserRequest? UserRequestFromImportRow(Dictionary<string, string> row)
+    {
+        var userName = Value(row, "UserName", "User Name", "Username");
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return null;
+        }
+
+        var password = Value(row, "TemporaryPassword", "Temporary Password", "Password");
+        var roles = SplitValues(Value(row, "Role", "Roles", "Access Level"));
+        var groups = new List<string>();
+        groups.AddRange(SplitValues(Value(row, "ProductGroups", "Product Groups")));
+
+        foreach (var group in LoadedProductGroups())
+        {
+            if (IsMarked(row.GetValueOrDefault(group)))
+            {
+                groups.Add(group);
+            }
+        }
+
+        return new UpsertUserRequest(
+            userName.Trim(),
+            password.Trim(),
+            roles,
+            groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    private IReadOnlyList<string> LoadedProductGroups()
+    {
+        return repository.Parts
+            .Select(part => CleanProductGroup(part.ProductGroup))
+            .Where(group => !string.IsNullOrWhiteSpace(group))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> SplitValues(string value)
+    {
+        return value
+            .Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToArray();
+    }
+
+    private static string Value(Dictionary<string, string> row, params string[] fields)
+    {
+        foreach (var field in fields)
+        {
+            if (row.TryGetValue(field, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static bool IsMarked(string? value)
+    {
+        return value?.Trim().Equals("x", StringComparison.OrdinalIgnoreCase) == true ||
+            value?.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase) == true ||
+            value?.Trim().Equals("y", StringComparison.OrdinalIgnoreCase) == true ||
+            value?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true ||
+            value?.Trim().Equals("1", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static List<string> ValidateInspectionSetup(UpsertInspectionSetupRequest request)

@@ -2129,6 +2129,32 @@ async function saveUser(event) {
   }
 }
 
+async function importUsersXlsx(event) {
+  event.preventDefault();
+  const file = $("userImportFile").files[0];
+  if (!file) {
+    $("userImportMessage").textContent = "Select a user permissions workbook to import.";
+    $("userImportMessage").className = "message error";
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const result = await api("/setup/users/import-xlsx", {
+      method: "POST",
+      body: formData
+    });
+    $("userImportMessage").textContent = `${result.count} users imported.`;
+    $("userImportMessage").className = "message ok";
+    $("userImportFile").value = "";
+    await loadSetupAdmin();
+  } catch (error) {
+    $("userImportMessage").textContent = readableError(error);
+    $("userImportMessage").className = "message error";
+  }
+}
+
 function setupVariableRowTemplate() {
   return `
     <label class="setup-name-field"><span>Inspection item</span><input class="setup-characteristic-name" required></label>
@@ -2851,6 +2877,7 @@ $("setupReviewSectionTab").addEventListener("click", () => showSetupSection("Rev
 $("setupReportsSectionTab").addEventListener("click", () => showSetupSection("Reports"));
 $("setupJobDataSectionTab").addEventListener("click", () => showSetupSection("JobData"));
 $("userSetupForm").addEventListener("submit", saveUser);
+$("userImportForm").addEventListener("submit", importUsersXlsx);
 $("selectAllUserProductGroups").addEventListener("click", () => setUserProductGroupSelection(productGroups()));
 $("clearUserProductGroups").addEventListener("click", () => setUserProductGroupSelection([]));
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);

@@ -23,6 +23,51 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void ImportUsersCsv_CreatesUsersFromProductGroupColumns()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
+        repository.Parts.Add(new Part { PartNum = "61135", Description = "Needle blank", ProductGroup = "Ethicon Taperpoint - Needles" });
+        var service = new SetupManagementService(repository);
+
+        var result = service.ImportUsersCsv(string.Join(Environment.NewLine, [
+            "UserName,FullName,TemporaryPassword,Role,Schneider,Ethicon Taperpoint - Needles",
+            "Jsmith,Smith Jane,TempPass123!,Operator,X,",
+            "Ttech,Tech Tim,TempPass123!,LineTech,,X",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(2, result.Value!.Imported);
+        var operatorUser = repository.Users.Single(user => user.UserName == "Jsmith");
+        Assert.Contains(operatorUser.Roles, role => role.Name == RoleNames.Operator);
+        Assert.Equal(["Schneider"], operatorUser.ProductGroups);
+        var lineTech = repository.Users.Single(user => user.UserName == "Ttech");
+        Assert.Contains(lineTech.Roles, role => role.Name == RoleNames.LineTech);
+        Assert.Equal(["Ethicon Taperpoint - Needles"], lineTech.ProductGroups);
+    }
+
+    [Fact]
+    public void ImportUsersCsv_RejectsUsersWithoutProductGroupAccess()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
+        var service = new SetupManagementService(repository);
+
+        var result = service.ImportUsersCsv(string.Join(Environment.NewLine, [
+            "UserName,FullName,TemporaryPassword,Role,Schneider",
+            "Jsmith,Smith Jane,TempPass123!,Operator,",
+            string.Empty
+        ]));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("At least one product group", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(repository.Users, user => user.UserName == "Jsmith");
+    }
+
+    [Fact]
     public void DeleteUser_RemovesUser()
     {
         var repository = new InMemorySpcRepository();

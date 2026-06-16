@@ -1750,24 +1750,20 @@ function renderJobSummary(rows) {
   container.className = "data-table job-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Job</span><span>Operation</span><span>Phase</span><span>Variable</span><span>COA Stat</span><span>COA Value</span><span>Mean</span><span>Min</span><span>Max</span><span>Std Dev</span><span>Cpk</span><span>Ppk</span>
+      <span>Job</span><span>Context</span><span>Variable</span><span>COA</span><span>Mean</span><span>Range</span><span>Std Dev</span><span>Capability</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
     item.className = "data-row";
     item.innerHTML = `
       <span>${row.jobNum}</span>
-      <span>${row.processCode || ""} ${row.operationSeq || ""}</span>
-      <span>${row.inspectionPhases || ""}</span>
+      <span>${row.processCode || ""} ${row.operationSeq || ""}<small>${row.inspectionPhases || ""}</small></span>
       <span>${row.characteristicName} (${row.unitOfMeasure})</span>
-      <span>${coaStatisticLabel(row.coaStatisticType)}</span>
-      <span>${formatNumber(row.coaValue)}</span>
+      <span>${coaStatisticLabel(row.coaStatisticType)}<small>${formatNumber(row.coaValue)}</small></span>
       <span>${formatNumber(row.mean)}</span>
-      <span>${formatNumber(row.min)}</span>
-      <span>${formatNumber(row.max)}</span>
+      <span>${formatNumber(row.min)} - ${formatNumber(row.max)}</span>
       <span>${formatNumber(row.stdDev)}</span>
-      <span>${capabilityBadge(row.cpk)}</span>
-      <span>${capabilityBadge(row.ppk)}</span>`;
+      <span>Cpk ${capabilityBadge(row.cpk)}<small>Ppk ${capabilityBadge(row.ppk)}</small></span>`;
     container.appendChild(item);
   });
 }

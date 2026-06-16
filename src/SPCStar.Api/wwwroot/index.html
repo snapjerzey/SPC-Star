@@ -43,6 +43,27 @@
           <input id="password" type="password" autocomplete="current-password" value="admin1">
         </label>
         <button type="submit">Sign in</button>
+        <button id="showChangePasswordButton" type="button" class="secondary">Change password</button>
+        <div id="changePasswordPanel" class="change-password-panel hidden">
+          <label>
+            User
+            <input id="changePasswordUserName" autocomplete="username">
+          </label>
+          <label>
+            Current password
+            <input id="currentPassword" type="password" autocomplete="current-password">
+          </label>
+          <label>
+            New password
+            <input id="newPassword" type="password" autocomplete="new-password">
+          </label>
+          <label>
+            Confirm new password
+            <input id="confirmPassword" type="password" autocomplete="new-password">
+          </label>
+          <button id="changePasswordButton" type="button" class="secondary">Save password</button>
+          <p id="changePasswordMessage" class="message"></p>
+        </div>
       </form>
     </section>
 

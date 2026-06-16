@@ -37,6 +37,32 @@ public sealed class AuthSessionServiceTests
     }
 
     [Fact]
+    public void ChangePassword_UpdatesUserCredential()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        var service = new AuthSessionService(repository, new CredentialService(repository));
+
+        var result = service.ChangePassword(new ChangePasswordRequest("qa1", "qa1", "test", "test"));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.False(service.Login(new LoginRequest("qa1", "qa1")).Succeeded);
+        Assert.True(service.Login(new LoginRequest("qa1", "test")).Succeeded);
+    }
+
+    [Fact]
+    public void ChangePassword_RejectsWrongCurrentPassword()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        var service = new AuthSessionService(repository, new CredentialService(repository));
+
+        var result = service.ChangePassword(new ChangePasswordRequest("qa1", "wrong", "test", "test"));
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
     public void Login_LineTechCanInspectAndOverride()
     {
         var repository = new InMemorySpcRepository();

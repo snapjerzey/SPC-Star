@@ -4,6 +4,8 @@ namespace SPCStar.Core.Services;
 
 public sealed record LoginRequest(string UserName, string Password);
 
+public sealed record ChangePasswordRequest(string UserName, string CurrentPassword, string NewPassword, string ConfirmPassword);
+
 public sealed record UserSessionDto(
     string UserName,
     IReadOnlyList<string> Roles,
@@ -34,6 +36,50 @@ public sealed class AuthSessionService(
         }
 
         return ServiceResult<UserSessionDto>.Ok(BuildSession(userName));
+    }
+
+    public ServiceResult ChangePassword(ChangePasswordRequest request)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(request.UserName))
+        {
+            errors.Add("UserName is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+        {
+            errors.Add("Current password is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            errors.Add("New password is required.");
+        }
+        else if (request.NewPassword.Length < 4)
+        {
+            errors.Add("New password must be at least 4 characters.");
+        }
+
+        if (!string.Equals(request.NewPassword, request.ConfirmPassword, StringComparison.Ordinal))
+        {
+            errors.Add("New password and confirmation do not match.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return ServiceResult.Fail(errors);
+        }
+
+        var user = repository.Users.FirstOrDefault(item => item.UserName.Equals(request.UserName.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (user is null || !credentialService.ValidateCredential(request.UserName, request.CurrentPassword))
+        {
+            return ServiceResult.Fail("Current username or password is incorrect.");
+        }
+
+        var (hash, salt) = PasswordHasher.HashPassword(request.NewPassword);
+        user.PasswordHash = hash;
+        user.PasswordSalt = salt;
+        return ServiceResult.Ok();
     }
 
     private UserSessionDto BuildSession(string userName)

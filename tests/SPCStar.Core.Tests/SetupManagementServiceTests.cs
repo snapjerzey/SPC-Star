@@ -35,17 +35,21 @@ public sealed class SetupManagementServiceTests
             "UserName,FullName,TemporaryPassword,Role,Schneider,Ethicon Taperpoint - Needles",
             "Jsmith,Smith Jane,TempPass123!,Operator,X,",
             "Ttech,Tech Tim,TempPass123!,LineTech,,X",
+            "JTGill,Gill JT,test,GOD,X,X",
             string.Empty
         ]));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        Assert.Equal(2, result.Value!.Imported);
+        Assert.Equal(3, result.Value!.Imported);
         var operatorUser = repository.Users.Single(user => user.UserName == "Jsmith");
         Assert.Contains(operatorUser.Roles, role => role.Name == RoleNames.Operator);
         Assert.Equal(["Schneider"], operatorUser.ProductGroups);
         var lineTech = repository.Users.Single(user => user.UserName == "Ttech");
         Assert.Contains(lineTech.Roles, role => role.Name == RoleNames.LineTech);
         Assert.Equal(["Ethicon Taperpoint - Needles"], lineTech.ProductGroups);
+        var god = repository.Users.Single(user => user.UserName == "JTGill");
+        Assert.Contains(god.Roles, role => role.Name == RoleNames.GOD);
+        Assert.Equal(["Ethicon Taperpoint - Needles", "Schneider"], god.ProductGroups.OrderBy(group => group).ToArray());
     }
 
     [Fact]

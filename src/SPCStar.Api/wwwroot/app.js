@@ -167,6 +167,36 @@ async function login(event) {
   await loadSnapshot();
 }
 
+function toggleChangePassword() {
+  $("changePasswordPanel").classList.toggle("hidden");
+  $("changePasswordMessage").textContent = "";
+  $("changePasswordMessage").className = "message";
+  $("changePasswordUserName").value = $("userName").value.trim();
+}
+
+async function changePassword() {
+  try {
+    await api("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({
+        userName: $("changePasswordUserName").value.trim(),
+        currentPassword: $("currentPassword").value,
+        newPassword: $("newPassword").value,
+        confirmPassword: $("confirmPassword").value
+      })
+    });
+    $("password").value = $("newPassword").value;
+    $("currentPassword").value = "";
+    $("newPassword").value = "";
+    $("confirmPassword").value = "";
+    $("changePasswordMessage").textContent = "Password changed.";
+    $("changePasswordMessage").className = "message ok";
+  } catch (error) {
+    $("changePasswordMessage").textContent = readableError(error);
+    $("changePasswordMessage").className = "message error";
+  }
+}
+
 async function loadSnapshot() {
   state.snapshot = await api("/sync/setup-snapshot");
   fillDatalist($("jobOptions"), state.snapshot.jobs, (job) => job.jobNum);
@@ -2838,6 +2868,8 @@ function ruleLabel(rule) {
 window.addEventListener("online", () => setStatus($("syncStatus"), "Online", "ok"));
 window.addEventListener("offline", () => setStatus($("syncStatus"), "Offline", "warn"));
 $("loginForm").addEventListener("submit", login);
+$("showChangePasswordButton").addEventListener("click", toggleChangePassword);
+$("changePasswordButton").addEventListener("click", changePassword);
 $("contextForm").addEventListener("submit", loadContext);
 $("jobNum").addEventListener("input", () => {
   updatePartFromJob();

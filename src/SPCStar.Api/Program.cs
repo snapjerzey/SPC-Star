@@ -62,6 +62,19 @@ app.MapGet("/auth/me", (string userName, AuthSessionService service) =>
         : Results.NotFound(new { errors = result.Errors });
 });
 
+app.MapPost("/auth/change-password", (ChangePasswordRequest request, AuthSessionService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.ChangePassword(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(new { changed = true })
+        : Results.BadRequest(new { changed = false, errors = result.Errors });
+});
+
 app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService service, IRepositoryPersistence persistence) =>
 {
     var result = service.ImportCsv(request.Csv);

@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260616-review-context">
+  <link rel="stylesheet" href="/styles.css?v=20260616-review-typed-part">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -565,7 +565,7 @@
             <h2>Review</h2>
           </div>
           <div class="review-filter-bar">
-            <select id="partReviewFilter" class="compact-select"></select>
+            <input id="partReviewFilter" list="partOptions" autocomplete="off" inputmode="text" placeholder="Part number">
             <input id="reviewJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="Optional job number">
             <button id="reviewLoadButton" type="button" class="secondary">Review Job</button>
           </div>
@@ -694,6 +694,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260616-review-context"></script>
+  <script src="/app.js?v=20260616-review-typed-part"></script>
 </body>
 </html>

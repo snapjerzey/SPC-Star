@@ -1491,8 +1491,7 @@ async function loadSetupAdmin() {
 }
 
 function renderPartReviewControls() {
-  const parts = [{ partNum: "", description: "All parts" }, ...state.snapshot.parts];
-  fillSelect($("partReviewFilter"), parts, (part) => part.partNum, (part) => part.partNum || part.description);
+  $("partReviewFilter").placeholder = "Part number";
 }
 
 function renderReportControls() {
@@ -1501,7 +1500,7 @@ function renderReportControls() {
 }
 
 async function loadReview() {
-  const partNum = $("partReviewFilter").value;
+  const partNum = $("partReviewFilter").value.trim();
   const jobNum = $("reviewJobNum").value.trim();
   if (!jobNum) {
     $("partReviewList").classList.remove("hidden");
@@ -2938,6 +2937,12 @@ $("csvImportForm").addEventListener("submit", importCsv);
 $("xlsxImportForm").addEventListener("submit", importXlsx);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
 $("partReviewFilter").addEventListener("change", loadReview);
+$("partReviewFilter").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    loadReview();
+  }
+});
 $("reviewLoadButton").addEventListener("click", loadReview);
 $("reviewJobNum").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {

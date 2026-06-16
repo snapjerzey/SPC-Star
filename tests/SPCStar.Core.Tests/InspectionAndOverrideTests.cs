@@ -39,6 +39,27 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_Succeeds_WhenDriftRuleHasNoControlSpread()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var limit = repository.ControlLimits.First(item =>
+            item.PartNum == "P100" &&
+            item.ProcessCode == "MOLD" &&
+            item.OperationSeq == 10 &&
+            item.CharacteristicName == "Diameter");
+        limit.CenterLine = 5m;
+        limit.Lcl = 5m;
+        limit.Ucl = 5m;
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(5m));
+
+        Assert.True(result.Succeeded);
+        Assert.Empty(repository.Alerts);
+        Assert.Empty(repository.RuleViolations);
+    }
+
+    [Fact]
     public void EnterMeasurement_UsesGlobalRuleSet_WhenPlanUsesGlobalDefault()
     {
         var repository = RepositoryWithSecurityAndLimits();

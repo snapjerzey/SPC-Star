@@ -65,7 +65,7 @@ public sealed class ChartDataService(ISpcRepository repository)
 
         var first = measurements.FirstOrDefault();
         var limits = first is null ? null : FindControlLimits(first);
-        var specs = first is null ? null : FindSpecLimits(first.PartNum, first.CharacteristicName);
+        var specs = first is null ? null : FindSpecLimits(first);
         var mean = measurements.Length == 0 ? null : (decimal?)measurements.Average(measurement => measurement.Value);
 
         return new ChartDataSet(
@@ -87,18 +87,27 @@ public sealed class ChartDataService(ISpcRepository repository)
             limit.CharacteristicName.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private SpecLimit? FindSpecLimits(string partNum, string characteristicName)
+    private SpecLimit? FindSpecLimits(InspectionMeasurement measurement)
     {
-        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase));
-        if (part is null)
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase));
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase));
+        if (part is null || process is null)
         {
             return null;
         }
 
-        var operationIds = repository.Operations.Where(item => item.PartId == part.Id).Select(item => item.Id).ToHashSet();
+        var operation = repository.Operations.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.ProcessId == process.Id &&
+            item.OperationSeq == measurement.OperationSeq);
+        if (operation is null)
+        {
+            return null;
+        }
+
         var characteristic = repository.Characteristics.FirstOrDefault(item =>
-            operationIds.Contains(item.OperationId) &&
-            item.Name.Equals(characteristicName, StringComparison.OrdinalIgnoreCase));
+            item.OperationId == operation.Id &&
+            item.Name.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase));
 
         return characteristic is null
             ? null

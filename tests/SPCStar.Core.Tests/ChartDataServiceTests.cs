@@ -72,6 +72,32 @@ public sealed class ChartDataServiceTests
         Assert.DoesNotContain(result.Points, point => point.Value == 9.9m);
     }
 
+    [Fact]
+    public void Build_UsesSpecLimitsForMeasurementsOperation()
+    {
+        var repository = RepositoryWithChartData();
+        var part = repository.Parts.Single(part => part.PartNum == "P100");
+        var polishProcess = new ManufacturingProcess { ProcessCode = "POLISH", Description = "Polish" };
+        var polishOperation = new Operation { PartId = part.Id, ProcessId = polishProcess.Id, OperationSeq = 10 };
+        var polishCharacteristic = new Characteristic
+        {
+            OperationId = polishOperation.Id,
+            Name = "Diameter",
+            Type = CharacteristicType.Variable,
+            UnitOfMeasure = "mm"
+        };
+
+        repository.Processes.Add(polishProcess);
+        repository.Operations.Add(polishOperation);
+        repository.Characteristics.Add(polishCharacteristic);
+        repository.SpecLimits.Add(new SpecLimit { CharacteristicId = polishCharacteristic.Id, Nominal = 8m, Lsl = 7m, Usl = 9m });
+
+        var result = new ChartDataService(repository)
+            .Build(new ChartDataRequest(ChartType.Run, "J100", "P100", "PRESS1", "Diameter", null, null));
+
+        Assert.Equal(4.5m, result.LowerSpecLimit);
+        Assert.Equal(5.5m, result.UpperSpecLimit);
+    }
 
     private static InMemorySpcRepository RepositoryWithChartData()
     {

@@ -151,12 +151,16 @@ public sealed class JobReviewService(
     private SpecLimit? FindSpecLimit(InspectionMeasurement measurement)
     {
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase));
-        if (part is null)
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase));
+        if (part is null || process is null)
         {
             return null;
         }
 
-        var operation = repository.Operations.FirstOrDefault(item => item.PartId == part.Id && item.OperationSeq == measurement.OperationSeq);
+        var operation = repository.Operations.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.ProcessId == process.Id &&
+            item.OperationSeq == measurement.OperationSeq);
         if (operation is null)
         {
             return null;

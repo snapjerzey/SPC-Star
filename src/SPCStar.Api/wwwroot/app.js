@@ -1495,8 +1495,19 @@ function renderPartReviewControls() {
 }
 
 function renderReportControls() {
+  refreshReportOperationChoices();
   fillSelect($("reportResourceId"), [{ resourceId: "", description: "All machines" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
   fillDatalist($("reportCharacteristicOptions"), state.snapshot.characteristics, (characteristic) => characteristic.name);
+}
+
+function refreshReportOperationChoices() {
+  const partNum = reportPartFilter();
+  const operations = partNum ? operationsForPart(partNum) : [];
+  fillSelect(
+    $("reportOperationCode"),
+    [{ processCode: "", operationSeq: "", processDescription: "All operations" }, ...operations],
+    (operation) => operation.processCode ? operationKeyFor(operation) : "",
+    (operation) => operation.processCode ? operationLabelFor(operation) : operation.processDescription);
 }
 
 async function loadReview() {
@@ -1739,13 +1750,15 @@ function renderJobSummary(rows) {
   container.className = "data-table job-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Job</span><span>Variable</span><span>COA Stat</span><span>COA Value</span><span>Mean</span><span>Min</span><span>Max</span><span>Std Dev</span><span>Cpk</span><span>Ppk</span>
+      <span>Job</span><span>Operation</span><span>Phase</span><span>Variable</span><span>COA Stat</span><span>COA Value</span><span>Mean</span><span>Min</span><span>Max</span><span>Std Dev</span><span>Cpk</span><span>Ppk</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
     item.className = "data-row";
     item.innerHTML = `
       <span>${row.jobNum}</span>
+      <span>${row.processCode || ""} ${row.operationSeq || ""}</span>
+      <span>${row.inspectionPhases || ""}</span>
       <span>${row.characteristicName} (${row.unitOfMeasure})</span>
       <span>${coaStatisticLabel(row.coaStatisticType)}</span>
       <span>${formatNumber(row.coaValue)}</span>
@@ -1811,10 +1824,13 @@ async function runReport(event) {
 }
 
 function reportRequest(characteristicName) {
+  const operation = selectedReportOperation();
   return {
     chartType: "IndividualsMovingRange",
     jobNum: $("reportJobNum").value.trim() || null,
     partNum: $("reportPartNum").value.trim() || null,
+    processCode: operation?.processCode || null,
+    operationSeq: operation?.operationSeq || null,
     resourceId: $("reportResourceId").value || null,
     characteristicName,
     from: dateTimeLocalValue("reportFrom"),
@@ -1829,17 +1845,36 @@ function reportCharacteristicCandidates() {
     return [entered];
   }
 
-  const reportPart = $("reportPartNum").value.trim();
-  const reportJob = $("reportJobNum").value.trim();
-  const jobPart = state.snapshot.jobs.find((job) => job.jobNum.toLowerCase() === reportJob.toLowerCase())?.partNum || "";
-  const partFilter = reportPart || jobPart;
+  const partFilter = reportPartFilter();
+  const operation = selectedReportOperation();
   const phaseFilter = $("reportInspectionPhase").value;
   const plans = state.snapshot.inspectionPlans.filter((plan) =>
     (!partFilter || plan.partNum.toLowerCase() === partFilter.toLowerCase()) &&
+    (!operation || operationKeyFor(plan) === operationKeyFor(operation)) &&
     (!phaseFilter || normalizeInspectionPhase(plan.inspectionPhase) === normalizeInspectionPhase(phaseFilter)));
   const names = plans.map((plan) => plan.characteristicName);
   const fallback = state.snapshot.characteristics.map((characteristic) => characteristic.name);
   return [...new Set((names.length ? names : fallback).filter(Boolean))].sort();
+}
+
+function reportPartFilter() {
+  const reportPart = $("reportPartNum").value.trim();
+  const reportJob = $("reportJobNum").value.trim();
+  const jobPart = state.snapshot.jobs.find((job) => job.jobNum.toLowerCase() === reportJob.toLowerCase())?.partNum || "";
+  return reportPart || jobPart;
+}
+
+function selectedReportOperation() {
+  const value = $("reportOperationCode").value;
+  if (!value) {
+    return null;
+  }
+
+  const [processCode, operationSeqText] = value.split("|");
+  return {
+    processCode,
+    operationSeq: Number(operationSeqText)
+  };
 }
 
 function renderReportCharts(results) {
@@ -1935,6 +1970,7 @@ function drawReportHeader(ctx, width, points, data, chartType, characteristicNam
   const filters = [
     $("reportPartNum").value.trim() || "All parts",
     $("reportJobNum").value.trim() || "All jobs",
+    selectedReportOperation() ? $("reportOperationCode").selectedOptions[0]?.textContent || "Selected operation" : "All operations",
     characteristicName || $("reportCharacteristicName").value.trim() || "All variables",
     $("reportInspectionPhase").value || "All phases"
   ].join(" / ");
@@ -2950,6 +2986,8 @@ $("reviewJobNum").addEventListener("keydown", (event) => {
     loadReview();
   }
 });
+$("reportPartNum").addEventListener("change", refreshReportOperationChoices);
+$("reportJobNum").addEventListener("change", refreshReportOperationChoices);
 $("jobSummaryForm").addEventListener("submit", loadJobSummary);
 $("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
 $("reportForm").addEventListener("submit", runReport);

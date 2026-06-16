@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260616-review-typed-part">
+  <link rel="stylesheet" href="/styles.css?v=20260616-operation-report-context">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -593,6 +593,7 @@
         <form id="reportForm" class="report-filter-form">
           <label>Part<input id="reportPartNum" list="partOptions" autocomplete="off"></label>
           <label>Job<input id="reportJobNum" list="jobOptions" autocomplete="off"></label>
+          <label>Operation<select id="reportOperationCode"></select></label>
           <label>Machine<select id="reportResourceId"></select></label>
           <label>Variable / Attribute<input id="reportCharacteristicName" list="reportCharacteristicOptions" autocomplete="off"></label>
           <datalist id="reportCharacteristicOptions"></datalist>
@@ -694,6 +695,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260616-review-typed-part"></script>
+  <script src="/app.js?v=20260616-operation-report-context"></script>
 </body>
 </html>

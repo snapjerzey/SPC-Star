@@ -11,7 +11,9 @@ public sealed record ChartDataRequest(
     string? CharacteristicName,
     DateTimeOffset? From,
     DateTimeOffset? To,
-    string? InspectionPhase = null);
+    string? InspectionPhase = null,
+    string? ProcessCode = null,
+    int? OperationSeq = null);
 
 public sealed record ChartPoint(
     Guid MeasurementId,
@@ -38,6 +40,8 @@ public sealed class ChartDataService(ISpcRepository repository)
             .Where(measurement =>
                 Matches(request.JobNum, measurement.JobNum) &&
                 Matches(request.PartNum, measurement.PartNum) &&
+                Matches(request.ProcessCode, measurement.ProcessCode) &&
+                (!request.OperationSeq.HasValue || measurement.OperationSeq == request.OperationSeq.Value) &&
                 Matches(request.ResourceId, measurement.ResourceId) &&
                 Matches(request.CharacteristicName, measurement.CharacteristicName) &&
                 Matches(request.InspectionPhase, measurement.InspectionPhase) &&

@@ -73,6 +73,22 @@ public sealed class ChartDataServiceTests
     }
 
     [Fact]
+    public void Build_FiltersByOperation()
+    {
+        var repository = RepositoryWithChartData();
+        var polishMeasurement = Measurement(8.1m, 4);
+        polishMeasurement.ProcessCode = "POLISH";
+        polishMeasurement.OperationSeq = 20;
+        repository.Measurements.Add(polishMeasurement);
+
+        var result = new ChartDataService(repository)
+            .Build(new ChartDataRequest(ChartType.Run, "J100", "P100", "PRESS1", "Diameter", null, null, null, "MOLD", 10));
+
+        Assert.Equal(3, result.Points.Count);
+        Assert.DoesNotContain(result.Points, point => point.Value == 8.1m);
+    }
+
+    [Fact]
     public void Build_UsesSpecLimitsForMeasurementsOperation()
     {
         var repository = RepositoryWithChartData();

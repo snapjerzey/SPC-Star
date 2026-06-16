@@ -89,8 +89,14 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             (!request.To.HasValue || measurement.Timestamp <= request.To.Value));
 
         var rows = query
-            .GroupBy(measurement => new { measurement.PartNum, measurement.JobNum, measurement.CharacteristicName })
-            .Select(group => BuildRow(group.Key.PartNum, group.Key.JobNum, group.Key.CharacteristicName, group.Select(item => item.Value).ToArray()))
+            .GroupBy(measurement => new { measurement.PartNum, measurement.JobNum, measurement.ProcessCode, measurement.OperationSeq, measurement.CharacteristicName })
+            .Select(group => BuildRow(
+                group.Key.PartNum,
+                group.Key.JobNum,
+                group.Key.ProcessCode,
+                group.Key.OperationSeq,
+                group.Key.CharacteristicName,
+                group.Select(item => item.Value).ToArray()))
             .OrderBy(row => row.PartNum)
             .ThenBy(row => row.JobNum)
             .ThenBy(row => row.CharacteristicName)
@@ -119,17 +125,20 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
 
         var plans =
             from operation in repository.Operations
+            join process in repository.Processes on operation.ProcessId equals process.Id
             join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
             join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
             where operation.PartId == part.Id && characteristic.Type == CharacteristicType.Variable
             orderby operation.OperationSeq, characteristic.Name
-            select new { part.PartNum, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
+            select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         var rows = plans
             .Select(plan => BuildCapabilityRow("All Jobs", plan.PartNum, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
                 repository.Measurements
                     .Where(measurement =>
                         measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                        measurement.ProcessCode.Equals(plan.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                        measurement.OperationSeq == plan.OperationSeq &&
                         measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
                     .Select(measurement => measurement.Value)
                     .ToArray()))
@@ -241,12 +250,13 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         var plans =
             from part in repository.Parts
             join operation in repository.Operations on part.Id equals operation.PartId
+            join process in repository.Processes on operation.ProcessId equals process.Id
             join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
             join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
             where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase) &&
                 (!requiredOnly || characteristic.IsRequiredForCoa)
             orderby operation.OperationSeq, characteristic.Name
-            select new { part.PartNum, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
+            select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         return plans.Select(plan =>
             BuildCapabilityRow(job.JobNum, plan.PartNum, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
@@ -254,6 +264,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
                 .Where(measurement =>
                     measurement.JobNum.Equals(job.JobNum, StringComparison.OrdinalIgnoreCase) &&
                     measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                    measurement.ProcessCode.Equals(plan.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                    measurement.OperationSeq == plan.OperationSeq &&
                     measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
                 .Select(measurement => measurement.Value)
                 .ToArray()));
@@ -337,10 +349,10 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         return ServiceResult<string>.Ok(CsvSupport.WriteRows(Headers, rows));
     }
 
-    private QaSummaryRow BuildRow(string partNum, string jobNum, string characteristicName, IReadOnlyList<decimal> values)
+    private QaSummaryRow BuildRow(string partNum, string jobNum, string processCode, int operationSeq, string characteristicName, IReadOnlyList<decimal> values)
     {
-        var spec = FindSpecLimit(partNum, characteristicName);
-        var coaStatisticType = FindCharacteristic(partNum, characteristicName)?.CoaStatisticType ?? CoaStatisticType.Mean;
+        var spec = FindSpecLimit(partNum, processCode, operationSeq, characteristicName);
+        var coaStatisticType = FindCharacteristic(partNum, processCode, operationSeq, characteristicName)?.CoaStatisticType ?? CoaStatisticType.Mean;
         var acceptedValues = spec is null
             ? values.ToArray()
             : values.Where(value => value >= spec.Lsl && value <= spec.Usl).ToArray();
@@ -368,28 +380,34 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             acceptedValues.Length > 0 ? PassFailStatus.Pass : PassFailStatus.Fail);
     }
 
-    private SpecLimit? FindSpecLimit(string partNum, string characteristicName)
+    private SpecLimit? FindSpecLimit(string partNum, string processCode, int operationSeq, string characteristicName)
     {
-        var characteristic = FindCharacteristic(partNum, characteristicName);
+        var characteristic = FindCharacteristic(partNum, processCode, operationSeq, characteristicName);
         return characteristic is null
             ? null
             : repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
     }
 
-    private Characteristic? FindCharacteristic(string partNum, string characteristicName)
+    private Characteristic? FindCharacteristic(string partNum, string processCode, int operationSeq, string characteristicName)
     {
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase));
-        if (part is null)
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(processCode, StringComparison.OrdinalIgnoreCase));
+        if (part is null || process is null)
         {
             return null;
         }
 
-        var operationIds = repository.Operations
-            .Where(operation => operation.PartId == part.Id)
-            .Select(operation => operation.Id)
-            .ToHashSet();
+        var operation = repository.Operations.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.ProcessId == process.Id &&
+            item.OperationSeq == operationSeq);
+        if (operation is null)
+        {
+            return null;
+        }
+
         return repository.Characteristics.FirstOrDefault(item =>
-            operationIds.Contains(item.OperationId) &&
+            item.OperationId == operation.Id &&
             item.Name.Equals(characteristicName, StringComparison.OrdinalIgnoreCase));
     }
 

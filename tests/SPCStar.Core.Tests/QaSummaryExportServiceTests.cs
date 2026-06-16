@@ -150,6 +150,61 @@ public sealed class QaSummaryExportServiceTests
         Assert.NotNull(row.Cpk);
     }
 
+    [Fact]
+    public void BuildJobVariableMeans_KeepsDuplicateCharacteristicNamesSeparatedByOperation()
+    {
+        var repository = RepositoryWithMeasurements();
+        var part = repository.Parts.Single(part => part.PartNum == "P100");
+        var polishProcess = new ManufacturingProcess { ProcessCode = "POLISH", Description = "Polish" };
+        var polishOperation = new Operation { PartId = part.Id, ProcessId = polishProcess.Id, OperationSeq = 10 };
+        var polishCharacteristic = new Characteristic
+        {
+            OperationId = polishOperation.Id,
+            Name = "Diameter",
+            Type = CharacteristicType.Variable,
+            UnitOfMeasure = "mm",
+            IsRequiredForCoa = true
+        };
+        repository.Processes.Add(polishProcess);
+        repository.Operations.Add(polishOperation);
+        repository.Characteristics.Add(polishCharacteristic);
+        repository.SpecLimits.Add(new SpecLimit { CharacteristicId = polishCharacteristic.Id, Nominal = 8m, Lsl = 7m, Usl = 9m });
+
+        var result = new QaSummaryExportService(repository).BuildJobVariableMeans("J100");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 4.5m && row.Count == 3 && row.Status == "Pass");
+        Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 7m && row.Count == 0 && row.Status == "NoData");
+    }
+
+    [Fact]
+    public void BuildPartCapability_KeepsDuplicateCharacteristicNamesSeparatedByOperation()
+    {
+        var repository = RepositoryWithMeasurements();
+        var part = repository.Parts.Single(part => part.PartNum == "P100");
+        var polishProcess = new ManufacturingProcess { ProcessCode = "POLISH", Description = "Polish" };
+        var polishOperation = new Operation { PartId = part.Id, ProcessId = polishProcess.Id, OperationSeq = 10 };
+        var polishCharacteristic = new Characteristic
+        {
+            OperationId = polishOperation.Id,
+            Name = "Diameter",
+            Type = CharacteristicType.Variable,
+            UnitOfMeasure = "mm"
+        };
+        repository.Processes.Add(polishProcess);
+        repository.Operations.Add(polishOperation);
+        repository.Characteristics.Add(polishCharacteristic);
+        repository.SpecLimits.Add(new SpecLimit { CharacteristicId = polishCharacteristic.Id, Nominal = 8m, Lsl = 7m, Usl = 9m });
+
+        var result = new QaSummaryExportService(repository).BuildPartCapability("P100");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 4.5m && row.Count == 3 && row.Status == "Pass");
+        Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 7m && row.Count == 0 && row.Status == "NoData");
+    }
+
     private static InMemorySpcRepository RepositoryWithMeasurements(CoaStatisticType coaStatisticType = CoaStatisticType.Mean)
     {
         var repository = new InMemorySpcRepository();

@@ -1580,13 +1580,14 @@ function renderReviewSummary(rows, container, emptyMessage) {
   container.className = "data-table review-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Scope</span><span>Variable</span><span>Type</span><span>Mean</span><span>Std Dev</span><span>Cp</span><span>Cpk</span><span>Pp</span><span>Ppk</span><span>Count</span>
+      <span>Scope</span><span>Operation</span><span>Variable</span><span>Type</span><span>Mean</span><span>Std Dev</span><span>Cp</span><span>Cpk</span><span>Pp</span><span>Ppk</span><span>Count</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
     item.className = "data-row";
     item.innerHTML = `
       <span>${row.jobNum}</span>
+      <span>${row.processCode || ""} ${row.operationSeq || ""}</span>
       <span>${row.characteristicName}</span>
       <span>${row.characteristicType === "Attribute" ? "Accept/Reject" : "Measured"}</span>
       <span>${formatNumber(row.mean)}</span>

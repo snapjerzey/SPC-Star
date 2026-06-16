@@ -29,6 +29,8 @@ public sealed record QaSummaryRow(
 public sealed record JobVariableMeanRow(
     string JobNum,
     string PartNum,
+    string ProcessCode,
+    int OperationSeq,
     string CharacteristicName,
     CharacteristicType CharacteristicType,
     string UnitOfMeasure,
@@ -133,7 +135,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         var rows = plans
-            .Select(plan => BuildCapabilityRow("All Jobs", plan.PartNum, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
+            .Select(plan => BuildCapabilityRow("All Jobs", plan.PartNum, plan.ProcessCode, plan.OperationSeq, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
                 repository.Measurements
                     .Where(measurement =>
                         measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
@@ -195,6 +197,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         {
             "JobNum",
             "PartNum",
+            "ProcessCode",
+            "OperationSeq",
             "CharacteristicName",
             "CharacteristicType",
             "UnitOfMeasure",
@@ -220,6 +224,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         {
             ["JobNum"] = row.JobNum,
             ["PartNum"] = row.PartNum,
+            ["ProcessCode"] = row.ProcessCode,
+            ["OperationSeq"] = row.OperationSeq.ToString(),
             ["CharacteristicName"] = row.CharacteristicName,
             ["CharacteristicType"] = row.CharacteristicType.ToString(),
             ["UnitOfMeasure"] = row.UnitOfMeasure,
@@ -259,7 +265,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, characteristic.IsRequiredForCoa, characteristic.CoaStatisticType, spec.Nominal, spec.Lsl, spec.Usl };
 
         return plans.Select(plan =>
-            BuildCapabilityRow(job.JobNum, plan.PartNum, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
+            BuildCapabilityRow(job.JobNum, plan.PartNum, plan.ProcessCode, plan.OperationSeq, plan.Name, plan.Type, plan.UnitOfMeasure, plan.IsRequiredForCoa, plan.CoaStatisticType, plan.Nominal, plan.Lsl, plan.Usl,
                 repository.Measurements
                 .Where(measurement =>
                     measurement.JobNum.Equals(job.JobNum, StringComparison.OrdinalIgnoreCase) &&
@@ -274,6 +280,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
     private static JobVariableMeanRow BuildCapabilityRow(
         string jobNum,
         string partNum,
+        string processCode,
+        int operationSeq,
         string characteristicName,
         CharacteristicType characteristicType,
         string unitOfMeasure,
@@ -298,6 +306,8 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         return new JobVariableMeanRow(
             jobNum,
             partNum,
+            processCode,
+            operationSeq,
             characteristicName,
             characteristicType,
             unitOfMeasure,

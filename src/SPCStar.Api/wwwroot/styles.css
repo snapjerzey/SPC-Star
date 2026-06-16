@@ -818,8 +818,8 @@ textarea {
   min-width: 1040px;
 }
 .review-summary-table .data-row {
-  grid-template-columns: .8fr 1.2fr .8fr .8fr .8fr .8fr .8fr .8fr .8fr .8fr;
-  min-width: 980px;
+  grid-template-columns: .75fr 1fr 1.25fr .8fr .75fr .75fr .75fr .75fr .75fr .75fr .75fr;
+  min-width: 1120px;
 }
 .review-measurement-table .data-row {
   grid-template-columns: 1fr .85fr 1.1fr .75fr .75fr .8fr .8fr auto;

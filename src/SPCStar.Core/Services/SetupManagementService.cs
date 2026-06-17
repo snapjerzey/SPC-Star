@@ -11,7 +11,10 @@ public sealed record ResetUserPasswordRequest(string UserName, string TemporaryP
 
 public sealed record UserImportResult(int Imported);
 
-public sealed record UpdateSettingsRequest(string GlobalAlertRuleSet, CustomDriftRuleSetupDto? CustomDriftRule = null);
+public sealed record UpdateSettingsRequest(
+    string GlobalAlertRuleSet,
+    CustomDriftRuleSetupDto? CustomDriftRule = null,
+    CapabilityThresholdSetupDto? CapabilityThresholds = null);
 
 public sealed record UpsertInspectionSetupRequest(
     string PartNum,
@@ -117,12 +120,28 @@ public sealed class SetupManagementService(ISpcRepository repository)
             };
         }
 
+        if (request.CapabilityThresholds is not null)
+        {
+            var thresholdErrors = ValidateCapabilityThresholds(request.CapabilityThresholds);
+            if (thresholdErrors.Count > 0)
+            {
+                return ServiceResult<SettingsSetupDto>.Fail(thresholdErrors);
+            }
+
+            repository.Settings.CapabilityThresholds = new CapabilityThresholdSettings
+            {
+                YellowMinimum = request.CapabilityThresholds.YellowMinimum,
+                GreenMinimum = request.CapabilityThresholds.GreenMinimum
+            };
+        }
+
         return ServiceResult<SettingsSetupDto>.Ok(GetSettings());
     }
 
     private SettingsSetupDto SettingsDto()
     {
         var custom = repository.Settings.CustomDriftRule;
+        var capability = repository.Settings.CapabilityThresholds;
         return new SettingsSetupDto(
             repository.Settings.GlobalAlertRuleSet,
             new CustomDriftRuleSetupDto(
@@ -133,7 +152,10 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 custom.Direction,
                 custom.IncludeWesternElectric,
                 custom.WarningBehavior,
-                custom.Notes));
+                custom.Notes),
+            new CapabilityThresholdSetupDto(
+                capability.YellowMinimum,
+                capability.GreenMinimum));
     }
 
     private static List<string> ValidateCustomRule(CustomDriftRuleSetupDto rule)
@@ -162,6 +184,27 @@ public sealed class SetupManagementService(ISpcRepository repository)
         if (!new[] { "Lock", "Warning", "AuditOnly" }.Contains(rule.WarningBehavior, StringComparer.OrdinalIgnoreCase))
         {
             errors.Add("Custom rule warning behavior is not supported.");
+        }
+
+        return errors;
+    }
+
+    private static List<string> ValidateCapabilityThresholds(CapabilityThresholdSetupDto thresholds)
+    {
+        var errors = new List<string>();
+        if (thresholds.YellowMinimum <= 0 || thresholds.YellowMinimum > 10)
+        {
+            errors.Add("Capability yellow minimum must be greater than 0 and no more than 10.");
+        }
+
+        if (thresholds.GreenMinimum <= 0 || thresholds.GreenMinimum > 10)
+        {
+            errors.Add("Capability green minimum must be greater than 0 and no more than 10.");
+        }
+
+        if (thresholds.GreenMinimum <= thresholds.YellowMinimum)
+        {
+            errors.Add("Capability green minimum must be greater than the yellow minimum.");
         }
 
         return errors;

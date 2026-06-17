@@ -76,6 +76,7 @@ public sealed class AppSettings
 {
     public string GlobalAlertRuleSet { get; set; } = "WesternElectric";
     public CustomDriftRuleSettings CustomDriftRule { get; set; } = new();
+    public CapabilityThresholdSettings CapabilityThresholds { get; set; } = new();
 }
 
 public sealed class CustomDriftRuleSettings
@@ -88,6 +89,12 @@ public sealed class CustomDriftRuleSettings
     public bool IncludeWesternElectric { get; set; }
     public string WarningBehavior { get; set; } = "Lock";
     public string Notes { get; set; } = "Triggers when the configured number of recent points are beyond the configured sigma threshold.";
+}
+
+public sealed class CapabilityThresholdSettings
+{
+    public decimal YellowMinimum { get; set; } = 1.00m;
+    public decimal GreenMinimum { get; set; } = 1.33m;
 }
 
 public sealed class InspectionFrequency

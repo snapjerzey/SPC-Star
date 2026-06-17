@@ -116,6 +116,7 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         {
             repository.Settings.GlobalAlertRuleSet = Settings?.GlobalAlertRuleSet ?? "WesternElectric";
             repository.Settings.CustomDriftRule = Settings?.CustomDriftRule ?? new CustomDriftRuleSettings();
+            repository.Settings.CapabilityThresholds = Settings?.CapabilityThresholds ?? new CapabilityThresholdSettings();
             repository.Roles.AddRange(Roles.Select(role => role.ToRole()));
             foreach (var user in Users)
             {

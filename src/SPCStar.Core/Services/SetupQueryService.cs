@@ -72,7 +72,12 @@ public sealed record CustomDriftRuleSetupDto(
     string WarningBehavior,
     string Notes);
 
-public sealed record SettingsSetupDto(string GlobalAlertRuleSet, CustomDriftRuleSetupDto CustomDriftRule);
+public sealed record CapabilityThresholdSetupDto(decimal YellowMinimum, decimal GreenMinimum);
+
+public sealed record SettingsSetupDto(
+    string GlobalAlertRuleSet,
+    CustomDriftRuleSetupDto CustomDriftRule,
+    CapabilityThresholdSetupDto CapabilityThresholds);
 
 public sealed record PartJobDataFieldSetupDto(
     string PartNum,
@@ -243,6 +248,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
     private SettingsSetupDto SettingsDto()
     {
         var custom = repository.Settings.CustomDriftRule;
+        var capability = repository.Settings.CapabilityThresholds;
         return new SettingsSetupDto(
             repository.Settings.GlobalAlertRuleSet,
             new CustomDriftRuleSetupDto(
@@ -253,7 +259,10 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 custom.Direction,
                 custom.IncludeWesternElectric,
                 custom.WarningBehavior,
-                custom.Notes));
+                custom.Notes),
+            new CapabilityThresholdSetupDto(
+                capability.YellowMinimum,
+                capability.GreenMinimum));
     }
 
     private static string ProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();

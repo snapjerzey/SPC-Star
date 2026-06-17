@@ -582,9 +582,18 @@ function standardDeviation(values) {
 
 function capabilityClass(value) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return "capability-neutral";
-  if (Number(value) >= 1.33) return "capability-good";
-  if (Number(value) >= 1.0) return "capability-warn";
+  const thresholds = capabilityThresholds();
+  if (Number(value) >= thresholds.greenMinimum) return "capability-good";
+  if (Number(value) >= thresholds.yellowMinimum) return "capability-warn";
   return "capability-bad";
+}
+
+function capabilityThresholds() {
+  const settings = state.snapshot?.settings?.capabilityThresholds || {};
+  return {
+    yellowMinimum: Number(settings.yellowMinimum ?? 1.00),
+    greenMinimum: Number(settings.greenMinimum ?? 1.33)
+  };
 }
 
 function formatFrequency(plan) {
@@ -1553,8 +1562,15 @@ function renderSetupEditChoices() {
 
 function renderGlobalRuleSetting() {
   $("globalAlertRuleSet").value = state.snapshot.settings?.globalAlertRuleSet || "WesternElectric";
+  renderCapabilityThresholds();
   updateRuleDescription();
   loadCustomRuleForm();
+}
+
+function renderCapabilityThresholds() {
+  const thresholds = capabilityThresholds();
+  $("capabilityYellowMinimum").value = thresholds.yellowMinimum.toFixed(2);
+  $("capabilityGreenMinimum").value = thresholds.greenMinimum.toFixed(2);
 }
 
 async function renderPartReview() {
@@ -2555,6 +2571,35 @@ async function saveGlobalRule(event) {
   }
 }
 
+function capabilityThresholdPayload() {
+  return {
+    yellowMinimum: Number($("capabilityYellowMinimum").value),
+    greenMinimum: Number($("capabilityGreenMinimum").value)
+  };
+}
+
+async function saveCapabilityThresholds(event) {
+  event.preventDefault();
+  try {
+    const settings = await api("/setup/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        globalAlertRuleSet: $("globalAlertRuleSet").value,
+        capabilityThresholds: capabilityThresholdPayload()
+      })
+    });
+    state.snapshot.settings = settings;
+    renderCapabilityThresholds();
+    renderMeanSummary();
+    renderPartReview();
+    $("capabilityThresholdMessage").textContent = "Capability thresholds saved.";
+    $("capabilityThresholdMessage").className = "message ok";
+  } catch (error) {
+    $("capabilityThresholdMessage").textContent = readableError(error);
+    $("capabilityThresholdMessage").className = "message error";
+  }
+}
+
 function updateRowFrequencyUnits(row, requestedUnit = null) {
   const unitsByType = {
     Quantity: [["Pieces", "Pieces"], ["Box", "Box"]],
@@ -3039,6 +3084,7 @@ $("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);
 $("setupAlertRuleSet").addEventListener("change", updateRuleDescription);
 $("globalAlertRuleSet").addEventListener("change", updateRuleDescription);
 $("globalRuleForm").addEventListener("submit", saveGlobalRule);
+$("capabilityThresholdForm").addEventListener("submit", saveCapabilityThresholds);
 document.querySelectorAll(".rule-card[data-rule-key]").forEach((card) => {
   card.addEventListener("click", () => openRuleDetail(card.dataset.ruleKey));
 });

@@ -127,6 +127,35 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpdateSettings_SavesCapabilityThresholds()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpdateSettings(new UpdateSettingsRequest(
+            "WesternElectric",
+            CapabilityThresholds: new CapabilityThresholdSetupDto(1.10m, 1.50m)));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1.10m, repository.Settings.CapabilityThresholds.YellowMinimum);
+        Assert.Equal(1.50m, repository.Settings.CapabilityThresholds.GreenMinimum);
+    }
+
+    [Fact]
+    public void UpdateSettings_RejectsCapabilityThresholdsWhenGreenIsNotHigherThanYellow()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpdateSettings(new UpdateSettingsRequest(
+            "WesternElectric",
+            CapabilityThresholds: new CapabilityThresholdSetupDto(1.33m, 1.00m)));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("green minimum", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void UpsertInspectionSetup_CreatesPartOperationCharacteristicAndLimits()
     {
         var repository = new InMemorySpcRepository();

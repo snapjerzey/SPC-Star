@@ -1450,10 +1450,18 @@ function showPanel(panelName) {
 }
 
 function showSetupSection(sectionName) {
-  const sections = ["Inspection", "Users", "Rules", "Import", "Review", "Reports", "JobData"];
+  const sections = ["Inspection", "Users", "Rules", "Import", "History"];
   sections.forEach((section) => {
     $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
     $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
+  });
+}
+
+function showHistoryView(viewName) {
+  const views = ["Ledger", "Charts", "Export"];
+  views.forEach((view) => {
+    $(`history${view}View`).classList.toggle("hidden", view !== viewName);
+    $(`history${view}Tab`).classList.toggle("active", view === viewName);
   });
 }
 
@@ -3064,9 +3072,10 @@ $("setupInspectionSectionTab").addEventListener("click", () => showSetupSection(
 $("setupUsersSectionTab").addEventListener("click", () => showSetupSection("Users"));
 $("setupRulesSectionTab").addEventListener("click", () => showSetupSection("Rules"));
 $("setupImportSectionTab").addEventListener("click", () => showSetupSection("Import"));
-$("setupReviewSectionTab").addEventListener("click", () => showSetupSection("Review"));
-$("setupReportsSectionTab").addEventListener("click", () => showSetupSection("Reports"));
-$("setupJobDataSectionTab").addEventListener("click", () => showSetupSection("JobData"));
+$("setupHistorySectionTab").addEventListener("click", () => showSetupSection("History"));
+$("historyLedgerTab").addEventListener("click", () => showHistoryView("Ledger"));
+$("historyChartsTab").addEventListener("click", () => showHistoryView("Charts"));
+$("historyExportTab").addEventListener("click", () => showHistoryView("Export"));
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
 $("newUserButton").addEventListener("click", newUser);

@@ -234,9 +234,7 @@
         <button id="setupUsersSectionTab" type="button" class="setup-nav-button">Users</button>
         <button id="setupRulesSectionTab" type="button" class="setup-nav-button">Rules</button>
         <button id="setupImportSectionTab" type="button" class="setup-nav-button">Import</button>
-        <button id="setupReviewSectionTab" type="button" class="setup-nav-button">Review</button>
-        <button id="setupReportsSectionTab" type="button" class="setup-nav-button">Reports</button>
-        <button id="setupJobDataSectionTab" type="button" class="setup-nav-button">Job Data</button>
+        <button id="setupHistorySectionTab" type="button" class="setup-nav-button">History</button>
       </div>
 
       <section id="setupInspectionSection" class="setup-section">
@@ -588,97 +586,104 @@
       </section>
       </section>
 
-      <section id="setupReviewSection" class="setup-section hidden">
-      <section class="panel">
-        <div class="panel-heading horizontal">
-          <div>
-            <h2>Review</h2>
+      <section id="setupHistorySection" class="setup-section hidden">
+        <section class="panel">
+          <div class="panel-heading horizontal">
+            <div>
+              <h2>History</h2>
+            </div>
+            <div class="history-mode-tabs">
+              <button id="historyLedgerTab" type="button" class="history-mode-button active">Ledger</button>
+              <button id="historyChartsTab" type="button" class="history-mode-button">Charts</button>
+              <button id="historyExportTab" type="button" class="history-mode-button">Export</button>
+            </div>
           </div>
-          <div class="review-filter-bar">
-            <input id="partReviewFilter" list="partOptions" autocomplete="off" inputmode="text" placeholder="Part number">
-            <input id="reviewJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="Optional job number">
-            <button id="reviewLoadButton" type="button" class="secondary">Review Job</button>
-          </div>
-        </div>
-        <p id="reviewMessage" class="message"></p>
-        <div id="partReviewList" class="data-table empty">Select a part to review capability across all jobs.</div>
-        <div id="jobReviewPanel" class="job-review-panel hidden">
-          <div class="panel-heading tight">
-            <h3>Job Capability</h3>
-          </div>
-          <div id="jobReviewSummary" class="data-table empty">No job selected.</div>
-          <div class="panel-heading tight">
-            <h3>Inspection / Job History</h3>
-          </div>
-          <div id="jobReviewMeasurements" class="data-table empty">No job history loaded.</div>
-        </div>
-      </section>
-      </section>
 
-      <section id="setupReportsSection" class="setup-section hidden">
-      <section class="panel">
-        <div class="panel-heading">
-          <h2>Reports</h2>
-        </div>
-        <form id="reportForm" class="report-filter-form">
-          <label>Part<input id="reportPartNum" list="partOptions" autocomplete="off"></label>
-          <label>Job<input id="reportJobNum" list="jobOptions" autocomplete="off"></label>
-          <label>Operation<select id="reportOperationCode"></select></label>
-          <label>Machine<select id="reportResourceId"></select></label>
-          <label>Variable / Attribute<input id="reportCharacteristicName" list="reportCharacteristicOptions" autocomplete="off"></label>
-          <datalist id="reportCharacteristicOptions"></datalist>
-          <label>
-            Inspection Phase
-            <select id="reportInspectionPhase">
-              <option value="">All phases</option>
-              <option value="Startup">Startup</option>
-              <option value="Setup">Setup</option>
-              <option value="In Process">In Process</option>
-              <option value="Spool">Spool</option>
-            </select>
-          </label>
-          <label>From<input id="reportFrom" type="datetime-local"></label>
-          <label>To<input id="reportTo" type="datetime-local"></label>
-          <label>
-            Chart
-            <select id="reportChartType">
-              <option value="Individuals">Individuals</option>
-              <option value="Run">Run Chart</option>
-              <option value="Histogram">Histogram</option>
-              <option value="ControlLimits">Control / Spec Limits</option>
-              <option value="MovingRange">Moving Range</option>
-            </select>
-          </label>
-          <button type="submit">Run Report</button>
-        </form>
-        <p id="reportMessage" class="message"></p>
-        <div id="reportChartGrid" class="report-chart-grid"></div>
-      </section>
-      </section>
+          <section id="historyLedgerView" class="history-view">
+            <div class="panel-heading horizontal tight">
+              <h3>Job Review</h3>
+              <div class="review-filter-bar">
+                <input id="partReviewFilter" list="partOptions" autocomplete="off" inputmode="text" placeholder="Part number">
+                <input id="reviewJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="Optional job number">
+                <button id="reviewLoadButton" type="button" class="secondary">Review Job</button>
+              </div>
+            </div>
+            <p id="reviewMessage" class="message"></p>
+            <div id="partReviewList" class="data-table empty">Select a part to review capability across all jobs.</div>
+            <div id="jobReviewPanel" class="job-review-panel hidden">
+              <div class="panel-heading tight">
+                <h3>Job Capability</h3>
+              </div>
+              <div id="jobReviewSummary" class="data-table empty">No job selected.</div>
+              <div class="panel-heading tight">
+                <h3>Inspection / Job History</h3>
+              </div>
+              <div id="jobReviewMeasurements" class="data-table empty">No job history loaded.</div>
+            </div>
+          </section>
 
-      <section id="setupJobDataSection" class="setup-section hidden">
-      <section class="panel">
-        <div class="panel-heading">
-          <h2>Job Data</h2>
-        </div>
-        <form id="jobSummaryForm" class="job-summary-form">
-          <label>
-            Job Numbers
-            <input id="summaryJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="J100, J101">
-          </label>
-          <label>
-            Variables
-            <select id="summaryRequiredOnly">
-              <option value="true">Required for COA</option>
-              <option value="false">All variables</option>
-            </select>
-          </label>
-          <button type="submit">Pull Job Data</button>
-          <button id="jobSummaryCsvButton" type="button" class="secondary">CSV</button>
-        </form>
-        <p id="jobSummaryMessage" class="message"></p>
-        <div id="jobSummaryList" class="data-table empty">No job data loaded.</div>
-      </section>
+          <section id="historyChartsView" class="history-view hidden">
+            <div class="panel-heading tight">
+              <h3>Charts</h3>
+            </div>
+            <form id="reportForm" class="report-filter-form">
+              <label>Part<input id="reportPartNum" list="partOptions" autocomplete="off"></label>
+              <label>Job<input id="reportJobNum" list="jobOptions" autocomplete="off"></label>
+              <label>Operation<select id="reportOperationCode"></select></label>
+              <label>Machine<select id="reportResourceId"></select></label>
+              <label>Variable / Attribute<input id="reportCharacteristicName" list="reportCharacteristicOptions" autocomplete="off"></label>
+              <datalist id="reportCharacteristicOptions"></datalist>
+              <label>
+                Inspection Phase
+                <select id="reportInspectionPhase">
+                  <option value="">All phases</option>
+                  <option value="Startup">Startup</option>
+                  <option value="Setup">Setup</option>
+                  <option value="In Process">In Process</option>
+                  <option value="Spool">Spool</option>
+                </select>
+              </label>
+              <label>From<input id="reportFrom" type="datetime-local"></label>
+              <label>To<input id="reportTo" type="datetime-local"></label>
+              <label>
+                Chart
+                <select id="reportChartType">
+                  <option value="Individuals">Individuals</option>
+                  <option value="Run">Run Chart</option>
+                  <option value="Histogram">Histogram</option>
+                  <option value="ControlLimits">Control / Spec Limits</option>
+                  <option value="MovingRange">Moving Range</option>
+                </select>
+              </label>
+              <button type="submit">Run Report</button>
+            </form>
+            <p id="reportMessage" class="message"></p>
+            <div id="reportChartGrid" class="report-chart-grid"></div>
+          </section>
+
+          <section id="historyExportView" class="history-view hidden">
+            <div class="panel-heading tight">
+              <h3>Job Data Export</h3>
+            </div>
+            <form id="jobSummaryForm" class="job-summary-form">
+              <label>
+                Job Numbers
+                <input id="summaryJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="J100, J101">
+              </label>
+              <label>
+                Variables
+                <select id="summaryRequiredOnly">
+                  <option value="true">Required for COA</option>
+                  <option value="false">All variables</option>
+                </select>
+              </label>
+              <button type="submit">Pull Job Data</button>
+              <button id="jobSummaryCsvButton" type="button" class="secondary">CSV</button>
+            </form>
+            <p id="jobSummaryMessage" class="message"></p>
+            <div id="jobSummaryList" class="data-table empty">No job data loaded.</div>
+          </section>
+        </section>
       </section>
     </section>
   </main>
@@ -725,6 +730,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260617-capability-thresholds"></script>
+  <script src="/app.js?v=20260617-history-tab"></script>
 </body>
 </html>

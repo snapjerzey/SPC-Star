@@ -728,6 +728,26 @@ textarea {
   gap: 10px;
   margin-top: 12px;
 }
+.history-mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.history-mode-button {
+  min-height: 36px;
+  background: #eaf1f8;
+  color: var(--text);
+}
+.history-mode-button.active {
+  background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+  color: #ffffff;
+}
+.history-view {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
 .rule-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

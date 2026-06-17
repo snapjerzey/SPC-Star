@@ -10,7 +10,12 @@ const state = {
   users: [],
   roles: [],
   editingSetup: null,
-  selectedUserName: ""
+  selectedUserName: "",
+  historyView: "Ledger",
+  historyFilters: {
+    partNum: "",
+    jobNum: ""
+  }
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1450,6 +1455,11 @@ function showPanel(panelName) {
 }
 
 function showSetupSection(sectionName) {
+  if (sectionName === "History") {
+    seedHistoryFiltersFromWorkContext();
+    applyHistoryFilters();
+  }
+
   const sections = ["Inspection", "Users", "Rules", "Import", "History"];
   sections.forEach((section) => {
     $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
@@ -1457,12 +1467,71 @@ function showSetupSection(sectionName) {
   });
 }
 
+function seedHistoryFiltersFromWorkContext() {
+  if (!state.historyFilters.partNum) {
+    state.historyFilters.partNum = $("partNum").value.trim();
+  }
+
+  if (!state.historyFilters.jobNum) {
+    state.historyFilters.jobNum = $("jobNum").value.trim();
+  }
+
+  if (state.historyFilters.jobNum && !state.historyFilters.partNum) {
+    state.historyFilters.partNum = partNumForJob(state.historyFilters.jobNum);
+  }
+}
+
 function showHistoryView(viewName) {
+  syncHistoryFiltersFrom(state.historyView);
+  state.historyView = viewName;
+  applyHistoryFilters();
   const views = ["Ledger", "Charts", "Export"];
   views.forEach((view) => {
     $(`history${view}View`).classList.toggle("hidden", view !== viewName);
     $(`history${view}Tab`).classList.toggle("active", view === viewName);
   });
+}
+
+function syncHistoryFiltersFrom(source) {
+  if (source === "Ledger") {
+    state.historyFilters.partNum = $("partReviewFilter").value.trim();
+    state.historyFilters.jobNum = $("reviewJobNum").value.trim();
+  } else if (source === "Charts") {
+    state.historyFilters.partNum = $("reportPartNum").value.trim();
+    state.historyFilters.jobNum = $("reportJobNum").value.trim();
+  } else if (source === "Export") {
+    const jobNum = firstHistoryJobNum($("summaryJobNum").value);
+    if (jobNum) {
+      state.historyFilters.jobNum = jobNum;
+      state.historyFilters.partNum = partNumForJob(jobNum) || state.historyFilters.partNum;
+    }
+  }
+
+  if (state.historyFilters.jobNum && !state.historyFilters.partNum) {
+    state.historyFilters.partNum = partNumForJob(state.historyFilters.jobNum);
+  }
+}
+
+function applyHistoryFilters() {
+  const partNum = state.historyFilters.partNum || "";
+  const jobNum = state.historyFilters.jobNum || "";
+  $("partReviewFilter").value = partNum;
+  $("reviewJobNum").value = jobNum;
+  $("reportPartNum").value = partNum;
+  $("reportJobNum").value = jobNum;
+  const summaryJobNum = $("summaryJobNum").value.trim();
+  if (jobNum && (!summaryJobNum || !summaryJobNum.includes(","))) {
+    $("summaryJobNum").value = jobNum;
+  }
+  refreshReportOperationChoices();
+}
+
+function firstHistoryJobNum(value) {
+  return value.split(",").map((jobNum) => jobNum.trim()).filter(Boolean)[0] || "";
+}
+
+function partNumForJob(jobNum) {
+  return state.snapshot?.jobs?.find((job) => job.jobNum.toLowerCase() === jobNum.toLowerCase())?.partNum || "";
 }
 
 function logout() {
@@ -3107,6 +3176,14 @@ $("customRuleForm").addEventListener("submit", saveCustomRule);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("xlsxImportForm").addEventListener("submit", importXlsx);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
+$("partReviewFilter").addEventListener("input", () => {
+  syncHistoryFiltersFrom("Ledger");
+  applyHistoryFilters();
+});
+$("reviewJobNum").addEventListener("input", () => {
+  syncHistoryFiltersFrom("Ledger");
+  applyHistoryFilters();
+});
 $("partReviewFilter").addEventListener("change", loadReview);
 $("partReviewFilter").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -3121,8 +3198,20 @@ $("reviewJobNum").addEventListener("keydown", (event) => {
     loadReview();
   }
 });
+$("reportPartNum").addEventListener("input", () => {
+  syncHistoryFiltersFrom("Charts");
+  applyHistoryFilters();
+});
+$("reportJobNum").addEventListener("input", () => {
+  syncHistoryFiltersFrom("Charts");
+  applyHistoryFilters();
+});
 $("reportPartNum").addEventListener("change", refreshReportOperationChoices);
 $("reportJobNum").addEventListener("change", refreshReportOperationChoices);
+$("summaryJobNum").addEventListener("input", () => {
+  syncHistoryFiltersFrom("Export");
+  applyHistoryFilters();
+});
 $("jobSummaryForm").addEventListener("submit", loadJobSummary);
 $("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
 $("reportForm").addEventListener("submit", runReport);

@@ -10,14 +10,14 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $projectPath = Join-Path $repoRoot "src\SPCStar.Api\SPCStar.Api.csproj"
 $appRoot = Join-Path $InstallRoot "app"
 
-Write-Host "Backing up SPC-Star data before update..."
-& (Join-Path $repoRoot "deploy\backup-data.ps1") -InstallRoot $InstallRoot
-
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Write-Host "Stopping SPC-Star scheduled task..."
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
+
+Write-Host "Backing up SPC-Star data before update..."
+& (Join-Path $repoRoot "deploy\backup-data.ps1") -InstallRoot $InstallRoot
 
 Write-Host "Publishing updated SPC-Star app..."
 dotnet publish $projectPath -c Release -o $appRoot --self-contained false

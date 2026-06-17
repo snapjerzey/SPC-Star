@@ -9,11 +9,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-var storagePath = Environment.GetEnvironmentVariable("SPCSTAR_DATA_PATH")
+var projectRoot = FindProjectRoot(builder.Environment.ContentRootPath);
+var jsonStoragePath = Environment.GetEnvironmentVariable("SPCSTAR_DATA_PATH")
     ?? builder.Configuration["SPCStar:DataPath"]
-    ?? Path.Combine(FindProjectRoot(builder.Environment.ContentRootPath), ".appdata", "spcstar-data.json");
-var repository = new FileBackedSpcRepository(storagePath);
-builder.Services.AddSingleton<ISpcRepository>(repository);
+    ?? Path.Combine(projectRoot, ".appdata", "spcstar-data.json");
+var repository = CreateRepository(builder, projectRoot, jsonStoragePath);
+builder.Services.AddSingleton<ISpcRepository>((ISpcRepository)repository);
 builder.Services.AddSingleton<IRepositoryPersistence>(repository);
 builder.Services.AddSingleton<WesternElectricRuleService>();
 builder.Services.AddSingleton<PermissionService>();
@@ -528,6 +529,30 @@ static string FindProjectRoot(string startPath)
     }
 
     return Directory.GetCurrentDirectory();
+}
+
+static IRepositoryPersistence CreateRepository(WebApplicationBuilder builder, string projectRoot, string jsonStoragePath)
+{
+    var provider = Environment.GetEnvironmentVariable("SPCSTAR_STORAGE_PROVIDER")
+        ?? builder.Configuration["SPCStar:StorageProvider"]
+        ?? "sqlite";
+    if (provider.Equals("json", StringComparison.OrdinalIgnoreCase))
+    {
+        return new FileBackedSpcRepository(jsonStoragePath);
+    }
+
+    var sqlitePath = Environment.GetEnvironmentVariable("SPCSTAR_DATABASE_PATH")
+        ?? builder.Configuration["SPCStar:DatabasePath"]
+        ?? Path.Combine(projectRoot, ".appdata", "spcstar.db");
+    var sqliteRepository = new SqliteBackedSpcRepository(sqlitePath);
+    if (((ISpcRepository)sqliteRepository).Roles.Count == 0 && File.Exists(jsonStoragePath))
+    {
+        var jsonRepository = new FileBackedSpcRepository(jsonStoragePath);
+        sqliteRepository.ImportFrom(jsonRepository);
+        sqliteRepository.SaveChanges();
+    }
+
+    return sqliteRepository;
 }
 
 app.Run();

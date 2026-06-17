@@ -7,7 +7,7 @@ Internal SPC platform for manufacturing inspection, drift detection, lock overri
 This repository currently contains a working local browser/tablet-first SPC application:
 
 - Core domain models for users, roles, permissions, setup data, jobs, inspection measurements, job notes, alerts, overrides, material traceability, and exports.
-- SQLite-oriented schema and seed scripts.
+- SQLite-backed local server database with JSON fallback/import for existing development data.
 - Standard CSV setup import with row types for job data, materials, measured variables, and accept/reject attributes.
 - Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, frequency, and COA-required variables.
 - User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
@@ -43,6 +43,16 @@ With the .NET 8 SDK available, run:
 ```powershell
 dotnet test SPCStar.sln
 ```
+
+## Database
+
+SPC-Star now defaults to a local SQLite database at `.appdata/spcstar.db`. If the database is empty and the older `.appdata/spcstar-data.json` file exists, the app imports that JSON data into SQLite on startup.
+
+Useful environment variables:
+
+- `SPCSTAR_DATABASE_PATH`: choose a different SQLite database file.
+- `SPCSTAR_STORAGE_PROVIDER=json`: temporarily run against the older JSON file.
+- `SPCSTAR_DATA_PATH`: choose a different JSON file path when using JSON storage.
 
 If NuGet is unavailable, run the dependency-free smoke tests:
 
@@ -157,7 +167,7 @@ The default server URL is:
 http://SERVER-NAME:5000/
 ```
 
-The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar-data.json`, keep backups in `C:\SPCStar\backups`, and create a Windows Scheduled Task named `SPC-Star Server`.
+The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar.db`, keep backups in `C:\SPCStar\backups`, and create a Windows Scheduled Task named `SPC-Star Server`.
 
 See `deploy/README.md` for the deployment workflow.
 
@@ -179,8 +189,8 @@ The API seeds demo security users and one sample inspection plan:
 - Cutting Edge inspection families have been prepared and loaded into the local test data set: Needlemaker, Test Polish, Strip Polish, and Drilled.
 - Next inspection-family import work: Taperpoint.
 - Authentication provider integration.
-- EF Core DbContext/migrations.
-- Production database deployment and user/session hardening.
+- Production database backup/restore workflow and user/session hardening.
+- Fully relational EF Core/SQL Server storage if the pilot requires a separate database engine.
 - Full offline queue UI with conflict handling.
 - Custom drift-rule editor for admin-defined thresholds and warning behavior.
 - Box-level traceability once the required production count/source logic is defined.

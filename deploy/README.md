@@ -9,7 +9,7 @@ Recommended server layout:
 - `C:\SPCStar\backups` - local backup copies
 - `C:\SPCStar\logs` - server log output
 
-For the current internal testing build, SPC-Star uses a local JSON storage file. The scripts keep that file outside the app folder so updates can replace the application without wiping data.
+SPC-Star uses a local SQLite database file by default. The scripts keep that file outside the app folder so updates can replace the application without wiping data.
 
 ## First Install
 
@@ -35,7 +35,7 @@ After pulling the latest SPC-Star code onto the server:
 .\deploy\update-server.ps1
 ```
 
-This creates a backup, publishes the newest app files, and restarts the scheduled task.
+This stops the scheduled task, creates a database backup, publishes the newest app files, and restarts the scheduled task.
 
 ## Backup Only
 

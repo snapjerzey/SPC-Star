@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260617-user-password-reset">
+  <link rel="stylesheet" href="/styles.css?v=20260617-user-detail-panel">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -410,39 +410,57 @@
             <button type="submit" class="secondary">Import Users</button>
           </form>
           <div class="user-admin-layout">
-            <form id="userSetupForm" class="stacked-form">
-              <label>
-                User name
-                <input id="setupUserName" autocomplete="off">
-              </label>
-              <label>
-                Password
-                <input id="setupPassword" type="password" autocomplete="new-password">
-              </label>
-              <label>
-                Access level
-                <select id="setupRole"></select>
-              </label>
-              <div class="permission-panel">
-                <div class="permission-heading">
-                  <div>
-                    <strong>Allowed product groups</strong>
-                    <span>Controls which part families this user can inspect.</span>
-                  </div>
-                  <div class="permission-actions">
-                    <button id="selectAllUserProductGroups" type="button" class="secondary compact-button">All</button>
-                    <button id="clearUserProductGroups" type="button" class="secondary compact-button">Clear</button>
-                  </div>
-                </div>
-                <div id="setupUserProductGroups" class="product-group-picker empty">No product groups loaded.</div>
+            <aside class="user-list-panel">
+              <div class="user-list-toolbar">
+                <strong>All Users</strong>
+                <button id="newUserButton" type="button" class="secondary compact-button">New User</button>
               </div>
-              <button type="submit">Save User</button>
-            </form>
-            <div>
+              <div id="userList" class="setup-list empty">No users loaded.</div>
+            </aside>
+            <section id="userDetailPanel" class="user-detail-panel empty">
               <p id="userSetupMessage" class="message"></p>
               <p id="userImportMessage" class="message"></p>
-              <div id="userList" class="setup-list empty">No users loaded.</div>
-            </div>
+              <form id="userSetupForm" class="stacked-form user-detail-form">
+                <div class="user-detail-heading">
+                  <div>
+                    <h3 id="userDetailTitle">Select a user</h3>
+                    <p id="userDetailSubtitle">Choose a user from the list or create a new account.</p>
+                  </div>
+                </div>
+                <div class="user-detail-grid">
+                  <label>
+                    User name
+                    <input id="setupUserName" autocomplete="off">
+                  </label>
+                  <label>
+                    Access level
+                    <select id="setupRole"></select>
+                  </label>
+                  <label id="setupPasswordLabel">
+                    Temporary password
+                    <input id="setupPassword" type="password" autocomplete="new-password">
+                  </label>
+                </div>
+                <div class="permission-panel">
+                  <div class="permission-heading">
+                    <div>
+                      <strong>Allowed product groups</strong>
+                      <span>Controls which part families this user can inspect.</span>
+                    </div>
+                    <div class="permission-actions">
+                      <button id="selectAllUserProductGroups" type="button" class="secondary compact-button">All</button>
+                      <button id="clearUserProductGroups" type="button" class="secondary compact-button">Clear</button>
+                    </div>
+                  </div>
+                  <div id="setupUserProductGroups" class="product-group-picker empty">No product groups loaded.</div>
+                </div>
+                <div class="form-actions">
+                  <button id="resetSelectedUserPasswordButton" type="button" class="secondary">Reset Password</button>
+                  <button id="deleteSelectedUserButton" type="button" class="secondary danger-button">Delete User</button>
+                  <button type="submit">Save User</button>
+                </div>
+              </form>
+            </section>
           </div>
         </section>
       </section>
@@ -695,6 +713,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260617-user-password-reset"></script>
+  <script src="/app.js?v=20260617-user-detail-panel"></script>
 </body>
 </html>

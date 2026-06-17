@@ -9,7 +9,8 @@ const state = {
   activeLock: null,
   users: [],
   roles: [],
-  editingSetup: null
+  editingSetup: null,
+  selectedUserName: ""
 };
 
 const $ = (id) => document.getElementById(id);
@@ -2094,36 +2095,75 @@ function renderUsers() {
   if (!state.users.length) {
     list.className = "setup-list empty";
     list.textContent = "No users loaded.";
+    renderUserDetail(null);
     return;
   }
 
   list.className = "setup-list";
   list.innerHTML = "";
+  const selectedExists = state.users.some((user) => user.userName === state.selectedUserName);
+  if (state.selectedUserName && !selectedExists) {
+    state.selectedUserName = "";
+  }
   state.users.forEach((user) => {
     const row = document.createElement("div");
-    row.className = "setup-row";
+    row.className = `setup-row user-list-row ${user.userName === state.selectedUserName ? "selected" : ""}`;
     const productGroupText = user.productGroups?.length ? user.productGroups.join(", ") : "No product groups assigned";
     row.innerHTML = `
       <div>
         <strong>${user.userName}</strong>
         <span>${user.roles.join(", ")}</span>
         <small>${productGroupText}</small>
-      </div>
-      <div class="row-actions">
-        <button type="button" class="secondary compact-button user-edit-button">Edit</button>
-        <button type="button" class="secondary compact-button user-reset-password-button">Reset Password</button>
-        <button type="button" class="secondary compact-button danger-button user-delete-button">Delete</button>
       </div>`;
-    row.querySelector(".user-edit-button").addEventListener("click", () => {
-      $("setupUserName").value = user.userName;
-      $("setupPassword").value = "";
-      $("setupRole").value = user.roles[0] || state.roles[0] || "";
-      setUserProductGroupSelection(user.productGroups || []);
-    });
-    row.querySelector(".user-reset-password-button").addEventListener("click", () => resetUserPassword(user.userName));
-    row.querySelector(".user-delete-button").addEventListener("click", () => deleteUser(user.userName));
+    row.addEventListener("click", () => selectUser(user.userName));
     list.appendChild(row);
   });
+
+  if (state.selectedUserName) {
+    renderUserDetail(state.users.find((user) => user.userName === state.selectedUserName) || null);
+  } else {
+    renderUserDetail(null);
+  }
+}
+
+function selectUser(userName) {
+  state.selectedUserName = userName;
+  const user = state.users.find((item) => item.userName === userName) || null;
+  renderUsers();
+  renderUserDetail(user);
+}
+
+function newUser() {
+  state.selectedUserName = "";
+  renderUsers();
+  renderUserDetail({
+    userName: "",
+    roles: [state.roles[0] || ""],
+    productGroups: []
+  }, true);
+}
+
+function renderUserDetail(user, isNew = false) {
+  const panel = $("userDetailPanel");
+  const hasUser = Boolean(user);
+  panel.classList.toggle("empty", !hasUser);
+  $("userSetupForm").querySelector(".user-detail-grid").classList.toggle("hidden", !hasUser);
+  $("userSetupForm").querySelector(".permission-panel").classList.toggle("hidden", !hasUser);
+  $("userDetailTitle").textContent = isNew ? "New User" : hasUser ? user.userName : "Select a user";
+  $("userDetailSubtitle").textContent = isNew
+    ? "Create the account, set the role, and choose approved product groups."
+    : hasUser
+      ? "Edit role and product group access. Use reset only when a password is forgotten."
+      : "Choose a user from the list or create a new account.";
+  $("setupUserName").value = user?.userName || "";
+  $("setupUserName").disabled = Boolean(hasUser && !isNew);
+  $("setupPassword").value = "";
+  $("setupPasswordLabel").classList.toggle("hidden", hasUser && !isNew);
+  $("setupRole").value = user?.roles?.[0] || state.roles[0] || "";
+  setUserProductGroupSelection(user?.productGroups || []);
+  $("resetSelectedUserPasswordButton").classList.toggle("hidden", !hasUser || isNew);
+  $("deleteSelectedUserButton").classList.toggle("hidden", !hasUser || isNew);
+  $("userSetupForm").querySelector("button[type='submit']").classList.toggle("hidden", !hasUser);
 }
 
 function renderUserProductGroupPicker(selectedGroups = selectedUserProductGroups()) {
@@ -2161,10 +2201,21 @@ function setUserProductGroupSelection(groups) {
 }
 
 async function deleteUser(userName) {
+  if (!userName) {
+    $("userSetupMessage").textContent = "Select a user to delete.";
+    $("userSetupMessage").className = "message error";
+    return;
+  }
+
+  if (!window.confirm(`Delete ${userName}?`)) {
+    return;
+  }
+
   try {
     await api(`/setup/users/${encodeURIComponent(userName)}`, { method: "DELETE" });
     $("userSetupMessage").textContent = `${userName} deleted.`;
     $("userSetupMessage").className = "message ok";
+    state.selectedUserName = "";
     await loadSetupAdmin();
   } catch (error) {
     $("userSetupMessage").textContent = readableError(error);
@@ -2173,6 +2224,12 @@ async function deleteUser(userName) {
 }
 
 async function resetUserPassword(userName) {
+  if (!userName) {
+    $("userSetupMessage").textContent = "Select a user to reset.";
+    $("userSetupMessage").className = "message error";
+    return;
+  }
+
   const temporaryPassword = window.prompt(`Enter a temporary password for ${userName}:`, "test");
   if (temporaryPassword === null) {
     return;
@@ -2194,11 +2251,12 @@ async function resetUserPassword(userName) {
 
 async function saveUser(event) {
   event.preventDefault();
+  const userName = $("setupUserName").value.trim();
   try {
     await api("/setup/users", {
       method: "POST",
       body: JSON.stringify({
-        userName: $("setupUserName").value.trim(),
+        userName,
         password: $("setupPassword").value,
         roles: [$("setupRole").value],
         productGroups: selectedUserProductGroups()
@@ -2207,6 +2265,7 @@ async function saveUser(event) {
     $("setupPassword").value = "";
     $("userSetupMessage").textContent = "User saved.";
     $("userSetupMessage").className = "message ok";
+    state.selectedUserName = userName;
     await loadSetupAdmin();
   } catch (error) {
     $("userSetupMessage").textContent = readableError(error);
@@ -2965,6 +3024,9 @@ $("setupReportsSectionTab").addEventListener("click", () => showSetupSection("Re
 $("setupJobDataSectionTab").addEventListener("click", () => showSetupSection("JobData"));
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
+$("newUserButton").addEventListener("click", newUser);
+$("resetSelectedUserPasswordButton").addEventListener("click", () => resetUserPassword(state.selectedUserName));
+$("deleteSelectedUserButton").addEventListener("click", () => deleteUser(state.selectedUserName));
 $("selectAllUserProductGroups").addEventListener("click", () => setUserProductGroupSelection(productGroups()));
 $("clearUserProductGroups").addEventListener("click", () => setUserProductGroupSelection([]));
 $("inspectionSetupForm").addEventListener("submit", saveInspectionSetup);

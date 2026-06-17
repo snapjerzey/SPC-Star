@@ -595,9 +595,38 @@ textarea {
 }
 .user-admin-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) 1fr;
+  grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
+}
+.user-list-panel,
+.user-detail-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+.user-list-toolbar,
+.user-detail-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.user-detail-heading h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.user-detail-heading p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.user-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 .permission-panel {
   border: 1px solid var(--line);
@@ -777,7 +806,6 @@ textarea {
 .setup-list {
   display: grid;
   gap: 8px;
-  margin-top: 14px;
   max-height: 520px;
   overflow-y: auto;
 }
@@ -791,6 +819,17 @@ textarea {
 .setup-row:last-child { border-bottom: 0; }
 .setup-row strong { display: block; }
 .setup-row span { color: var(--muted); font-size: 13px; }
+.user-list-row {
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 10px;
+}
+.user-list-row:hover,
+.user-list-row.selected {
+  background: #f0f7ff;
+  border-color: #bfdbfe;
+}
 .row-actions {
   display: flex;
   gap: 8px;
@@ -1231,7 +1270,7 @@ textarea {
   .status-row { justify-content: flex-start; }
   .job-data-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .job-data-form button { grid-column: span 2; }
-  .form-grid, .measurement-form, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .global-rule-form, .material-form, .material-field-row { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .user-detail-grid, .global-rule-form, .material-form, .material-field-row { grid-template-columns: 1fr; }
   .material-field-row h3 { grid-column: auto; }
   .report-filter-form button { grid-column: auto; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }

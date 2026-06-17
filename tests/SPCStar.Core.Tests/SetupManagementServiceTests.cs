@@ -99,6 +99,22 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void ResetUserPassword_UpdatesCredentialWithoutChangingAccess()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        var service = new SetupManagementService(repository);
+        var credentialService = new CredentialService(repository);
+
+        var result = service.ResetUserPassword(new ResetUserPasswordRequest("operator1", "temp"));
+
+        Assert.True(result.Succeeded);
+        Assert.True(credentialService.ValidateCredential("operator1", "temp"));
+        Assert.False(credentialService.ValidateCredential("operator1", "operator1"));
+        Assert.Contains(repository.Users.Single(user => user.UserName == "operator1").Roles, role => role.Name == RoleNames.Operator);
+    }
+
+    [Fact]
     public void UpdateSettings_SavesGlobalAlertRuleSet()
     {
         var repository = new InMemorySpcRepository();

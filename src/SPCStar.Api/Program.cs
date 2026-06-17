@@ -156,6 +156,19 @@ app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService s
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapPost("/setup/users/reset-password", (ResetUserPasswordRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.ResetUserPassword(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/setup/users/import-xlsx", async (IFormFile file, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
     if (file.Length == 0)

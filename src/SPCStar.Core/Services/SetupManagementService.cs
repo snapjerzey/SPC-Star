@@ -7,6 +7,8 @@ public sealed record UserSetupDto(string UserName, IReadOnlyList<string> Roles, 
 
 public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string>? ProductGroups = null);
 
+public sealed record ResetUserPasswordRequest(string UserName, string TemporaryPassword);
+
 public sealed record UserImportResult(int Imported);
 
 public sealed record UpdateSettingsRequest(string GlobalAlertRuleSet, CustomDriftRuleSetupDto? CustomDriftRule = null);
@@ -198,6 +200,40 @@ public sealed class SetupManagementService(ISpcRepository repository)
         {
             user.ProductGroups.Add(group);
         }
+        return ServiceResult<UserSetupDto>.Ok(GetUsers().First(item => item.UserName.Equals(user.UserName, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    public ServiceResult<UserSetupDto> ResetUserPassword(ResetUserPasswordRequest request)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(request.UserName))
+        {
+            errors.Add("UserName is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.TemporaryPassword))
+        {
+            errors.Add("Temporary password is required.");
+        }
+        else if (request.TemporaryPassword.Length < 4)
+        {
+            errors.Add("Temporary password must be at least 4 characters.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return ServiceResult<UserSetupDto>.Fail(errors);
+        }
+
+        var user = repository.Users.FirstOrDefault(item => item.UserName.Equals(request.UserName.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (user is null)
+        {
+            return ServiceResult<UserSetupDto>.Fail("User was not found.");
+        }
+
+        var (hash, salt) = PasswordHasher.HashPassword(request.TemporaryPassword);
+        user.PasswordHash = hash;
+        user.PasswordSalt = salt;
         return ServiceResult<UserSetupDto>.Ok(GetUsers().First(item => item.UserName.Equals(user.UserName, StringComparison.OrdinalIgnoreCase)));
     }
 

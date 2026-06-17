@@ -2111,6 +2111,7 @@ function renderUsers() {
       </div>
       <div class="row-actions">
         <button type="button" class="secondary compact-button user-edit-button">Edit</button>
+        <button type="button" class="secondary compact-button user-reset-password-button">Reset Password</button>
         <button type="button" class="secondary compact-button danger-button user-delete-button">Delete</button>
       </div>`;
     row.querySelector(".user-edit-button").addEventListener("click", () => {
@@ -2119,6 +2120,7 @@ function renderUsers() {
       $("setupRole").value = user.roles[0] || state.roles[0] || "";
       setUserProductGroupSelection(user.productGroups || []);
     });
+    row.querySelector(".user-reset-password-button").addEventListener("click", () => resetUserPassword(user.userName));
     row.querySelector(".user-delete-button").addEventListener("click", () => deleteUser(user.userName));
     list.appendChild(row);
   });
@@ -2162,6 +2164,26 @@ async function deleteUser(userName) {
   try {
     await api(`/setup/users/${encodeURIComponent(userName)}`, { method: "DELETE" });
     $("userSetupMessage").textContent = `${userName} deleted.`;
+    $("userSetupMessage").className = "message ok";
+    await loadSetupAdmin();
+  } catch (error) {
+    $("userSetupMessage").textContent = readableError(error);
+    $("userSetupMessage").className = "message error";
+  }
+}
+
+async function resetUserPassword(userName) {
+  const temporaryPassword = window.prompt(`Enter a temporary password for ${userName}:`, "test");
+  if (temporaryPassword === null) {
+    return;
+  }
+
+  try {
+    await api("/setup/users/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ userName, temporaryPassword })
+    });
+    $("userSetupMessage").textContent = `${userName} password reset.`;
     $("userSetupMessage").className = "message ok";
     await loadSetupAdmin();
   } catch (error) {

@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260618-device-panel">
+  <link rel="stylesheet" href="/styles.css?v=20260618-history-issues">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -621,6 +621,7 @@
             <div class="history-mode-tabs">
               <button id="historyLedgerTab" type="button" class="history-mode-button active">Ledger</button>
               <button id="historyChartsTab" type="button" class="history-mode-button">Charts</button>
+              <button id="historyIssuesTab" type="button" class="history-mode-button">Top Issues</button>
               <button id="historyExportTab" type="button" class="history-mode-button">Export</button>
             </div>
           </div>
@@ -709,6 +710,31 @@
             <p id="jobSummaryMessage" class="message"></p>
             <div id="jobSummaryList" class="data-table empty">No job data loaded.</div>
           </section>
+
+          <section id="historyIssuesView" class="history-view hidden">
+            <div class="panel-heading tight">
+              <h3>Top Out-of-Spec / Drift Events</h3>
+            </div>
+            <form id="topIssuesForm" class="top-issues-form">
+              <label>Part<input id="topIssuesPartNum" list="partOptions" autocomplete="off" inputmode="text" placeholder="All parts"></label>
+              <label>Job<input id="topIssuesJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="All jobs"></label>
+              <label>Machine<select id="topIssuesResourceId"></select></label>
+              <label>Variable / Attribute<input id="topIssuesCharacteristicName" list="reportCharacteristicOptions" autocomplete="off" placeholder="All items"></label>
+              <label>From<input id="topIssuesFrom" type="datetime-local"></label>
+              <label>To<input id="topIssuesTo" type="datetime-local"></label>
+              <label>
+                Show
+                <select id="topIssuesLimit">
+                  <option value="10">Top 10</option>
+                  <option value="25" selected>Top 25</option>
+                  <option value="50">Top 50</option>
+                </select>
+              </label>
+              <button type="submit">Run Top Issues</button>
+            </form>
+            <p id="topIssuesMessage" class="message"></p>
+            <div id="topIssuesList" class="data-table empty">Run a top issues report to see repeat out-of-spec, drift, and rejected-attribute events.</div>
+          </section>
         </section>
       </section>
     </section>
@@ -756,6 +782,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260618-device-panel"></script>
+  <script src="/app.js?v=20260618-history-issues"></script>
 </body>
 </html>

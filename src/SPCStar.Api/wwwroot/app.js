@@ -1635,7 +1635,7 @@ function showHistoryView(viewName) {
   syncHistoryFiltersFrom(state.historyView);
   state.historyView = viewName;
   applyHistoryFilters();
-  const views = ["Ledger", "Charts", "Export"];
+  const views = ["Ledger", "Charts", "Issues", "Export"];
   views.forEach((view) => {
     $(`history${view}View`).classList.toggle("hidden", view !== viewName);
     $(`history${view}Tab`).classList.toggle("active", view === viewName);
@@ -1649,6 +1649,9 @@ function syncHistoryFiltersFrom(source) {
   } else if (source === "Charts") {
     state.historyFilters.partNum = $("reportPartNum").value.trim();
     state.historyFilters.jobNum = $("reportJobNum").value.trim();
+  } else if (source === "Issues") {
+    state.historyFilters.partNum = $("topIssuesPartNum").value.trim();
+    state.historyFilters.jobNum = $("topIssuesJobNum").value.trim();
   } else if (source === "Export") {
     const jobNum = firstHistoryJobNum($("summaryJobNum").value);
     if (jobNum) {
@@ -1669,6 +1672,8 @@ function applyHistoryFilters() {
   $("reviewJobNum").value = jobNum;
   $("reportPartNum").value = partNum;
   $("reportJobNum").value = jobNum;
+  $("topIssuesPartNum").value = partNum;
+  $("topIssuesJobNum").value = jobNum;
   const summaryJobNum = $("summaryJobNum").value.trim();
   if (jobNum && (!summaryJobNum || !summaryJobNum.includes(","))) {
     $("summaryJobNum").value = jobNum;
@@ -1735,6 +1740,7 @@ function renderPartReviewControls() {
 function renderReportControls() {
   refreshReportOperationChoices();
   fillSelect($("reportResourceId"), [{ resourceId: "", description: "All machines" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
+  fillSelect($("topIssuesResourceId"), [{ resourceId: "", description: "All machines" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
   fillDatalist($("reportCharacteristicOptions"), state.snapshot.characteristics, (characteristic) => characteristic.name);
 }
 
@@ -2009,6 +2015,59 @@ function renderJobSummary(rows) {
       <span>${formatNumber(row.min)} - ${formatNumber(row.max)}</span>
       <span>${formatNumber(row.stdDev)}</span>
       <span>Cpk ${capabilityBadge(row.cpk)}<small>Ppk ${capabilityBadge(row.ppk)}</small></span>`;
+    container.appendChild(item);
+  });
+}
+
+async function loadTopIssues(event) {
+  event?.preventDefault();
+  try {
+    const rows = await api("/history/top-issues", {
+      method: "POST",
+      body: JSON.stringify({
+        partNum: $("topIssuesPartNum").value.trim() || null,
+        jobNum: $("topIssuesJobNum").value.trim() || null,
+        resourceId: $("topIssuesResourceId").value || null,
+        characteristicName: $("topIssuesCharacteristicName").value.trim() || null,
+        from: dateTimeLocalValue("topIssuesFrom"),
+        to: dateTimeLocalValue("topIssuesTo"),
+        limit: Number($("topIssuesLimit").value) || 25
+      })
+    });
+    renderTopIssues(rows);
+    $("topIssuesMessage").textContent = `${rows.length} issue group${rows.length === 1 ? "" : "s"} loaded.`;
+    $("topIssuesMessage").className = "message ok";
+  } catch (error) {
+    $("topIssuesMessage").textContent = readableError(error);
+    $("topIssuesMessage").className = "message error";
+  }
+}
+
+function renderTopIssues(rows) {
+  const container = $("topIssuesList");
+  if (!rows.length) {
+    container.className = "data-table empty";
+    container.textContent = "No out-of-spec, drift, or rejected-attribute events found for those filters.";
+    return;
+  }
+
+  container.className = "data-table top-issues-table";
+  container.innerHTML = `
+    <div class="data-row header">
+      <span>Part</span><span>Inspection Item</span><span>Signal</span><span>Cause</span><span>Events</span><span>Jobs / Machines</span><span>Latest</span><span>Latest Detail</span>
+    </div>`;
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "data-row";
+    item.innerHTML = `
+      <span><strong>${escapeHtml(row.partNum)}</strong></span>
+      <span>${escapeHtml(row.characteristicName)}</span>
+      <span>${escapeHtml(ruleLabel(row.ruleTriggered))}</span>
+      <span>${escapeHtml(row.causeCategory || "Unspecified")}</span>
+      <span><strong>${row.eventCount}</strong>${row.activeCount ? `<small>${row.activeCount} active</small>` : ""}</span>
+      <span>${row.distinctJobCount} job${row.distinctJobCount === 1 ? "" : "s"}<small>${row.distinctMachineCount} machine${row.distinctMachineCount === 1 ? "" : "s"}</small></span>
+      <span>${escapeHtml(row.latestJobNum)}<small>${escapeHtml(row.latestResourceId)} / ${formatDateTime(row.latestEventAt)}</small></span>
+      <span>${escapeHtml(row.latestDetail || "")}${row.latestSolution ? `<small>Last solution: ${escapeHtml(row.latestSolution)}</small>` : ""}</span>`;
     container.appendChild(item);
   });
 }
@@ -3300,6 +3359,7 @@ $("setupImportSectionTab").addEventListener("click", () => showSetupSection("Imp
 $("setupHistorySectionTab").addEventListener("click", () => showSetupSection("History"));
 $("historyLedgerTab").addEventListener("click", () => showHistoryView("Ledger"));
 $("historyChartsTab").addEventListener("click", () => showHistoryView("Charts"));
+$("historyIssuesTab").addEventListener("click", () => showHistoryView("Issues"));
 $("historyExportTab").addEventListener("click", () => showHistoryView("Export"));
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
@@ -3364,6 +3424,15 @@ $("reportJobNum").addEventListener("input", () => {
 });
 $("reportPartNum").addEventListener("change", refreshReportOperationChoices);
 $("reportJobNum").addEventListener("change", refreshReportOperationChoices);
+$("topIssuesPartNum").addEventListener("input", () => {
+  syncHistoryFiltersFrom("Issues");
+  applyHistoryFilters();
+});
+$("topIssuesJobNum").addEventListener("input", () => {
+  syncHistoryFiltersFrom("Issues");
+  applyHistoryFilters();
+});
+$("topIssuesForm").addEventListener("submit", loadTopIssues);
 $("summaryJobNum").addEventListener("input", () => {
   syncHistoryFiltersFrom("Export");
   applyHistoryFilters();

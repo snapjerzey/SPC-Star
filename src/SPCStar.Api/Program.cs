@@ -30,6 +30,7 @@ builder.Services.AddSingleton<JobTagService>();
 builder.Services.AddSingleton<InspectionFrequencyService>();
 builder.Services.AddSingleton<ChartDataService>();
 builder.Services.AddSingleton<HistoryExportService>();
+builder.Services.AddSingleton<HistoryIssueSummaryService>();
 builder.Services.AddSingleton<SetupQueryService>();
 builder.Services.AddSingleton<SetupManagementService>();
 builder.Services.AddSingleton<OfflineSyncService>();
@@ -486,6 +487,11 @@ app.MapPost("/exports/drift-alerts.csv", (AlertHistoryExportRequest request, His
 app.MapPost("/exports/material-changes.csv", (MaterialHistoryExportRequest request, HistoryExportService service) =>
 {
     return Results.Text(service.ExportMaterialChangeHistoryCsv(request), "text/csv");
+});
+
+app.MapPost("/history/top-issues", (HistoryIssueSummaryRequest request, HistoryIssueSummaryService service) =>
+{
+    return Results.Ok(service.TopIssues(request));
 });
 
 app.MapPost("/sync/offline-changes", (OfflineSyncRequest request, OfflineSyncService service, IRepositoryPersistence persistence) =>

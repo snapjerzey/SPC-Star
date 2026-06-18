@@ -26,8 +26,9 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Authorized override workflow with credential validation, cause/action notes, line tech/admin/QA/GOD support, and GOD-mode bypass reason validation.
 - Material lot change logging for job/resource traceability.
 - Timestamped job notes for operator handoff and issue history.
-- History tab combining ledger review, charts, and job-data export. It carries part/job filters across Ledger, Charts, and Export.
+- History tab combining ledger review, charts, top issue analysis, and job-data export. It carries part/job filters across Ledger, Charts, Top Issues, and Export.
 - History ledger for part capability across all jobs, part/job review, measurement history, notes, locks, material history, and editable inspection entries.
+- Top Issues history report for repeat out-of-spec, drift, and rejected-attribute events by part, inspection item, rule/signal, cause category, affected jobs, and affected machines.
 - History measurement highlighting: red for out-of-spec values and yellow for out-of-control values.
 - QA summary views and CSV export for one or more jobs, including mean, min, max, standard deviation, Cp, Cpk, Pp, and Ppk.
 - Raw inspection, alert, material, and job history CSV exports.
@@ -140,6 +141,7 @@ Initial endpoints include:
 - `GET /exports/jobs/{jobNum}/inspection-history.csv`
 - `POST /exports/drift-alerts.csv`
 - `POST /exports/material-changes.csv`
+- `POST /history/top-issues`
 - `POST /sync/offline-changes`
 - `GET /alerts/active`
 
@@ -206,5 +208,5 @@ The API seeds demo security users and one sample inspection plan:
 - Custom drift-rule editor for admin-defined thresholds and warning behavior.
 - Box-level traceability once the required production count/source logic is defined.
 - WebHID/custom binary device profiles once the actual gauge models and report formats are known.
-- Broader History search/refinement for historical job notes, machine issues, drift events, and material events.
+- Deeper History search/refinement for cross-job note text, machine issue trends, material event trends, and saved QA report views.
 

@@ -2,7 +2,7 @@
 
 ## Current shape
 
-SPC Star currently has three projects:
+SPC Star currently has these main projects:
 
 - `SPCStar.Core`: domain entities and business services.
 - `SPCStar.Api`: minimal HTTP API over the core services.
@@ -13,14 +13,14 @@ The xUnit project remains in place for normal development and CI.
 
 ## Current storage
 
-The app uses `ISpcRepository` with an `InMemorySpcRepository` implementation and a `FileBackedSpcRepository` for local JSON persistence. This keeps business rules isolated and testable before adding EF Core/SQLite persistence.
+The app uses `ISpcRepository` with an `InMemorySpcRepository` implementation for tests and a `SqliteBackedSpcRepository` for normal local/server operation. SQLite stores the current repository snapshot in `.appdata/spcstar.db` by default, with WAL journaling enabled. `FileBackedSpcRepository` remains as a JSON fallback and one-time import source for older development data.
 
-SQL schema scripts live in `database/` and mirror the initial relational model.
+This is intentionally still behind the repository/service boundary. Business rules stay isolated from storage so a future EF Core/SQL Server provider can be added without rewriting the inspection, drift, import, and review services.
 
 ## Implemented services
 
-- `SetupImportService`: row-type CSV setup validation and upsert for job data, material requirements, measured variables, and accept/reject attributes.
-- `SetupManagementService`: users, global settings, manual part/operation/inspection setup, and part-specific job data field setup.
+- `SetupImportService`: row-type Excel/CSV setup validation and upsert for job data, material requirements, measured variables, accept/reject attributes, phase-specific requirements, sample sizes, frequency, and display order.
+- `SetupManagementService`: users, global settings, capability thresholds, manual part/operation/inspection setup, part-specific job data fields, and material setup.
 - `SetupQueryService`: tablet setup snapshot, part lookup, job data field lookup, material field lookup, inspection plan lookup, and setup review data.
 - `AuthSessionService`: development login/session contract for role-aware UI flows.
 - `WorkContextService`: one-call inspection screen context for tablet entry, including live capability metrics.
@@ -33,17 +33,19 @@ SQL schema scripts live in `database/` and mirror the initial relational model.
 - `InspectionFrequencyService`: time, quantity, and event frequency evaluation.
 - `ChartDataService`: chart-ready measurement points with moving range, limits, specs, and violations.
 - `QaSummaryExportService`: COA-style summary calculations and CSV export.
-- `JobReviewService`: part/job review data, editable inspection entries, and limit-status flags for review highlighting.
+- `JobReviewService`: part/job review data, editable inspection entries, and limit-status flags for History highlighting.
 - `HistoryExportService`: raw inspection, job history, drift alert, and material change CSV exports.
 - `OfflineSyncService`: first batch upload contract for retry-safe tablet/offline writes.
 
 ## Inspection UI behavior
 
-Inspection entry is organized around top-level job data, part-specific job tags, material lot entries, measured variables, and accept/reject attributes. The supported inspection phases are Startup, Setup, In Process, and Spool.
+Inspection entry is organized around top-level job data, part-specific job tags, material lot entries, and ordered inspection items. Inspection items can be measured variables or accept/reject attributes. The supported operator inspection phases are Startup, Setup, In Process, and Spool; coil/material changes are captured through material/job data rather than as a standalone operator phase.
+
+The setup/admin UI includes Parts & Inspections, Users, Rules, Import, and History. History combines the previous review/report/job-data functions into Ledger, Charts, and Export views with shared job/part filters.
 
 The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. Devices that require direct serial or HID communication should be added through a dedicated Web Serial/WebHID profile layer so the inspection workflow does not need to change.
 
-## Next architecture step
+## Next Architecture Step
 
-Move from local JSON persistence to the production database layer, then harden auth/session behavior and offline queue handling. Keep the service APIs stable so tests continue to protect the manufacturing rules while storage changes underneath.
+Keep SQLite as the pilot database while validating production workflows. The next hardening work is backup/restore practice, authentication/session hardening, offline queue conflict handling, and broader History filtering. If the pilot requires a separate database engine, add an EF Core/SQL Server provider behind the existing repository boundary.
 

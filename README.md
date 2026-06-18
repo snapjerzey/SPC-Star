@@ -8,27 +8,28 @@ This repository currently contains a working local browser/tablet-first SPC appl
 
 - Core domain models for users, roles, permissions, setup data, jobs, inspection measurements, job notes, alerts, overrides, material traceability, and exports.
 - SQLite-backed local server database with JSON fallback/import for existing development data.
-- Standard CSV setup import with row types for job data, materials, measured variables, and accept/reject attributes.
+- Standard Excel/CSV setup import with row types for job data, materials, measured variables, and accept/reject attributes.
 - Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, frequency, and COA-required variables.
 - User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
 - Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, and Spool.
 - Persistent job tag storage for part-specific context fields that will be driven by inspection setup.
 - Part-specific material requirements from setup/import, with lot entry on the inspection screen.
-- Multi-variable measurement entry with measured variables separated from accept/reject attribute checks.
+- Ordered inspection-item entry for measured variables and accept/reject attributes, with inactive phase items removed from the operator view.
 - Accept/Reject inspection support for comparator/template checks.
 - Live row-based min, max, mean, standard deviation, Cp, Cpk, Pp, and Ppk summary for every active measured variable.
 - Cp, Cpk, Pp, and Ppk calculations with shared red/yellow/green visual status cues.
 - Trend chart rendering with chart type selection.
-- Drift detection rule selection with a global default and part-level override.
+- Drift detection rule selection with a global default, part-level override, and editable system capability thresholds.
 - Western Electric, Nelson-style trend, CUSUM, EWMA, moving average trend, linear trend/slope, custom default, spec-limit-only, and no-automatic-rule options.
 - Drift alert creation and lock enforcement.
 - Authorized override workflow with credential validation, cause/action notes, line tech/admin/QA/GOD support, and GOD-mode bypass reason validation.
 - Material lot change logging for job/resource traceability.
 - Timestamped job notes for operator handoff and issue history.
-- Review tab for part capability across all jobs, part/job job review, measurement history, notes, locks, material history, and editable inspection entries.
-- Review measurement highlighting: red for out-of-spec values and yellow for out-of-control values.
-- QA summary views and CSV export for one or more jobs.
+- History tab combining ledger review, charts, and job-data export. It carries part/job filters across Ledger, Charts, and Export.
+- History ledger for part capability across all jobs, part/job review, measurement history, notes, locks, material history, and editable inspection entries.
+- History measurement highlighting: red for out-of-spec values and yellow for out-of-control values.
+- QA summary views and CSV export for one or more jobs, including mean, min, max, standard deviation, Cp, Cpk, Pp, and Ppk.
 - Raw inspection, alert, material, and job history CSV exports.
 - USB keyboard-style measurement capture support for gauges/scales/calipers that enter values into focused fields, including value cleanup and Enter-to-next-field behavior.
 - Offline-oriented setup snapshot and retry-safe sync contracts.
@@ -75,20 +76,24 @@ http://localhost:5000/health
 
 Example requests are in `docs/api-examples.http`.
 
-## Standard setup import
+## Standard Setup Import
 
 The setup import is row-type based so one file can define the complete inspection plan for a part.
 
-The in-app `Load Blank Template` button inserts headers only, with no sample part data.
+The in-app `Load Blank Template` button inserts headers only, with no sample part data. The import also supports the standardized Excel workbook sheet named `SPC-Star Import`.
 
 The blank template uses readable columns grouped for manual entry. There is no `Section` column; SPC Star infers the row type from the column you fill in.
 
-`Part Number, Part Description, Product Group, Inspection Phase, Operation, Job Data Field, Material Name, Material Part Number, Material Description, Variable Name, Attribute Name, Required, Sort Order, Unit, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Sample Size, Frequency Type, Frequency, Frequency Unit, Drift Rule, COA Required, COA Statistic`
+Primary readable columns:
+
+`Part Number, Part Description, Product Group, Inspection Phase, Operation, Job Data Field, Material Name, Material Part Number, Material Description, Variable Name, Attribute Name, Required, Sort Order, Unit, Location, Inspection Method, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Drift Rule, COA Required, COA Statistic`
 
 - Job data rows use `Job Data Field`, `Required`, and `Sort Order`.
 - Material rows use `Material Name`, `Material Part Number`, `Material Description`, `Required`, and `Sort Order`.
-- Variable rows use `Variable Name`, `Operation`, `Unit`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, drift rule, and COA columns.
-- Attribute rows use `Attribute Name`, `Operation`, `Unit=Accept/Reject`, sample/frequency columns, drift rule, and COA columns.
+- Variable rows use `Variable Name`, `Operation`, `Unit`, `Location`, `Inspection Method`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, drift rule, and optional COA columns.
+- Attribute rows use `Attribute Name`, `Operation`, `Location`, `Inspection Method`, sample/frequency columns, drift rule, and optional COA columns.
+- Universal inspection rows can use phase-specific columns such as `Startup Required`, `Startup Sample Size`, `Setup Required`, `Setup Sample Size`, `In Process Required`, `In Process Sample Size`, `CoilChange Required`, `CoilChange Sample Size`, `Spool Required`, and `Spool Sample Size`.
+- `Attribute/Variable`, `Tool Used`, `ParameterSeq`, and other standardized inspection-sheet conversion headers are accepted for bulk import workflows.
 
 The importer also accepts the older technical column names for compatibility.
 
@@ -139,7 +144,7 @@ Initial endpoints include:
 
 The API also serves the browser/tablet inspection UI at `/`.
 
-## Deploy on local network
+## Deploy On Local Network
 
 For the fastest internal testing rollout, install SPC-Star on one Windows server and let operators open it through a browser from shop-floor computers.
 
@@ -183,17 +188,22 @@ The API seeds demo security users and one sample inspection plan:
 - Diameter control limits `4.0` to `6.0`
 - Time frequency every `30` minutes
 
-## Current gaps / next work
+## Current Data / Import Status
 
 - Excel setup import is now supported. Upload workbooks with a sheet named `SPC-Star Import`; CSV import remains available as a fallback.
-- Cutting Edge inspection families have been prepared and loaded into the local test data set: Needlemaker, Test Polish, Strip Polish, and Drilled.
-- Next inspection-family import work: Taperpoint.
+- Current development data has included Schneider, Ethicon Cutting Edge - Needles, Ethicon Cutting Edge - Drilled, Ethicon Taperpoint - Needles, Ethicon Taperpoint - Drilled, Everpoint, and Ethalloy/Cardio inspection-family imports.
+- Product group names have been standardized around customer/family names such as Schneider, Ethicon Cutting Edge - Needles, Ethicon Cutting Edge - Drilled, Ethicon Taperpoint - Needles, and Ethicon Taperpoint - Drilled.
+
+## Current Gaps / Next Work
+
+- Continue validating loaded inspection plans against source sheets before production-floor pilot use.
+- Prepare pilot rollout checklist: server install, backups, user permissions, operator sign-in/password reset, product group access, and test jobs.
 - Authentication provider integration.
-- Production database backup/restore workflow and user/session hardening.
+- Production database backup/restore drill and user/session hardening.
 - Fully relational EF Core/SQL Server storage if the pilot requires a separate database engine.
 - Full offline queue UI with conflict handling.
 - Custom drift-rule editor for admin-defined thresholds and warning behavior.
 - Box-level traceability once the required production count/source logic is defined.
 - Native Web Serial/WebHID device profiles for gauges that do not behave like keyboard input.
-- Broader reporting/search screens for historical job notes, machine issues, drift events, and material events.
+- Broader History search/refinement for historical job notes, machine issues, drift events, and material events.
 

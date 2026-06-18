@@ -50,16 +50,15 @@ The current column-based setup template supports these rows:
 - Packaging, pallet label, desiccant bag, box label, wash cycle, material orientation, ID stamp orientation, visual checks, and template checks are attributes unless a numeric value is explicitly required.
 - The WinSPC logs often provide the clearest legacy variable names and sample-entry layout. The inspection sheets provide the broader inspection instructions. Both should be reviewed together for each part.
 
-## Template Gaps Found
+## Remaining Review Risks
 
-The current template can load the core inspection plan, but the Schneider sheets show several pieces of data that should be added before heavy production import work:
+The current template can load Schneider job data, materials, variables, attributes, tools/methods, phase-specific requirements, sample sizes, frequencies, and display order. The main risks before production use are review/validation risks:
 
-| Missing capability | Why it matters |
+| Review risk | Why it matters |
 | --- | --- |
-| Inspection method/tool | Sheets name tools such as Caliper, Micrometer, Comparator, Force Gauge, Keyence, Heat Gun, GP gauges, and templates. Operators need to know what tool to use. |
 | Verified material source | The inspection sheet alone is not enough to decide what materials belong to a job. Materials should be imported only from a BOM/material master or another verified source. |
 | Sample source context | Schneider plans may require pulling samples from specific places, but that should not create duplicate characteristics unless the actual measurement or limit is different. |
-| Event trigger detail | `Start Up & Coil Changes (CC)` and tooling-change requirements need clean representation without adding separate material-change phases. |
+| Event trigger detail | `Start Up & Coil Changes (CC)` and tooling-change requirements must be represented through phase/event requirement columns without creating duplicate full inspection blocks. |
 | Drawing number and revision metadata | Several sheets include Schneider drawing numbers, part drawing revisions, pallet drawing numbers, and control plan references. |
 
 ## Recommended Import Rule

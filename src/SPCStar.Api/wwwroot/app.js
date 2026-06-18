@@ -15,6 +15,13 @@ const state = {
   historyFilters: {
     partNum: "",
     jobNum: ""
+  },
+  device: {
+    serialPort: null,
+    serialReader: null,
+    serialReading: false,
+    buffer: "",
+    pending: Promise.resolve()
   }
 };
 
@@ -300,6 +307,7 @@ function renderEmptyContext(message = "") {
   $("contextSubtitle").textContent = "Enter a job number, machine, part number, and operation, then start inspecting.";
   renderLock(null);
   $("measurementForm").classList.add("hidden");
+  $("devicePanel").classList.add("hidden");
   $("trendPanel").classList.add("hidden");
   $("jobNotesPanel").classList.add("hidden");
   $("materialPanel").classList.add("hidden");
@@ -338,6 +346,7 @@ function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
   $("contextTitle").textContent = "Inspection Items";
   $("contextSubtitle").textContent = `${jobNum} / ${resourceId} / ${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.activePhase || set.inspectionPhase}`;
+  $("devicePanel").classList.remove("hidden");
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
   $("jobNotesPanel").classList.remove("hidden");
@@ -655,9 +664,11 @@ async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) 
     if (moveNext && result !== "locked" && !state.activeLock) {
       focusNextMeasurementInput(input);
     }
+    return result;
   } catch {
     input.focus();
     input.select?.();
+    return "error";
   }
 }
 
@@ -772,6 +783,145 @@ function normalizeMeasurementInput(input) {
 function parseDeviceMeasurement(rawValue) {
   const match = String(rawValue).replace(",", ".").match(/[-+]?\d*\.?\d+/);
   return match ? match[0] : null;
+}
+
+function setDeviceStatus(message, kind = "neutral") {
+  $("deviceStatus").textContent = message;
+  $("deviceStatus").className = `message ${kind}`;
+}
+
+function updateDeviceControls(connected) {
+  $("connectSerialDeviceButton").classList.toggle("hidden", connected);
+  $("disconnectSerialDeviceButton").classList.toggle("hidden", !connected);
+  $("serialBaudRate").disabled = connected;
+  $("deviceProfile").disabled = connected;
+}
+
+async function connectSerialDevice() {
+  if (!("serial" in navigator)) {
+    setDeviceStatus("Web Serial is not available in this browser.", "error");
+    return;
+  }
+
+  if ($("deviceProfile").value !== "serial-text") {
+    setDeviceStatus("Select Serial text gauge before connecting.", "error");
+    return;
+  }
+
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: Number($("serialBaudRate").value) || 9600 });
+    state.device.serialPort = port;
+    state.device.serialReading = true;
+    state.device.buffer = "";
+    updateDeviceControls(true);
+    setDeviceStatus("Gauge connected.", "ok");
+    readSerialDevice(port);
+  } catch (error) {
+    setDeviceStatus(readableError(error), "error");
+    await disconnectSerialDevice();
+  }
+}
+
+async function readSerialDevice(port) {
+  const decoder = new TextDecoder();
+  while (state.device.serialReading && port.readable) {
+    const reader = port.readable.getReader();
+    state.device.serialReader = reader;
+    try {
+      while (state.device.serialReading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          handleSerialDeviceText(decoder.decode(value, { stream: true }));
+        }
+      }
+    } catch (error) {
+      if (state.device.serialReading) {
+        setDeviceStatus(readableError(error), "error");
+      }
+    } finally {
+      reader.releaseLock();
+      state.device.serialReader = null;
+    }
+  }
+}
+
+function handleSerialDeviceText(text) {
+  state.device.buffer += text;
+  const lines = state.device.buffer.split(/\r?\n/);
+  state.device.buffer = lines.pop() || "";
+  lines.map((line) => line.trim()).filter(Boolean).forEach(queueDeviceMeasurement);
+  if (state.device.buffer.length > 80) {
+    queueDeviceMeasurement(state.device.buffer);
+    state.device.buffer = "";
+  }
+}
+
+function queueDeviceMeasurement(rawValue) {
+  state.device.pending = state.device.pending
+    .catch(() => {})
+    .then(() => applyDeviceMeasurement(rawValue));
+}
+
+async function applyDeviceMeasurement(rawValue) {
+  const parsed = parseDeviceMeasurement(rawValue);
+  if (parsed === null) {
+    setDeviceStatus(`No numeric reading found in ${rawValue}.`, "error");
+    return;
+  }
+
+  const input = activeMeasurementInput() || firstOpenMeasurementInput();
+  if (!input) {
+    setDeviceStatus("Load an inspection and select a measurement field.", "error");
+    return;
+  }
+
+  if (input.dataset.entryType !== "Variable") {
+    setDeviceStatus("Serial readings can only fill measured-variable fields.", "error");
+    return;
+  }
+
+  input.focus();
+  input.value = parsed;
+  const result = await submitSingleMeasurementAndAdvance(input, true);
+  if (result === "submitted") {
+    setDeviceStatus(`Gauge reading ${parsed} accepted.`, "ok");
+  } else if (result === "locked") {
+    setDeviceStatus(`Gauge reading ${parsed} submitted and triggered a lock.`, "error");
+  }
+}
+
+function activeMeasurementInput() {
+  return document.activeElement?.classList?.contains("measurement-input") &&
+    !document.activeElement.disabled &&
+    document.activeElement.dataset.submitted !== "true"
+    ? document.activeElement
+    : null;
+}
+
+function firstOpenMeasurementInput() {
+  return [...document.querySelectorAll(".measurement-input")]
+    .find((input) => !input.disabled && input.dataset.submitted !== "true" && input.dataset.entryType === "Variable") || null;
+}
+
+async function disconnectSerialDevice() {
+  state.device.serialReading = false;
+  try {
+    await state.device.serialReader?.cancel();
+  } catch {
+  }
+
+  try {
+    await state.device.serialPort?.close();
+  } catch {
+  }
+
+  state.device.serialReader = null;
+  state.device.serialPort = null;
+  state.device.buffer = "";
+  updateDeviceControls(false);
+  setDeviceStatus("Keyboard input ready.", "neutral");
 }
 
 function focusNextMeasurementInput(currentInput) {
@@ -1535,6 +1685,7 @@ function partNumForJob(jobNum) {
 }
 
 function logout() {
+  disconnectSerialDevice();
   state.user = null;
   state.snapshot = null;
   state.contexts = [];
@@ -3124,6 +3275,11 @@ $("jobTagsForm").addEventListener("submit", saveJobTags);
 $("materialChangeForm").addEventListener("submit", saveMaterialChange);
 $("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
+$("connectSerialDeviceButton").addEventListener("click", connectSerialDevice);
+$("disconnectSerialDeviceButton").addEventListener("click", disconnectSerialDevice);
+$("deviceProfile").addEventListener("change", () => {
+  setDeviceStatus($("deviceProfile").value === "serial-text" ? "Serial gauge profile selected." : "Keyboard input ready.", "neutral");
+});
 $("overrideUserName").addEventListener("input", () => {
   $("godReasonLabel").classList.toggle("hidden", $("overrideUserName").value.trim().toLowerCase() !== "god1");
 });

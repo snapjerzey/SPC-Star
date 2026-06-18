@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260617-user-detail-panel">
+  <link rel="stylesheet" href="/styles.css?v=20260618-device-panel">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -183,6 +183,32 @@
               <p id="contextSubtitle">Enter a job number, machine, part number, and operation, then start inspecting.</p>
             </div>
           </div>
+
+          <section id="devicePanel" class="device-panel hidden">
+            <div class="device-controls">
+              <label>
+                Device
+                <select id="deviceProfile">
+                  <option value="keyboard">Keyboard input</option>
+                  <option value="serial-text">Serial text gauge</option>
+                </select>
+              </label>
+              <label>
+                Baud
+                <select id="serialBaudRate">
+                  <option value="9600">9600</option>
+                  <option value="4800">4800</option>
+                  <option value="19200">19200</option>
+                  <option value="38400">38400</option>
+                  <option value="57600">57600</option>
+                  <option value="115200">115200</option>
+                </select>
+              </label>
+              <button id="connectSerialDeviceButton" type="button" class="secondary">Connect Gauge</button>
+              <button id="disconnectSerialDeviceButton" type="button" class="secondary hidden">Disconnect</button>
+            </div>
+            <p id="deviceStatus" class="message">Keyboard input ready.</p>
+          </section>
 
           <form id="measurementForm" class="measurement-form hidden">
             <div id="measurementVariableList" class="variable-list"></div>
@@ -730,6 +756,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260617-history-tab"></script>
+  <script src="/app.js?v=20260618-device-panel"></script>
 </body>
 </html>

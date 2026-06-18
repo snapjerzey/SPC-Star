@@ -32,6 +32,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - QA summary views and CSV export for one or more jobs, including mean, min, max, standard deviation, Cp, Cpk, Pp, and Ppk.
 - Raw inspection, alert, material, and job history CSV exports.
 - USB keyboard-style measurement capture support for gauges/scales/calipers that enter values into focused fields, including value cleanup and Enter-to-next-field behavior.
+- Web Serial text-gauge capture for USB devices that expose serial readings instead of acting like a keyboard.
 - Offline-oriented setup snapshot and retry-safe sync contracts.
 - Unit tests for the high-risk rules and calculations.
 - Dependency-free smoke tests that can run even when NuGet package restore is unavailable.
@@ -204,6 +205,6 @@ The API seeds demo security users and one sample inspection plan:
 - Full offline queue UI with conflict handling.
 - Custom drift-rule editor for admin-defined thresholds and warning behavior.
 - Box-level traceability once the required production count/source logic is defined.
-- Native Web Serial/WebHID device profiles for gauges that do not behave like keyboard input.
+- WebHID/custom binary device profiles once the actual gauge models and report formats are known.
 - Broader History search/refinement for historical job notes, machine issues, drift events, and material events.
 

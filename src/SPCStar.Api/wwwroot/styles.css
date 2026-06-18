@@ -348,6 +348,24 @@ hr {
   margin-bottom: 0;
 }
 .measurement-form { margin-top: 18px; }
+.device-panel {
+  border: 1px solid #dbe6f2;
+  border-radius: 6px;
+  background: #fbfdff;
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 14px;
+  padding: 12px;
+}
+.device-controls {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(110px, 150px) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+.device-controls button {
+  min-height: 44px;
+}
 .override-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1301,7 +1319,7 @@ textarea {
   .status-row { justify-content: flex-start; }
   .job-data-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .job-data-form button { grid-column: span 2; }
-  .form-grid, .measurement-form, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .user-detail-grid, .global-rule-form, .capability-threshold-form, .material-form, .material-field-row { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .device-controls, .override-form, .job-summary-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .user-detail-grid, .global-rule-form, .capability-threshold-form, .material-form, .material-field-row { grid-template-columns: 1fr; }
   .material-field-row h3 { grid-column: auto; }
   .report-filter-form button { grid-column: auto; }
   .override-form label:nth-child(n+3), .override-form button { grid-column: span 1; }

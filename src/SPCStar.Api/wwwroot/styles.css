@@ -4,8 +4,8 @@
   --line: #d7e1ec;
   --text: #0f172a;
   --muted: #5f6f82;
-  --primary: #0f63b8;
-  --primary-dark: #083e7a;
+  --primary: #0b4f93;
+  --primary-dark: #062f5f;
   --accent: #f59e0b;
   --accent-dark: #c76508;
   --navy: #071426;
@@ -55,14 +55,14 @@ button {
   min-height: 44px;
   border: 0;
   border-radius: 6px;
-  background: linear-gradient(180deg, #1675d1, var(--primary));
+  background: linear-gradient(180deg, #0d5fa8, var(--primary-dark));
   color: white;
   font-weight: 650;
   padding: 0 18px;
   cursor: pointer;
 }
 
-button:hover { background: linear-gradient(180deg, var(--primary), var(--primary-dark)); }
+button:hover { background: linear-gradient(180deg, var(--primary-dark), #041f42); }
 button.secondary {
   background: #f8fafc;
   color: var(--text);
@@ -85,7 +85,7 @@ button.secondary {
   color: var(--text);
 }
 .tab.active {
-  background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+  background: #062f5f;
   color: white;
 }
 
@@ -435,7 +435,7 @@ textarea {
   color: var(--text);
 }
 .setup-nav-button.active {
-  background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+  background: #062f5f;
   color: #ffffff;
 }
 .setup-section {
@@ -774,7 +774,7 @@ textarea {
   color: var(--text);
 }
 .history-mode-button.active {
-  background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+  background: #062f5f;
   color: #ffffff;
 }
 .history-view {

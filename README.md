@@ -10,6 +10,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - SQLite-backed local server database with JSON fallback/import for existing development data.
 - Standard Excel/CSV setup import with row types for job data, materials, measured variables, and accept/reject attributes.
 - Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, frequency, and COA-required variables.
+- Machine setup screen for adding and maintaining the machine list operators choose from at job start.
 - User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
 - Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, and Spool.
@@ -106,11 +107,14 @@ Initial endpoints include:
 - `GET /auth/me`
 - `POST /setup/import-csv`
 - `GET /setup/users`
+- `GET /setup/resources`
 - `GET /setup/roles`
 - `GET /setup/settings`
 - `POST /setup/settings`
 - `POST /setup/users`
+- `POST /setup/resources`
 - `DELETE /setup/users/{userName}`
+- `DELETE /setup/resources/{resourceId}`
 - `POST /setup/inspection-plans`
 - `POST /setup/job-data-fields`
 - `POST /setup/material-fields`

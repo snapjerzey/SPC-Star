@@ -333,6 +333,43 @@ public sealed class SetupManagementServiceTests
         Assert.Equal("Outside Diameter", limit.CharacteristicName);
     }
 
+    [Fact]
+    public void UpsertResource_AddsMachineForOperatorSelection()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpsertResource(new UpsertResourceMachineRequest("NM-10", "Needlemaker 10"));
+
+        Assert.True(result.Succeeded);
+        Assert.Contains(service.GetResources(), resource => resource.ResourceId == "NM-10" && resource.Description == "Needlemaker 10");
+    }
+
+    [Fact]
+    public void DeleteResource_BlocksMachineWithInspectionHistory()
+    {
+        var repository = new InMemorySpcRepository();
+        repository.Resources.Add(new ResourceMachine { ResourceId = "PRESS1", Description = "Main press" });
+        repository.Measurements.Add(new InspectionMeasurement
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ProcessCode = "General Production",
+            OperationSeq = 10,
+            ResourceId = "PRESS1",
+            CharacteristicName = "Diameter",
+            Value = 1m,
+            Timestamp = DateTimeOffset.UtcNow,
+            OperatorUserId = "operator1"
+        });
+        var service = new SetupManagementService(repository);
+
+        var result = service.DeleteResource("PRESS1");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(repository.Resources, resource => resource.ResourceId == "PRESS1");
+    }
+
     private static UpsertInspectionSetupRequest Request(
         string processCode,
         string characteristicName,

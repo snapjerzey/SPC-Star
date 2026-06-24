@@ -212,6 +212,8 @@ public sealed class SetupQueryService(ISpcRepository repository)
             .Select(job => new JobSetupDto(job.JobNum, job.PartNum))
             .ToArray();
         var resources = repository.Resources
+            .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
             .OrderBy(resource => resource.ResourceId)
             .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description))
             .ToArray();

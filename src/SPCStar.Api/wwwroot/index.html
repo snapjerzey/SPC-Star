@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260618-history-issues">
+  <link rel="stylesheet" href="/styles.css?v=20260624-machine-admin">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -258,6 +258,7 @@
       <div class="setup-nav">
         <button id="setupInspectionSectionTab" type="button" class="setup-nav-button active">Parts & Inspections</button>
         <button id="setupUsersSectionTab" type="button" class="setup-nav-button">Users</button>
+        <button id="setupMachinesSectionTab" type="button" class="setup-nav-button">Machines</button>
         <button id="setupRulesSectionTab" type="button" class="setup-nav-button">Rules</button>
         <button id="setupImportSectionTab" type="button" class="setup-nav-button">Import</button>
         <button id="setupHistorySectionTab" type="button" class="setup-nav-button">History</button>
@@ -415,6 +416,36 @@
             </div>
           </form>
           <p id="inspectionSetupMessage" class="message"></p>
+        </section>
+      </section>
+
+      <section id="setupMachinesSection" class="setup-section hidden">
+        <section class="panel">
+          <div class="panel-heading horizontal">
+            <div>
+              <h2>Machines</h2>
+              <p>Create and maintain the machine list operators select when starting production.</p>
+            </div>
+            <button id="newMachineButton" type="button" class="secondary">New Machine</button>
+          </div>
+          <div class="machine-admin-layout">
+            <div>
+              <div id="machineList" class="setup-list empty">No machines loaded.</div>
+            </div>
+            <form id="machineSetupForm" class="user-detail-panel">
+              <h3 id="machineDetailTitle">New Machine</h3>
+              <div class="user-detail-grid">
+                <label>Machine ID<input id="setupResourceId" autocomplete="off" required></label>
+                <label>Description<input id="setupResourceDescription" autocomplete="off"></label>
+              </div>
+              <input id="setupOriginalResourceId" type="hidden">
+              <div class="user-detail-actions">
+                <button type="submit">Save Machine</button>
+                <button id="deleteSelectedMachineButton" type="button" class="secondary danger-button">Delete</button>
+              </div>
+            </form>
+          </div>
+          <p id="machineSetupMessage" class="message"></p>
         </section>
       </section>
 
@@ -782,6 +813,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260618-history-issues"></script>
+  <script src="/app.js?v=20260624-machine-admin"></script>
 </body>
 </html>

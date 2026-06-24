@@ -11,6 +11,8 @@ public sealed record ResetUserPasswordRequest(string UserName, string TemporaryP
 
 public sealed record UserImportResult(int Imported);
 
+public sealed record UpsertResourceMachineRequest(string ResourceId, string? Description, string? OriginalResourceId = null);
+
 public sealed record UpdateSettingsRequest(
     string GlobalAlertRuleSet,
     CustomDriftRuleSetupDto? CustomDriftRule = null,
@@ -83,6 +85,16 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return repository.Roles
             .Select(role => role.Name)
             .OrderBy(role => role)
+            .ToArray();
+    }
+
+    public IReadOnlyList<ResourceSetupDto> GetResources()
+    {
+        return repository.Resources
+            .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
+            .OrderBy(resource => resource.ResourceId)
+            .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description))
             .ToArray();
     }
 
@@ -366,6 +378,77 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         repository.Users.Remove(user);
+        return ServiceResult.Ok();
+    }
+
+    public ServiceResult<ResourceSetupDto> UpsertResource(UpsertResourceMachineRequest request)
+    {
+        var errors = ValidateResource(request);
+        if (errors.Count > 0)
+        {
+            return ServiceResult<ResourceSetupDto>.Fail(errors);
+        }
+
+        var resourceId = request.ResourceId.Trim();
+        var originalResourceId = string.IsNullOrWhiteSpace(request.OriginalResourceId)
+            ? resourceId
+            : request.OriginalResourceId.Trim();
+        var resource = repository.Resources.FirstOrDefault(item =>
+            item.ResourceId.Equals(originalResourceId, StringComparison.OrdinalIgnoreCase));
+
+        if (resource is null)
+        {
+            if (repository.Resources.Any(item => item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase)))
+            {
+                return ServiceResult<ResourceSetupDto>.Fail("Machine already exists.");
+            }
+
+            resource = new ResourceMachine
+            {
+                ResourceId = resourceId,
+                Description = CleanOptional(request.Description)
+            };
+            repository.Resources.Add(resource);
+        }
+        else
+        {
+            if (!resource.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase) && ResourceHasHistory(resource.ResourceId))
+            {
+                return ServiceResult<ResourceSetupDto>.Fail("Machine ID cannot be changed because inspection history already exists for this machine.");
+            }
+
+            if (!resource.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase) &&
+                repository.Resources.Any(item => item.Id != resource.Id && item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase)))
+            {
+                return ServiceResult<ResourceSetupDto>.Fail("Machine already exists.");
+            }
+
+            resource.ResourceId = resourceId;
+            resource.Description = CleanOptional(request.Description);
+        }
+
+        return ServiceResult<ResourceSetupDto>.Ok(new ResourceSetupDto(resource.ResourceId, resource.Description));
+    }
+
+    public ServiceResult DeleteResource(string resourceId)
+    {
+        if (string.IsNullOrWhiteSpace(resourceId))
+        {
+            return ServiceResult.Fail("Machine ID is required.");
+        }
+
+        var resource = repository.Resources.FirstOrDefault(item => item.ResourceId.Equals(resourceId.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (resource is null)
+        {
+            return ServiceResult.Fail("Machine was not found.");
+        }
+
+        if (ResourceHasHistory(resource.ResourceId))
+        {
+            return ServiceResult.Fail("Machine cannot be deleted because inspection history already exists for this machine.");
+        }
+
+        repository.Resources.Remove(resource);
         return ServiceResult.Ok();
     }
 
@@ -690,6 +773,36 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         return errors;
+    }
+
+    private static List<string> ValidateResource(UpsertResourceMachineRequest request)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(request.ResourceId))
+        {
+            errors.Add("Machine ID is required.");
+        }
+        else if (request.ResourceId.Trim().Length > 40)
+        {
+            errors.Add("Machine ID must be 40 characters or fewer.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Description) && request.Description.Trim().Length > 120)
+        {
+            errors.Add("Machine description must be 120 characters or fewer.");
+        }
+
+        return errors;
+    }
+
+    private bool ResourceHasHistory(string resourceId)
+    {
+        return repository.Measurements.Any(item => item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase)) ||
+            repository.JobNotes.Any(item => item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase)) ||
+            repository.JobTags.Any(item => item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase)) ||
+            repository.Alerts.Any(item => item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase)) ||
+            repository.AlertOverrides.Any(item => item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase)) ||
+            repository.MaterialChanges.Any(item => item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase));
     }
 
     private UpsertUserRequest? UserRequestFromImportRow(Dictionary<string, string> row)

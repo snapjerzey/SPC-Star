@@ -122,6 +122,11 @@ app.MapGet("/setup/users", (SetupManagementService service) =>
     return Results.Ok(service.GetUsers());
 });
 
+app.MapGet("/setup/resources", (SetupManagementService service) =>
+{
+    return Results.Ok(service.GetResources());
+});
+
 app.MapGet("/setup/roles", (SetupManagementService service) =>
 {
     return Results.Ok(service.GetRoles());
@@ -171,6 +176,19 @@ app.MapPost("/setup/users/reset-password", (ResetUserPasswordRequest request, Se
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapPost("/setup/resources", (UpsertResourceMachineRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.UpsertResource(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/setup/users/import-xlsx", async (IFormFile file, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
     if (file.Length == 0)
@@ -201,6 +219,19 @@ app.MapPost("/setup/users/import-xlsx", async (IFormFile file, SetupManagementSe
 app.MapDelete("/setup/users/{userName}", (string userName, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
     var result = service.DeleteUser(userName);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.NoContent()
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
+app.MapDelete("/setup/resources/{resourceId}", (string resourceId, SetupManagementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.DeleteResource(resourceId);
     if (result.Succeeded)
     {
         persistence.SaveChanges();

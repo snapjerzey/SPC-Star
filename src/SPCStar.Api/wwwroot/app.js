@@ -11,6 +11,7 @@ const state = {
   roles: [],
   editingSetup: null,
   selectedUserName: "",
+  selectedResourceId: "",
   historyView: "Ledger",
   historyFilters: {
     partNum: "",
@@ -1610,7 +1611,7 @@ function showSetupSection(sectionName) {
     applyHistoryFilters();
   }
 
-  const sections = ["Inspection", "Users", "Rules", "Import", "History"];
+  const sections = ["Inspection", "Machines", "Users", "Rules", "Import", "History"];
   sections.forEach((section) => {
     $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
     $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
@@ -1726,6 +1727,7 @@ async function loadSetupAdmin() {
   state.roles = await api("/setup/roles");
   state.users = await api("/setup/users");
   fillSelect($("setupRole"), state.roles, (role) => role, (role) => role);
+  renderMachines();
   renderUserProductGroupPicker();
   renderUsers();
   if (!$("setupVariableRows").children.length) {
@@ -2391,6 +2393,128 @@ function coaStatisticLabel(value) {
     Mean: "Mean",
     StandardDeviation: "Std dev"
   }[value] || value || "Mean";
+}
+
+function renderMachines() {
+  const list = $("machineList");
+  const machines = state.snapshot?.resources || [];
+  if (!machines.length) {
+    list.className = "setup-list empty";
+    list.textContent = "No machines configured.";
+    newMachine();
+    return;
+  }
+
+  list.className = "setup-list";
+  list.innerHTML = "";
+  machines
+    .slice()
+    .sort((a, b) => a.resourceId.localeCompare(b.resourceId))
+    .forEach((resource) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `setup-row user-list-row ${state.selectedResourceId.toLowerCase() === resource.resourceId.toLowerCase() ? "selected" : ""}`;
+      row.innerHTML = `
+        <span>
+          <strong>${escapeHtml(resource.resourceId)}</strong>
+          <span>${escapeHtml(resource.description || "No description")}</span>
+        </span>`;
+      row.addEventListener("click", () => selectMachine(resource.resourceId));
+      list.appendChild(row);
+    });
+
+  if (!state.selectedResourceId || !machines.some((resource) => resource.resourceId.toLowerCase() === state.selectedResourceId.toLowerCase())) {
+    selectMachine(machines[0].resourceId);
+  }
+}
+
+function selectMachine(resourceId) {
+  const resource = state.snapshot?.resources?.find((item) => item.resourceId.toLowerCase() === resourceId.toLowerCase());
+  if (!resource) {
+    newMachine();
+    return;
+  }
+
+  state.selectedResourceId = resource.resourceId;
+  $("machineDetailTitle").textContent = `Edit ${resource.resourceId}`;
+  $("setupResourceId").value = resource.resourceId;
+  $("setupOriginalResourceId").value = resource.resourceId;
+  $("setupResourceDescription").value = resource.description || "";
+  $("deleteSelectedMachineButton").disabled = false;
+  renderMachines();
+}
+
+function newMachine() {
+  state.selectedResourceId = "";
+  $("machineDetailTitle").textContent = "New Machine";
+  $("setupResourceId").value = "";
+  $("setupOriginalResourceId").value = "";
+  $("setupResourceDescription").value = "";
+  $("deleteSelectedMachineButton").disabled = true;
+  renderMachinesWithoutSelection();
+}
+
+function renderMachinesWithoutSelection() {
+  const selected = state.selectedResourceId;
+  state.selectedResourceId = "";
+  const list = $("machineList");
+  if (!list || !(state.snapshot?.resources || []).length) return;
+  list.querySelectorAll(".user-list-row").forEach((row) => row.classList.remove("selected"));
+  state.selectedResourceId = selected;
+}
+
+async function saveMachine(event) {
+  event.preventDefault();
+  try {
+    const result = await api("/setup/resources", {
+      method: "POST",
+      body: JSON.stringify({
+        resourceId: $("setupResourceId").value.trim(),
+        description: $("setupResourceDescription").value.trim(),
+        originalResourceId: $("setupOriginalResourceId").value.trim() || null
+      })
+    });
+    await refreshMachines(result.resourceId);
+    $("machineSetupMessage").textContent = "Machine saved.";
+    $("machineSetupMessage").className = "message ok";
+  } catch (error) {
+    $("machineSetupMessage").textContent = readableError(error);
+    $("machineSetupMessage").className = "message error";
+  }
+}
+
+async function deleteSelectedMachine() {
+  const resourceId = $("setupOriginalResourceId").value.trim();
+  if (!resourceId) {
+    return;
+  }
+
+  try {
+    await api(`/setup/resources/${encodeURIComponent(resourceId)}`, { method: "DELETE" });
+    await refreshMachines("");
+    newMachine();
+    $("machineSetupMessage").textContent = "Machine deleted.";
+    $("machineSetupMessage").className = "message ok";
+  } catch (error) {
+    $("machineSetupMessage").textContent = readableError(error);
+    $("machineSetupMessage").className = "message error";
+  }
+}
+
+async function refreshMachines(selectedResourceId) {
+  state.snapshot.resources = await api("/setup/resources");
+  state.selectedResourceId = selectedResourceId || "";
+  refreshMachineDropdowns();
+  renderMachines();
+}
+
+function refreshMachineDropdowns() {
+  const currentMachine = $("resourceId").value;
+  fillSelect($("resourceId"), [{ resourceId: "", description: "Select machine" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
+  if (state.snapshot.resources.some((resource) => resource.resourceId === currentMachine)) {
+    $("resourceId").value = currentMachine;
+  }
+  renderReportControls();
 }
 
 function renderUsers() {
@@ -3353,6 +3477,7 @@ $("trendChartType").addEventListener("change", () => {
 $("inspectionTab").addEventListener("click", () => showPanel("inspect"));
 $("setupTab").addEventListener("click", () => showPanel("setup"));
 $("setupInspectionSectionTab").addEventListener("click", () => showSetupSection("Inspection"));
+$("setupMachinesSectionTab").addEventListener("click", () => showSetupSection("Machines"));
 $("setupUsersSectionTab").addEventListener("click", () => showSetupSection("Users"));
 $("setupRulesSectionTab").addEventListener("click", () => showSetupSection("Rules"));
 $("setupImportSectionTab").addEventListener("click", () => showSetupSection("Import"));
@@ -3361,6 +3486,9 @@ $("historyLedgerTab").addEventListener("click", () => showHistoryView("Ledger"))
 $("historyChartsTab").addEventListener("click", () => showHistoryView("Charts"));
 $("historyIssuesTab").addEventListener("click", () => showHistoryView("Issues"));
 $("historyExportTab").addEventListener("click", () => showHistoryView("Export"));
+$("machineSetupForm").addEventListener("submit", saveMachine);
+$("newMachineButton").addEventListener("click", newMachine);
+$("deleteSelectedMachineButton").addEventListener("click", deleteSelectedMachine);
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
 $("newUserButton").addEventListener("click", newUser);

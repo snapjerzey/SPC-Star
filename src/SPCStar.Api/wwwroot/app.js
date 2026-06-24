@@ -3477,7 +3477,10 @@ $("trendChartType").addEventListener("change", () => {
 $("inspectionTab").addEventListener("click", () => showPanel("inspect"));
 $("setupTab").addEventListener("click", () => showPanel("setup"));
 $("setupInspectionSectionTab").addEventListener("click", () => showSetupSection("Inspection"));
-$("setupMachinesSectionTab").addEventListener("click", () => showSetupSection("Machines"));
+$("setupMachinesSectionTab").addEventListener("click", async () => {
+  showSetupSection("Machines");
+  await refreshMachines(state.selectedResourceId);
+});
 $("setupUsersSectionTab").addEventListener("click", () => showSetupSection("Users"));
 $("setupRulesSectionTab").addEventListener("click", () => showSetupSection("Rules"));
 $("setupImportSectionTab").addEventListener("click", () => showSetupSection("Import"));

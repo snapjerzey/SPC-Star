@@ -20,7 +20,7 @@ This is intentionally still behind the repository/service boundary. Business rul
 ## Implemented services
 
 - `SetupImportService`: row-type Excel/CSV setup validation and upsert for job data, material requirements, measured variables, accept/reject attributes, phase-specific requirements, sample sizes, frequency, and display order.
-- `SetupManagementService`: users, global settings, capability thresholds, manual part/operation/inspection setup, part-specific job data fields, and material setup.
+- `SetupManagementService`: users, machines, global settings, capability thresholds, manual part/operation/inspection setup, part-specific job data fields, and material setup.
 - `SetupQueryService`: tablet setup snapshot, part lookup, job data field lookup, material field lookup, inspection plan lookup, and setup review data.
 - `AuthSessionService`: development login/session contract for role-aware UI flows.
 - `WorkContextService`: one-call inspection screen context for tablet entry, including live capability metrics.
@@ -35,17 +35,18 @@ This is intentionally still behind the repository/service boundary. Business rul
 - `QaSummaryExportService`: COA-style summary calculations and CSV export.
 - `JobReviewService`: part/job review data, editable inspection entries, and limit-status flags for History highlighting.
 - `HistoryExportService`: raw inspection, job history, drift alert, and material change CSV exports.
+- `HistoryIssueSummaryService`: Top Issues summaries for repeat out-of-spec, drift, and rejected-attribute events by part, inspection item, signal, cause, jobs, and machines.
 - `OfflineSyncService`: first batch upload contract for retry-safe tablet/offline writes.
 
 ## Inspection UI behavior
 
 Inspection entry is organized around top-level job data, part-specific job tags, material lot entries, and ordered inspection items. Inspection items can be measured variables or accept/reject attributes. The supported operator inspection phases are Startup, Setup, In Process, and Spool; coil/material changes are captured through material/job data rather than as a standalone operator phase.
 
-The setup/admin UI includes Parts & Inspections, Users, Rules, Import, and History. History combines the previous review/report/job-data functions into Ledger, Charts, and Export views with shared job/part filters.
+The setup/admin UI includes Parts & Inspections, Machines, Users, Rules, Import, and History. History combines the previous review/report/job-data functions into Ledger, Charts, Top Issues, and Export views with shared job/part filters.
 
-The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. Devices that require direct serial or HID communication should be added through a dedicated Web Serial/WebHID profile layer so the inspection workflow does not need to change.
+The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. It also supports a Web Serial text-gauge profile for USB devices that expose serial readings instead of acting like a keyboard. WebHID/custom binary profiles should be added once the actual gauge models and report formats are known.
 
 ## Next Architecture Step
 
-Keep SQLite as the pilot database while validating production workflows. The next hardening work is backup/restore practice, authentication/session hardening, offline queue conflict handling, and broader History filtering. If the pilot requires a separate database engine, add an EF Core/SQL Server provider behind the existing repository boundary.
+Keep SQLite as the pilot database while validating production workflows. The next hardening work is backup/restore practice, authentication/session hardening, offline queue conflict handling, cross-job note/material/machine trend refinement, and saved QA report views. If the pilot requires a separate database engine, add an EF Core/SQL Server provider behind the existing repository boundary.
 

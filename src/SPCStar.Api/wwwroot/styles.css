@@ -56,8 +56,9 @@ button {
   border: 0;
   border-radius: 6px;
   background: linear-gradient(180deg, #0d5fa8, var(--primary-dark));
-  color: white;
-  font-weight: 650;
+  color: #ffffff;
+  font-weight: 800;
+  text-shadow: 0 1px 1px rgba(2, 6, 23, .78);
   padding: 0 18px;
   cursor: pointer;
 }
@@ -67,6 +68,7 @@ button.secondary {
   background: #f8fafc;
   color: var(--text);
   border: 1px solid var(--line);
+  text-shadow: none;
 }
 .compact-button {
   min-height: 30px;
@@ -85,8 +87,10 @@ button.secondary {
   color: var(--text);
 }
 .tab.active {
-  background: #062f5f;
-  color: white;
+  background: #041f42;
+  color: #ffffff;
+  font-weight: 850;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .9);
 }
 
 .shell {
@@ -435,8 +439,10 @@ textarea {
   color: var(--text);
 }
 .setup-nav-button.active {
-  background: #062f5f;
+  background: #041f42;
   color: #ffffff;
+  font-weight: 850;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .9);
 }
 .setup-section {
   display: grid;
@@ -774,8 +780,10 @@ textarea {
   color: var(--text);
 }
 .history-mode-button.active {
-  background: #062f5f;
+  background: #041f42;
   color: #ffffff;
+  font-weight: 850;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .9);
 }
 .history-view {
   display: grid;

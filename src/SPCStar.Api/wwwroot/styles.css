@@ -891,15 +891,24 @@ textarea {
 .setup-row strong { display: block; }
 .setup-row span { color: var(--muted); font-size: 13px; }
 .user-list-row {
+  width: 100%;
+  min-height: auto;
+  background: #ffffff;
+  color: var(--text);
   cursor: pointer;
   border: 1px solid transparent;
   border-radius: 6px;
+  font-weight: 650;
   padding: 10px;
+  text-align: left;
+  text-shadow: none;
 }
 .user-list-row:hover,
 .user-list-row.selected {
   background: #f0f7ff;
   border-color: #bfdbfe;
+  color: var(--text);
+  text-shadow: none;
 }
 .row-actions {
   display: flex;

@@ -57,8 +57,7 @@ button {
   border-radius: 6px;
   background: linear-gradient(180deg, #0d5fa8, var(--primary-dark));
   color: #ffffff;
-  font-weight: 800;
-  text-shadow: 0 1px 1px rgba(2, 6, 23, .78);
+  font-weight: 750;
   padding: 0 18px;
   cursor: pointer;
 }
@@ -68,7 +67,6 @@ button.secondary {
   background: #f8fafc;
   color: var(--text);
   border: 1px solid var(--line);
-  text-shadow: none;
 }
 .compact-button {
   min-height: 30px;
@@ -87,10 +85,10 @@ button.secondary {
   color: var(--text);
 }
 .tab.active {
-  background: #041f42;
-  color: #ffffff;
-  font-weight: 850;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, .9);
+  background: #dbeafe;
+  color: #041f42;
+  border: 1px solid #0b4f93;
+  font-weight: 800;
 }
 
 .shell {
@@ -439,10 +437,10 @@ textarea {
   color: var(--text);
 }
 .setup-nav-button.active {
-  background: #041f42;
-  color: #ffffff;
-  font-weight: 850;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, .9);
+  background: #dbeafe;
+  color: #041f42;
+  border: 1px solid #0b4f93;
+  font-weight: 800;
 }
 .setup-section {
   display: grid;
@@ -780,10 +778,10 @@ textarea {
   color: var(--text);
 }
 .history-mode-button.active {
-  background: #041f42;
-  color: #ffffff;
-  font-weight: 850;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, .9);
+  background: #dbeafe;
+  color: #041f42;
+  border: 1px solid #0b4f93;
+  font-weight: 800;
 }
 .history-view {
   display: grid;

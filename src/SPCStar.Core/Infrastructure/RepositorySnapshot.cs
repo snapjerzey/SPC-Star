@@ -114,7 +114,8 @@ internal sealed record PersistedUser(
     string PasswordHash,
     string PasswordSalt,
     List<string> RoleNames,
-    List<string>? ProductGroups)
+    List<string>? ProductGroups,
+    string? Shift)
 {
     public static PersistedUser FromUser(User user)
     {
@@ -124,7 +125,8 @@ internal sealed record PersistedUser(
             user.PasswordHash,
             user.PasswordSalt,
             user.Roles.Select(role => role.Name).ToList(),
-            [.. user.ProductGroups]);
+            [.. user.ProductGroups],
+            user.Shift);
     }
 
     public User ToUser(IReadOnlyCollection<Role> roles)
@@ -134,7 +136,8 @@ internal sealed record PersistedUser(
             Id = Id,
             UserName = UserName,
             PasswordHash = PasswordHash,
-            PasswordSalt = PasswordSalt
+            PasswordSalt = PasswordSalt,
+            Shift = string.IsNullOrWhiteSpace(Shift) ? "" : Shift.Trim()
         };
 
         foreach (var roleName in RoleNames)

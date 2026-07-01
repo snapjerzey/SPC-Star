@@ -16,6 +16,7 @@ public sealed record JobInspectionMeasurementDto(
     decimal Value,
     DateTimeOffset Timestamp,
     string OperatorUserId,
+    string OperatorShift,
     bool IsOutOfSpec,
     bool IsOutOfControl);
 
@@ -144,6 +145,7 @@ public sealed class JobReviewService(
             measurement.Value,
             measurement.Timestamp,
             measurement.OperatorUserId,
+            measurement.OperatorShift,
             isOutOfSpec,
             isOutOfControl);
     }

@@ -28,13 +28,16 @@ public sealed class InspectionAndOverrideTests
     {
         var repository = RepositoryWithSecurityAndLimits();
         SetRuleSet(repository, "Diameter", "SpecLimitOnly");
+        repository.Users.Single(user => user.UserName == "operator1").Shift = "1st Shift";
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         var result = service.EnterMeasurement(Entry(6m));
 
         Assert.True(result.Succeeded);
+        Assert.Equal("1st Shift", result.Value!.OperatorShift);
         var alert = Assert.Single(repository.Alerts);
         Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
+        Assert.Equal("1st Shift", alert.OperatorShift);
         Assert.Contains("above the upper specification limit", alert.Detail);
     }
 

@@ -10,6 +10,7 @@ public sealed record JobHistoryEntryDto(
     string PartNum,
     string ResourceId,
     string OperatorUserId,
+    string OperatorShift,
     DateTimeOffset Timestamp,
     string? NoteText = null,
     string? CharacteristicName = null,
@@ -50,6 +51,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 note.PartNum,
                 note.ResourceId,
                 note.OperatorUserId,
+                UserShift(note.OperatorUserId),
                 note.Timestamp,
                 NoteText: note.NoteText));
 
@@ -69,6 +71,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
                     alert.PartNum,
                     alert.ResourceId,
                     alert.OperatorUserId,
+                    alert.OperatorShift,
                     audit?.UnlockedAt ?? alert.LockedAt,
                     CharacteristicName: alert.CharacteristicName,
                     RuleTriggered: alert.RuleTriggered,
@@ -91,6 +94,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 change.PartNum,
                 change.ResourceId,
                 change.OperatorUserId,
+                UserShift(change.OperatorUserId),
                 change.Timestamp,
                 MaterialPartNum: change.MaterialPartNum,
                 NewLotNum: change.NewLotNum,
@@ -106,6 +110,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 edit.PartNum,
                 edit.ResourceId,
                 edit.EditedByUserId,
+                UserShift(edit.EditedByUserId),
                 edit.EditedAt,
                 CharacteristicName: edit.CharacteristicName,
                 OldValue: edit.OldValue,
@@ -119,5 +124,13 @@ public sealed class JobHistoryService(ISpcRepository repository)
             .Concat(edits)
             .OrderByDescending(entry => entry.Timestamp)
             .ToArray();
+    }
+
+    private string UserShift(string userName)
+    {
+        return repository.Users
+            .FirstOrDefault(user => user.UserName.Equals(userName.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?.Shift
+            .Trim() ?? string.Empty;
     }
 }

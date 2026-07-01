@@ -8,6 +8,7 @@ public sealed record ChangePasswordRequest(string UserName, string CurrentPasswo
 
 public sealed record UserSessionDto(
     string UserName,
+    string Shift,
     IReadOnlyList<string> Roles,
     IReadOnlyList<string> Permissions,
     IReadOnlyList<string> ProductGroups,
@@ -95,6 +96,6 @@ public sealed class AuthSessionService(
             .OrderBy(permission => permission)
             .ToArray();
 
-        return new UserSessionDto(user.UserName, roles, permissions, user.ProductGroups.OrderBy(group => group).ToArray(), $"dev-session:{user.UserName}");
+        return new UserSessionDto(user.UserName, user.Shift, roles, permissions, user.ProductGroups.OrderBy(group => group).ToArray(), $"dev-session:{user.UserName}");
     }
 }

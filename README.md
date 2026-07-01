@@ -12,7 +12,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, frequency, and COA-required variables.
 - Machine setup screen for adding and maintaining the machine list operators choose from at job start.
 - Machine workbook import using a sheet named `SPC-Star Machine Import` with `Machine ID` and `Description` columns.
-- User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
+- User management screens for operators, line techs, QA, admins, and GOD access, including shift assignment, add/edit/delete, password reset, and last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
 - Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, and Spool.
 - Persistent job tag storage for part-specific context fields that will be driven by inspection setup.
@@ -33,7 +33,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Top Issues history report for repeat out-of-spec, drift, and rejected-attribute events by part, inspection item, rule/signal, cause category, affected jobs, and affected machines.
 - History measurement highlighting: red for out-of-spec values and yellow for out-of-control values.
 - QA summary views and CSV export for one or more jobs, including mean, min, max, standard deviation, Cp, Cpk, Pp, and Ppk.
-- Raw inspection, alert, material, and job history CSV exports.
+- Raw inspection, alert, material, and job history CSV exports, with operator shift stamped on new inspection and alert rows for shift-based reporting.
 - USB keyboard-style measurement capture support for gauges/scales/calipers that enter values into focused fields, including value cleanup and Enter-to-next-field behavior.
 - Web Serial text-gauge capture for USB devices that expose serial readings instead of acting like a keyboard.
 - Offline-oriented setup snapshot and retry-safe sync contracts.
@@ -108,6 +108,7 @@ Initial endpoints include:
 - `GET /auth/me`
 - `POST /setup/import-csv`
 - `GET /setup/users`
+- `POST /setup/users/import-xlsx`
 - `GET /setup/resources`
 - `GET /setup/roles`
 - `GET /setup/settings`
@@ -200,6 +201,8 @@ The API seeds demo security users and one sample inspection plan:
 ## Current Data / Import Status
 
 - Excel setup import is now supported. Upload workbooks with a sheet named `SPC-Star Import`; CSV import remains available as a fallback.
+- User permissions workbook import is supported with a sheet named `SPC-Star User Import`. Columns include `UserName`, `TemporaryPassword`, `Role`, optional `Shift`, and one product-group access column per product group.
+- Machine workbook import is supported with a sheet named `SPC-Star Machine Import`.
 - Current development data has included Schneider, Ethicon Cutting Edge - Needles, Ethicon Cutting Edge - Drilled, Ethicon Taperpoint - Needles, Ethicon Taperpoint - Drilled, Everpoint, and Ethalloy/Cardio inspection-family imports.
 - Product group names have been standardized around customer/family names such as Schneider, Ethicon Cutting Edge - Needles, Ethicon Cutting Edge - Drilled, Ethicon Taperpoint - Needles, and Ethicon Taperpoint - Drilled.
 
@@ -214,5 +217,5 @@ The API seeds demo security users and one sample inspection plan:
 - Custom drift-rule editor for admin-defined thresholds and warning behavior.
 - Box-level traceability once the required production count/source logic is defined.
 - WebHID/custom binary device profiles once the actual gauge models and report formats are known.
-- Deeper History search/refinement for cross-job note text, machine issue trends, material event trends, and saved QA report views.
+- Deeper History search/refinement for cross-job note text, machine issue trends, material event trends, shift-based report cards, MES/OEE correlation, and saved QA report views.
 

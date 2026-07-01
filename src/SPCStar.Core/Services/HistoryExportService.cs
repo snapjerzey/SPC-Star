@@ -40,6 +40,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
         "MeasurementValue",
         "Timestamp",
         "OperatorUserID",
+        "OperatorShift",
         "InspectionPhase"
     ];
 
@@ -51,6 +52,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
         "ResourceID",
         "CharacteristicName",
         "OperatorUserID",
+        "OperatorShift",
         "RuleTriggered",
         "LockedAt",
         "Status"
@@ -85,6 +87,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 ["MeasurementValue"] = item.Value.ToString("0.#####"),
                 ["Timestamp"] = item.Timestamp.ToString("O"),
                 ["OperatorUserID"] = item.OperatorUserId,
+                ["OperatorShift"] = item.OperatorShift,
                 ["InspectionPhase"] = item.InspectionPhase
             });
 
@@ -121,6 +124,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 ["ResourceID"] = alert.ResourceId,
                 ["CharacteristicName"] = alert.CharacteristicName,
                 ["OperatorUserID"] = alert.OperatorUserId,
+                ["OperatorShift"] = alert.OperatorShift,
                 ["RuleTriggered"] = alert.RuleTriggered.ToString(),
                 ["LockedAt"] = alert.LockedAt.ToString("O"),
                 ["Status"] = alert.Status.ToString()

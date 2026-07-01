@@ -1504,11 +1504,12 @@ function historyEntryTitle(entry) {
 }
 
 function historyEntryUser(entry) {
+  const shift = entry.operatorShift ? ` (${entry.operatorShift})` : "";
   if (entry.entryType === "Lock" && entry.status !== "Active" && entry.overrideUserId) {
-    return entry.overrideUserId;
+    return `${entry.overrideUserId}${shift}`;
   }
 
-  return entry.operatorUserId || "-";
+  return entry.operatorUserId ? `${entry.operatorUserId}${shift}` : "-";
 }
 
 function measurementHistoryText(entry) {
@@ -1930,7 +1931,7 @@ function renderReviewMeasurements(measurements, history) {
       <span>${reviewMeasurementValueControl(measurement)}</span>
       <span>${measurement.resourceId}${measurement.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : measurement.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
       <span>${measurement.processCode} ${measurement.operationSeq}</span>
-      <span>${measurement.operatorUserId}</span>
+      <span>${measurement.operatorUserId}${measurement.operatorShift ? ` (${escapeHtml(measurement.operatorShift)})` : ""}</span>
       <span><button type="button" class="secondary compact-button">Save</button></span>`;
     item.querySelector("button").addEventListener("click", () => saveReviewMeasurement(measurement.id, item));
     container.appendChild(item);
@@ -2536,10 +2537,11 @@ function renderUsers() {
     const row = document.createElement("div");
     row.className = `setup-row user-list-row ${user.userName === state.selectedUserName ? "selected" : ""}`;
     const productGroupText = user.productGroups?.length ? user.productGroups.join(", ") : "No product groups assigned";
+    const shiftText = user.shift || "Unassigned shift";
     row.innerHTML = `
       <div>
         <strong>${user.userName}</strong>
-        <span>${user.roles.join(", ")}</span>
+        <span>${user.roles.join(", ")} · ${escapeHtml(shiftText)}</span>
         <small>${productGroupText}</small>
       </div>`;
     row.addEventListener("click", () => selectUser(user.userName));
@@ -2565,6 +2567,7 @@ function newUser() {
   renderUsers();
   renderUserDetail({
     userName: "",
+    shift: "",
     roles: [state.roles[0] || ""],
     productGroups: []
   }, true);
@@ -2587,10 +2590,23 @@ function renderUserDetail(user, isNew = false) {
   $("setupPassword").value = "";
   $("setupPasswordLabel").classList.toggle("hidden", hasUser && !isNew);
   $("setupRole").value = user?.roles?.[0] || state.roles[0] || "";
+  setShiftSelection(user?.shift || "");
   setUserProductGroupSelection(user?.productGroups || []);
   $("resetSelectedUserPasswordButton").classList.toggle("hidden", !hasUser || isNew);
   $("deleteSelectedUserButton").classList.toggle("hidden", !hasUser || isNew);
   $("userSetupForm").querySelector("button[type='submit']").classList.toggle("hidden", !hasUser);
+}
+
+function setShiftSelection(shift) {
+  const select = $("setupShift");
+  const normalized = shift || "";
+  if (normalized && ![...select.options].some((option) => option.value === normalized)) {
+    const option = document.createElement("option");
+    option.value = normalized;
+    option.textContent = normalized;
+    select.appendChild(option);
+  }
+  select.value = normalized;
 }
 
 function renderUserProductGroupPicker(selectedGroups = selectedUserProductGroups()) {
@@ -2685,6 +2701,7 @@ async function saveUser(event) {
       body: JSON.stringify({
         userName,
         password: $("setupPassword").value,
+        shift: $("setupShift").value,
         roles: [$("setupRole").value],
         productGroups: selectedUserProductGroups()
       })

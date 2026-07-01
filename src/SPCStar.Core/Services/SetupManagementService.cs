@@ -3,9 +3,9 @@ using SPCStar.Core.Infrastructure;
 
 namespace SPCStar.Core.Services;
 
-public sealed record UserSetupDto(string UserName, IReadOnlyList<string> Roles, IReadOnlyList<string> Permissions, IReadOnlyList<string> ProductGroups);
+public sealed record UserSetupDto(string UserName, string Shift, IReadOnlyList<string> Roles, IReadOnlyList<string> Permissions, IReadOnlyList<string> ProductGroups);
 
-public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string>? ProductGroups = null);
+public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string>? ProductGroups = null, string? Shift = null);
 
 public sealed record ResetUserPasswordRequest(string UserName, string TemporaryPassword);
 
@@ -76,6 +76,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             .OrderBy(user => user.UserName)
             .Select(user => new UserSetupDto(
                 user.UserName,
+                user.Shift,
                 user.Roles.Select(role => role.Name).OrderBy(role => role).ToArray(),
                 user.Roles.SelectMany(role => role.Permissions).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(permission => permission).ToArray(),
                 user.ProductGroups.OrderBy(group => group).ToArray()))
@@ -252,6 +253,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
         user.Roles.Clear();
         user.Roles.AddRange(roles);
+        user.Shift = CleanOptional(request.Shift);
         user.ProductGroups.Clear();
         foreach (var group in CleanProductGroups(request.ProductGroups))
         {
@@ -865,6 +867,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         var password = Value(row, "TemporaryPassword", "Temporary Password", "Password");
+        var shift = Value(row, "Shift", "Work Shift", "Assigned Shift");
         var roles = SplitValues(Value(row, "Role", "Roles", "Access Level"));
         var groups = new List<string>();
         groups.AddRange(SplitValues(Value(row, "ProductGroups", "Product Groups")));
@@ -881,7 +884,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
             userName.Trim(),
             password.Trim(),
             roles,
-            groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+            groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            shift);
     }
 
     private IReadOnlyList<string> LoadedProductGroups()

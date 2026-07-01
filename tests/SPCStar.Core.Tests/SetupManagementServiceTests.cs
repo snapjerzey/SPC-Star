@@ -14,12 +14,13 @@ public sealed class SetupManagementServiceTests
         SeedData.SeedSecurity(repository);
         var service = new SetupManagementService(repository);
 
-        var result = service.UpsertUser(new UpsertUserRequest("inspector2", "secret", [RoleNames.Operator], ["Needles"]));
+        var result = service.UpsertUser(new UpsertUserRequest("inspector2", "secret", [RoleNames.Operator], ["Needles"], "2nd Shift"));
 
         Assert.True(result.Succeeded);
         Assert.True(new CredentialService(repository).ValidateCredential("inspector2", "secret"));
         Assert.Contains(repository.Users.Single(user => user.UserName == "inspector2").Roles, role => role.Name == RoleNames.Operator);
         Assert.Contains("Needles", repository.Users.Single(user => user.UserName == "inspector2").ProductGroups);
+        Assert.Equal("2nd Shift", repository.Users.Single(user => user.UserName == "inspector2").Shift);
     }
 
     [Fact]
@@ -32,10 +33,10 @@ public sealed class SetupManagementServiceTests
         var service = new SetupManagementService(repository);
 
         var result = service.ImportUsersCsv(string.Join(Environment.NewLine, [
-            "UserName,FullName,TemporaryPassword,Role,Schneider,Ethicon Taperpoint - Needles",
-            "Jsmith,Smith Jane,TempPass123!,Operator,X,",
-            "Ttech,Tech Tim,TempPass123!,LineTech,,X",
-            "JTGill,Gill JT,test,GOD,X,X",
+            "UserName,FullName,TemporaryPassword,Role,Shift,Schneider,Ethicon Taperpoint - Needles",
+            "Jsmith,Smith Jane,TempPass123!,Operator,1st Shift,X,",
+            "Ttech,Tech Tim,TempPass123!,LineTech,2nd Shift,,X",
+            "JTGill,Gill JT,test,GOD,3rd Shift,X,X",
             string.Empty
         ]));
 
@@ -44,12 +45,15 @@ public sealed class SetupManagementServiceTests
         var operatorUser = repository.Users.Single(user => user.UserName == "Jsmith");
         Assert.Contains(operatorUser.Roles, role => role.Name == RoleNames.Operator);
         Assert.Equal(["Schneider"], operatorUser.ProductGroups);
+        Assert.Equal("1st Shift", operatorUser.Shift);
         var lineTech = repository.Users.Single(user => user.UserName == "Ttech");
         Assert.Contains(lineTech.Roles, role => role.Name == RoleNames.LineTech);
         Assert.Equal(["Ethicon Taperpoint - Needles"], lineTech.ProductGroups);
+        Assert.Equal("2nd Shift", lineTech.Shift);
         var god = repository.Users.Single(user => user.UserName == "JTGill");
         Assert.Contains(god.Roles, role => role.Name == RoleNames.GOD);
         Assert.Equal(["Ethicon Taperpoint - Needles", "Schneider"], god.ProductGroups.OrderBy(group => group).ToArray());
+        Assert.Equal("3rd Shift", god.Shift);
     }
 
     [Fact]

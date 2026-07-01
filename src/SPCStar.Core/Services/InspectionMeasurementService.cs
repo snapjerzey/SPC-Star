@@ -58,6 +58,7 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Fail(jobResult.Errors);
         }
 
+        var operatorShift = OperatorShift(entry.OperatorUserId);
         var measurement = new InspectionMeasurement
         {
             ClientRecordId = CleanOptional(entry.ClientRecordId),
@@ -72,6 +73,7 @@ public sealed class InspectionMeasurementService(
             Value = entry.Value,
             Timestamp = entry.Timestamp,
             OperatorUserId = entry.OperatorUserId.Trim(),
+            OperatorShift = operatorShift,
             SubmittedAt = entry.SubmittedAt ?? entry.Timestamp,
             SyncedAt = DateTimeOffset.UtcNow
         };
@@ -238,6 +240,7 @@ public sealed class InspectionMeasurementService(
                 ResourceId = measurement.ResourceId,
                 CharacteristicName = measurement.CharacteristicName,
                 OperatorUserId = measurement.OperatorUserId,
+                OperatorShift = measurement.OperatorShift,
                 RuleTriggered = violation.RuleTriggered,
                 LockedAt = violation.DetectedAt
             };
@@ -497,6 +500,7 @@ public sealed class InspectionMeasurementService(
             ResourceId = measurement.ResourceId,
             CharacteristicName = measurement.CharacteristicName,
             OperatorUserId = measurement.OperatorUserId,
+            OperatorShift = measurement.OperatorShift,
             RuleTriggered = RuleTriggered.SpecLimitViolation,
             Detail = SpecLimitDetail(measurement, spec),
             LockedAt = measurement.Timestamp
@@ -575,6 +579,7 @@ public sealed class InspectionMeasurementService(
             ResourceId = measurement.ResourceId,
             CharacteristicName = measurement.CharacteristicName,
             OperatorUserId = measurement.OperatorUserId,
+            OperatorShift = measurement.OperatorShift,
             RuleTriggered = RuleTriggered.AttributeRejected,
             Detail = "Attribute was rejected.",
             LockedAt = measurement.Timestamp
@@ -624,6 +629,14 @@ public sealed class InspectionMeasurementService(
     private static string? CleanOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private string OperatorShift(string userName)
+    {
+        return repository.Users
+            .FirstOrDefault(user => user.UserName.Equals(userName.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?.Shift
+            .Trim() ?? string.Empty;
     }
 
     private static string NormalizeInspectionPhase(string? value)

@@ -6,6 +6,7 @@ public sealed class User
     public required string UserName { get; set; }
     public required string PasswordHash { get; set; }
     public required string PasswordSalt { get; set; }
+    public string Shift { get; set; } = "";
     public List<Role> Roles { get; } = [];
     public List<string> ProductGroups { get; } = [];
 }
@@ -186,6 +187,7 @@ public sealed class InspectionMeasurement
     public decimal Value { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public required string OperatorUserId { get; set; }
+    public string OperatorShift { get; set; } = "";
     public DateTimeOffset SubmittedAt { get; set; }
     public DateTimeOffset? SyncedAt { get; set; }
 }
@@ -253,6 +255,7 @@ public sealed class ProcessAlert
     public required string ResourceId { get; set; }
     public required string CharacteristicName { get; set; }
     public required string OperatorUserId { get; set; }
+    public string OperatorShift { get; set; } = "";
     public RuleTriggered RuleTriggered { get; set; }
     public string? Detail { get; set; }
     public DateTimeOffset LockedAt { get; set; }

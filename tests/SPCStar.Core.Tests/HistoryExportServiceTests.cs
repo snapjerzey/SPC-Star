@@ -15,8 +15,8 @@ public sealed class HistoryExportServiceTests
 
         var csv = service.ExportInspectionCsv(new InspectionHistoryExportRequest([], ["J100"], [], ["Diameter"], null, null));
 
-        Assert.Contains("JobNum,PartNum,ProcessCode,OperationSeq,ResourceID,CharacteristicName,MeasurementValue,Timestamp,OperatorUserID", csv);
-        Assert.Contains("J100,P100,MOLD,10,PRESS1,Diameter,5", csv);
+        Assert.Contains("JobNum,PartNum,ProcessCode,OperationSeq,ResourceID,CharacteristicName,MeasurementValue,Timestamp,OperatorUserID,OperatorShift", csv);
+        Assert.Contains("J100,P100,MOLD,10,PRESS1,Diameter,5,2026-01-01T08:00:00.0000000+00:00,operator1,1st Shift", csv);
         Assert.DoesNotContain("J200", csv);
     }
 
@@ -59,6 +59,7 @@ public sealed class HistoryExportServiceTests
             ResourceId = "PRESS1",
             CharacteristicName = "Diameter",
             OperatorUserId = "operator1",
+            OperatorShift = "1st Shift",
             RuleTriggered = RuleTriggered.OnePointBeyondControlLimit,
             LockedAt = DateTimeOffset.Parse("2026-01-01T08:00:00Z"),
             Status = AlertStatus.Overridden
@@ -91,7 +92,8 @@ public sealed class HistoryExportServiceTests
             CharacteristicName = characteristicName,
             Value = value,
             Timestamp = DateTimeOffset.Parse("2026-01-01T08:00:00Z"),
-            OperatorUserId = "operator1"
+            OperatorUserId = "operator1",
+            OperatorShift = "1st Shift"
         };
     }
 }

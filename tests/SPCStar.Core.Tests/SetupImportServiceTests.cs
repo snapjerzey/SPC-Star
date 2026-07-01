@@ -135,22 +135,6 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
-    public void ImportCsv_ImportsCoaStatisticWhenProvided()
-    {
-        var repository = new InMemorySpcRepository();
-        var service = new SetupImportService(repository);
-
-        var result = service.ImportCsv(string.Join(Environment.NewLine, [
-            Header(),
-            "Variable,P100,Widget,General,In Process,MOLD,,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,1,Time,30,Minutes,WesternElectric,true,StandardDeviation,,",
-            string.Empty
-        ]));
-
-        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        Assert.Equal(CoaStatisticType.StandardDeviation, repository.Characteristics.Single().CoaStatisticType);
-    }
-
-    [Fact]
     public void ImportCsv_RejectsDuplicateCharacteristicsInSameFile()
     {
         var repository = new InMemorySpcRepository();
@@ -174,7 +158,7 @@ public sealed class SetupImportServiceTests
             Header(),
             "JobData,P200,Needle,Needles,Startup,,Wire Shipment,,,,,,,,,,,,,,,,,,,true,1",
             "Material,P200,Needle,Needles,Startup,,,Wire,WIRE-302,302 stainless wire,,,,,,,,,,,,,,,,true,2",
-            "Variable,P200,Needle,Needles,Startup,Needle Forming,,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,5,Event,1,StartOfJob,WesternElectric,true,Mean,,",
+            "Variable,P200,Needle,Needles,Startup,Needle Forming,,,,,Diameter,Variable,5.0,4.5,5.5,4.25,5.75,mm,5,Event,1,StartOfJob,WesternElectric,,",
             string.Empty
         ]));
 
@@ -192,15 +176,15 @@ public sealed class SetupImportServiceTests
     {
         var repository = new InMemorySpcRepository();
         var service = new SetupImportService(repository);
-        var header = new[] { "Part Number", "Part Description", "Product Group", "Inspection Phase", "Operation", "Job Data Field", "Material Name", "Material Part Number", "Material Description", "Variable Name", "Attribute Name", "Required", "Sort Order", "Unit", "Target", "Lower Spec", "Upper Spec", "Lower Control", "Upper Control", "Sample Size", "Frequency Type", "Frequency", "Frequency Unit", "Drift Rule", "COA Required", "COA Statistic" };
+        var header = new[] { "Part Number", "Part Description", "Product Group", "Inspection Phase", "Operation", "Job Data Field", "Material Name", "Material Part Number", "Material Description", "Variable Name", "Attribute Name", "Required", "Sort Order", "Unit", "Target", "Lower Spec", "Upper Spec", "Lower Control", "Upper Control", "Sample Size", "Frequency Type", "Frequency", "Frequency Unit", "Drift Rule" };
         string Row(params string[] values) => string.Join(",", values.Concat(Enumerable.Repeat("", header.Length)).Take(header.Length));
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
             string.Join(",", header),
             Row("P300", "Human Template Part", "Needles", "Startup", "", "Wire Shipment", "", "", "", "", "", "true", "1"),
             Row("P300", "Human Template Part", "Needles", "Startup", "", "", "Wire", "WIRE-302", "302 stainless wire", "", "", "true", "2"),
-            Row("P300", "Human Template Part", "Needles", "Startup", "Needle Forming", "", "", "", "", "Outside Diameter", "", "", "", "mm", "5.0", "4.5", "5.5", "4.4", "5.6", "5", "Event", "1", "StartOfJob", "WesternElectric", "true", "Mean"),
-            Row("P300", "Human Template Part", "Needles", "Startup", "Needle Forming", "", "", "", "", "", "Comparator Check", "", "", "Accept/Reject", "", "", "", "", "", "5", "Event", "1", "StartOfJob", "WesternElectric", "false"),
+            Row("P300", "Human Template Part", "Needles", "Startup", "Needle Forming", "", "", "", "", "Outside Diameter", "", "", "", "mm", "5.0", "4.5", "5.5", "4.4", "5.6", "5", "Event", "1", "StartOfJob", "WesternElectric"),
+            Row("P300", "Human Template Part", "Needles", "Startup", "Needle Forming", "", "", "", "", "", "Comparator Check", "", "", "Accept/Reject", "", "", "", "", "", "5", "Event", "1", "StartOfJob", "WesternElectric"),
             string.Empty
         ]));
 
@@ -221,12 +205,12 @@ public sealed class SetupImportServiceTests
             "Part Number", "Part Description", "Product Group", "Inspection Phase", "Operation",
             "Variable Name", "Unit", "Location", "Inspection Method",
             "Target", "Lower Spec", "Upper Spec", "Lower Control", "Upper Control",
-            "Sample Size", "Frequency Type", "Frequency", "Frequency Unit", "Drift Rule", "COA Required", "COA Statistic"
+            "Sample Size", "Frequency Type", "Frequency", "Frequency Unit", "Drift Rule"
         };
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
             string.Join(",", header),
-            "70307,Schneider HOM Jaw Terminal,Schneider,In Process,Inspection,Material Thickness,in,Front,Micrometer,.050,.049,.051,.049,.051,2,Quantity,5000,Pieces,WesternElectric,true,Mean",
+            "70307,Schneider HOM Jaw Terminal,Schneider,In Process,Inspection,Material Thickness,in,Front,Micrometer,.050,.049,.051,.049,.051,2,Quantity,5000,Pieces,WesternElectric",
             string.Empty
         ]));
 
@@ -414,13 +398,13 @@ public sealed class SetupImportServiceTests
     {
         return string.Join(Environment.NewLine, [
             Header(),
-            $"Variable,P100,{description},General,In Process,MOLD,,,,,Diameter,Variable,5.0,{lsl},{usl},,,mm,{sampleSize},Time,30,Minutes,WesternElectric,true,Mean,,",
+            $"Variable,P100,{description},General,In Process,MOLD,,,,,Diameter,Variable,5.0,{lsl},{usl},,,mm,{sampleSize},Time,30,Minutes,WesternElectric,,",
             string.Empty
         ]);
     }
 
     private static string Header()
     {
-        return "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,MaterialDescription,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic,IsRequired,DisplayOrder";
+        return "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,MaterialDescription,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequired,DisplayOrder";
     }
 }

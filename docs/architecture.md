@@ -32,7 +32,7 @@ This is intentionally still behind the repository/service boundary. Business rul
 - `JobNoteService`: timestamped operator/job notes for handoff and issue history.
 - `InspectionFrequencyService`: time, quantity, and event frequency evaluation.
 - `ChartDataService`: chart-ready measurement points with moving range, limits, specs, and violations.
-- `QaSummaryExportService`: COA-style summary calculations and CSV export.
+- `QaSummaryExportService`: job and part summary calculations with CSV export.
 - `JobReviewService`: part/job review data, editable inspection entries, and limit-status flags for History highlighting.
 - `HistoryExportService`: raw inspection, job history, drift alert, and material change CSV exports, including operator shift on new inspection and alert rows.
 - `HistoryIssueSummaryService`: Top Issues summaries for repeat out-of-spec, drift, and rejected-attribute events by part, inspection item, signal, cause, operator shift, timeframe, jobs, and machines.

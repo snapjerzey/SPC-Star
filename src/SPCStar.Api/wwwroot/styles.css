@@ -939,7 +939,7 @@ textarea {
   align-items: center;
 }
 .job-summary-table .data-row {
-  grid-template-columns: .65fr 1fr 1.35fr .8fr .7fr .9fr .75fr 1fr;
+  grid-template-columns: .65fr 1fr 1.35fr .7fr .9fr .75fr 1fr;
   min-width: 0;
   gap: 8px;
   font-size: 12px;

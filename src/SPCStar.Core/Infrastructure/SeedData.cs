@@ -64,7 +64,6 @@ public static class SeedData
             Name = "Diameter",
             Type = CharacteristicType.Variable,
             UnitOfMeasure = "mm",
-            IsRequiredForCoa = true
         };
         var length = new Characteristic
         {
@@ -72,7 +71,6 @@ public static class SeedData
             Name = "Length",
             Type = CharacteristicType.Variable,
             UnitOfMeasure = "mm",
-            IsRequiredForCoa = true
         };
         var weight = new Characteristic
         {
@@ -80,7 +78,6 @@ public static class SeedData
             Name = "Weight",
             Type = CharacteristicType.Variable,
             UnitOfMeasure = "g",
-            IsRequiredForCoa = true
         };
 
         repository.Parts.Add(part);

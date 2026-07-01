@@ -127,7 +127,6 @@ public sealed class ChartDataServiceTests
             Name = "Diameter",
             Type = CharacteristicType.Variable,
             UnitOfMeasure = "mm",
-            IsRequiredForCoa = true
         };
 
         repository.Parts.Add(part);

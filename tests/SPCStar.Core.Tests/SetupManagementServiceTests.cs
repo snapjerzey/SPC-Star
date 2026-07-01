@@ -184,34 +184,17 @@ public sealed class SetupManagementServiceTests
             FrequencyType.Time,
             30,
             FrequencyUnit.Minutes,
-            "WesternElectric",
-            true));
+            "WesternElectric"));
 
         Assert.True(result.Succeeded);
         Assert.Single(repository.Parts);
         Assert.Equal("General", repository.Parts.Single().ProductGroup);
         Assert.Single(repository.Operations);
-        var characteristic = Assert.Single(repository.Characteristics);
-        Assert.Equal(CoaStatisticType.Mean, characteristic.CoaStatisticType);
+        Assert.Single(repository.Characteristics);
         Assert.Single(repository.InspectionPlans);
         var controlLimit = Assert.Single(repository.ControlLimits);
         Assert.Equal(2.2m, controlLimit.Lcl);
         Assert.Equal(2.8m, controlLimit.Ucl);
-    }
-
-    [Fact]
-    public void UpsertInspectionSetup_SavesCoaStatisticType()
-    {
-        var repository = new InMemorySpcRepository();
-        var service = new SetupManagementService(repository);
-
-        var result = service.UpsertInspectionSetup(Request(
-            processCode: "MOLD",
-            characteristicName: "Diameter",
-            coaStatisticType: CoaStatisticType.StandardDeviation));
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(CoaStatisticType.StandardDeviation, repository.Characteristics.Single().CoaStatisticType);
     }
 
     [Fact]
@@ -413,7 +396,6 @@ public sealed class SetupManagementServiceTests
         string characteristicName,
         string? originalProcessCode = null,
         string? originalCharacteristicName = null,
-        CoaStatisticType coaStatisticType = CoaStatisticType.Mean,
         string inspectionPhase = "In Process")
     {
         return new UpsertInspectionSetupRequest(
@@ -436,11 +418,9 @@ public sealed class SetupManagementServiceTests
             30,
             FrequencyUnit.Minutes,
             "WesternElectric",
-            true,
             originalProcessCode,
             10,
             originalCharacteristicName,
-            coaStatisticType,
             inspectionPhase);
     }
 }

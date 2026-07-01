@@ -28,9 +28,7 @@ public sealed record InspectionPlanSetupDto(
     FrequencyType FrequencyType,
     int FrequencyValue,
     FrequencyUnit FrequencyUnit,
-    string AlertRuleSet,
-    bool IsRequiredForCoa,
-    CoaStatisticType CoaStatisticType);
+    string AlertRuleSet);
 
 public sealed record ProcessSetupDto(Guid Id, string ProcessCode, string Description);
 
@@ -43,9 +41,7 @@ public sealed record CharacteristicSetupDto(
     CharacteristicType Type,
     string UnitOfMeasure,
     string Location,
-    string InspectionMethod,
-    bool IsRequiredForCoa,
-    CoaStatisticType CoaStatisticType);
+    string InspectionMethod);
 
 public sealed record SpecLimitSetupDto(Guid CharacteristicId, decimal Nominal, decimal Lsl, decimal Usl);
 
@@ -154,9 +150,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 plan.Frequency.Type,
                 plan.Frequency.Value,
                 plan.Frequency.Unit,
-                plan.AlertRuleSet,
-                characteristic.IsRequiredForCoa,
-                characteristic.CoaStatisticType);
+                plan.AlertRuleSet);
 
         return query.ToArray();
     }
@@ -184,9 +178,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 characteristic.Type,
                 characteristic.UnitOfMeasure,
                 characteristic.Location,
-                characteristic.InspectionMethod,
-                characteristic.IsRequiredForCoa,
-                characteristic.CoaStatisticType))
+                characteristic.InspectionMethod))
             .ToArray();
         var specLimits = repository.SpecLimits
             .OrderBy(spec => spec.CharacteristicId)

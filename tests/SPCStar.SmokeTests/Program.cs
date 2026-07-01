@@ -41,7 +41,6 @@ foreach (var test in tests)
         Console.WriteLine($"FAIL {test.Name}: {ex.Message}");
     }
 }
-
 if (failures.Count > 0)
 {
     Console.WriteLine();
@@ -173,7 +172,7 @@ static void QaExportCalculatesSummaryCsv()
     var result = new QaSummaryExportService(RepositoryWithMeasurements())
         .ExportCsv(new QaSummaryExportRequest(["P100"], ["J100"], ["Diameter"], null, null));
     AssertTrue(result.Succeeded);
-    AssertTrue(result.Value is not null && result.Value.Contains("P100,J100,Diameter,Mean,5,5,4.9,5.1", StringComparison.Ordinal));
+    AssertTrue(result.Value is not null && result.Value.Contains("P100,J100,Diameter,5,4.9,5.1", StringComparison.Ordinal));
 }
 
 static void MaterialChangeValidatesRequiredFields()
@@ -356,8 +355,7 @@ static InMemorySpcRepository RepositoryWithMeasurements()
         OperationId = operation.Id,
         Name = "Diameter",
         Type = CharacteristicType.Variable,
-        UnitOfMeasure = "mm",
-        IsRequiredForCoa = true
+        UnitOfMeasure = "mm"
     };
     repository.Parts.Add(part);
     repository.Processes.Add(process);
@@ -457,8 +455,8 @@ static DateTimeOffset Now(int minutes)
 static string ValidCsv(string description = "Widget", string lsl = "4.5", string usl = "5.5", string sampleSize = "1")
 {
     return string.Join(Environment.NewLine, [
-        "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,MaterialDescription,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequiredForCOA,COAStatistic,IsRequired,DisplayOrder",
-        $"Variable,P100,{description},General,In Process,MOLD,,,,,Diameter,Variable,5.0,{lsl},{usl},,,mm,{sampleSize},Time,30,Minutes,WesternElectric,true,Mean,,",
+        "RowType,PartNum,PartDescription,ProductGroup,InspectionPhase,Operation,FieldName,MaterialName,MaterialPartNum,MaterialDescription,CharacteristicName,CharacteristicType,Nominal,LSL,USL,LCL,UCL,UnitOfMeasure,SampleSize,FrequencyType,FrequencyValue,FrequencyUnit,AlertRuleSet,IsRequired,DisplayOrder",
+        $"Variable,P100,{description},General,In Process,MOLD,,,,,Diameter,Variable,5.0,{lsl},{usl},,,mm,{sampleSize},Time,30,Minutes,WesternElectric,,",
         string.Empty
     ]);
 }

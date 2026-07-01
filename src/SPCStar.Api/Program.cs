@@ -462,33 +462,33 @@ app.MapPost("/qa/summary.csv", (QaSummaryExportRequest request, QaSummaryExportS
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapGet("/qa/jobs/{jobNum}/variable-means", (string jobNum, bool? requiredOnly, QaSummaryExportService service) =>
+app.MapGet("/qa/jobs/{jobNum}/variable-means", (string jobNum, QaSummaryExportService service) =>
 {
-    var result = service.BuildJobVariableMeans(jobNum, requiredOnly ?? true);
+    var result = service.BuildJobVariableMeans(jobNum);
     return result.Succeeded
         ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapGet("/qa/jobs/{jobNum}/variable-means.csv", (string jobNum, bool? requiredOnly, QaSummaryExportService service) =>
+app.MapGet("/qa/jobs/{jobNum}/variable-means.csv", (string jobNum, QaSummaryExportService service) =>
 {
-    var result = service.ExportJobVariableMeansCsv(jobNum, requiredOnly ?? true);
+    var result = service.ExportJobVariableMeansCsv(jobNum);
     return result.Succeeded
         ? Results.Text(result.Value!, "text/csv")
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapGet("/qa/job-variable-means", (string jobNums, bool? requiredOnly, QaSummaryExportService service) =>
+app.MapGet("/qa/job-variable-means", (string jobNums, QaSummaryExportService service) =>
 {
-    var result = service.BuildJobVariableMeans(SplitCsv(jobNums), requiredOnly ?? true);
+    var result = service.BuildJobVariableMeans(SplitCsv(jobNums));
     return result.Succeeded
         ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapGet("/qa/job-variable-means.csv", (string jobNums, bool? requiredOnly, QaSummaryExportService service) =>
+app.MapGet("/qa/job-variable-means.csv", (string jobNums, QaSummaryExportService service) =>
 {
-    var result = service.ExportJobVariableMeansCsv(SplitCsv(jobNums), requiredOnly ?? true);
+    var result = service.ExportJobVariableMeansCsv(SplitCsv(jobNums));
     return result.Succeeded
         ? Results.Text(result.Value!, "text/csv")
         : Results.BadRequest(new { errors = result.Errors });

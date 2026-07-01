@@ -18,8 +18,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         "CharacteristicName",
         "CharacteristicType",
         "SampleSize",
-        "AlertRuleSet",
-        "IsRequiredForCOA"
+        "AlertRuleSet"
     ];
 
     public ServiceResult ImportCsv(string csv)
@@ -230,8 +229,6 @@ public sealed class SetupImportService(ISpcRepository repository)
         CopyAlias(normalized, "FrequencyValue", "FrequencyQty", "Frequency Value", "Frequency");
         CopyAlias(normalized, "FrequencyUnit", "Frequency Unit");
         CopyAlias(normalized, "AlertRuleSet", "Drift Rule", "Rule Set");
-        CopyAlias(normalized, "IsRequiredForCOA", "COA Required");
-        CopyAlias(normalized, "COAStatistic", "COA Statistic");
         CopyAlias(normalized, "IsRequired", "RequiresLotEntry", "Required");
         CopyAlias(normalized, "DisplayOrder", "ParameterSeq", "Sort Order");
         CopyAlias(normalized, "Location", "SampleContext", "RequirementText", "Location", "Side", "Sample Location");
@@ -292,8 +289,6 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         normalized["AlertRuleSet"] = string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("AlertRuleSet")) ? "GlobalDefault" : normalized["AlertRuleSet"].Trim();
-        normalized["IsRequiredForCOA"] = string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("IsRequiredForCOA")) ? "false" : normalized["IsRequiredForCOA"].Trim();
-        normalized["COAStatistic"] = string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("COAStatistic")) ? "Mean" : normalized["COAStatistic"].Trim();
         ApplySpecDefaults(normalized);
         NormalizeTimingFields(normalized);
 
@@ -542,17 +537,6 @@ public sealed class SetupImportService(ISpcRepository repository)
             errors.Add($"Row {rowNumber}: Invalid AlertRuleSet.");
         }
 
-        if (!bool.TryParse(row.GetValueOrDefault("IsRequiredForCOA"), out _))
-        {
-            errors.Add($"Row {rowNumber}: IsRequiredForCOA must be true or false.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("COAStatistic")) &&
-            !Enum.TryParse<CoaStatisticType>(row.GetValueOrDefault("COAStatistic"), true, out _))
-        {
-            errors.Add($"Row {rowNumber}: Invalid COAStatistic.");
-        }
-
         if (rowType == "Variable")
         {
             ValidateVariableLimits(row, rowNumber, errors);
@@ -699,9 +683,7 @@ public sealed class SetupImportService(ISpcRepository repository)
                 Type = Enum.Parse<CharacteristicType>(row["CharacteristicType"], true),
                 UnitOfMeasure = row.GetValueOrDefault("UnitOfMeasure")?.Trim() ?? "",
                 Location = row.GetValueOrDefault("Location")?.Trim() ?? "",
-                InspectionMethod = row.GetValueOrDefault("InspectionMethod")?.Trim() ?? "",
-                IsRequiredForCoa = bool.Parse(row["IsRequiredForCOA"]),
-                CoaStatisticType = CoaStatistic(row)
+                InspectionMethod = row.GetValueOrDefault("InspectionMethod")?.Trim() ?? ""
             };
             repository.Characteristics.Add(characteristic);
         }
@@ -711,8 +693,6 @@ public sealed class SetupImportService(ISpcRepository repository)
             characteristic.UnitOfMeasure = row.GetValueOrDefault("UnitOfMeasure")?.Trim() ?? "";
             characteristic.Location = row.GetValueOrDefault("Location")?.Trim() ?? "";
             characteristic.InspectionMethod = row.GetValueOrDefault("InspectionMethod")?.Trim() ?? "";
-            characteristic.IsRequiredForCoa = bool.Parse(row["IsRequiredForCOA"]);
-            characteristic.CoaStatisticType = CoaStatistic(row);
         }
 
         UpsertSpecLimit(row, characteristic);
@@ -956,13 +936,6 @@ public sealed class SetupImportService(ISpcRepository repository)
             Value = int.Parse(row["FrequencyValue"]),
             Unit = Enum.Parse<FrequencyUnit>(row["FrequencyUnit"], true)
         };
-    }
-
-    private static CoaStatisticType CoaStatistic(Dictionary<string, string> row)
-    {
-        return row.TryGetValue("COAStatistic", out var value) && !string.IsNullOrWhiteSpace(value)
-            ? Enum.Parse<CoaStatisticType>(value, true)
-            : CoaStatisticType.Mean;
     }
 
     private static bool OptionalDecimal(Dictionary<string, string> row, string field, out decimal? value)

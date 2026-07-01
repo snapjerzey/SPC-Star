@@ -2058,8 +2058,7 @@ async function loadJobSummary(event) {
   }
 
   try {
-    const requiredOnly = $("summaryRequiredOnly").value;
-    const rows = await api(`/qa/job-variable-means?jobNums=${encodeURIComponent(jobNums.join(","))}&requiredOnly=${requiredOnly}`);
+    const rows = await api(`/qa/job-variable-means?jobNums=${encodeURIComponent(jobNums.join(","))}`);
     renderJobSummary(rows);
     $("jobSummaryMessage").textContent = `${rows.length} variable${rows.length === 1 ? "" : "s"} loaded.`;
     $("jobSummaryMessage").className = "message ok";
@@ -2080,7 +2079,7 @@ function renderJobSummary(rows) {
   container.className = "data-table job-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Job</span><span>Context</span><span>Variable</span><span>COA</span><span>Mean</span><span>Range</span><span>Std Dev</span><span>Capability</span>
+      <span>Job</span><span>Context</span><span>Variable</span><span>Mean</span><span>Range</span><span>Std Dev</span><span>Capability</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
@@ -2089,7 +2088,6 @@ function renderJobSummary(rows) {
       <span>${row.jobNum}</span>
       <span>${row.processCode || ""} ${row.operationSeq || ""}<small>${row.inspectionPhases || ""}</small></span>
       <span>${row.characteristicName} (${row.unitOfMeasure})</span>
-      <span>${coaStatisticLabel(row.coaStatisticType)}<small>${formatNumber(row.coaValue)}</small></span>
       <span>${formatNumber(row.mean)}</span>
       <span>${formatNumber(row.min)} - ${formatNumber(row.max)}</span>
       <span>${formatNumber(row.stdDev)}</span>
@@ -2159,8 +2157,7 @@ function openJobSummaryCsv() {
     $("jobSummaryMessage").className = "message error";
     return;
   }
-  const requiredOnly = $("summaryRequiredOnly").value;
-  window.open(`/qa/job-variable-means.csv?jobNums=${encodeURIComponent(jobNums.join(","))}&requiredOnly=${requiredOnly}`, "_blank");
+  window.open(`/qa/job-variable-means.csv?jobNums=${encodeURIComponent(jobNums.join(","))}`, "_blank");
 }
 
 function parseJobNums() {
@@ -2464,13 +2461,6 @@ function drawMovingRangeDetails(ctx, points, padding, plotWidth, plotHeight) {
     ctx.fillText(formatNumber(range), x, Math.max(12, y - 8));
   });
   ctx.textAlign = "left";
-}
-
-function coaStatisticLabel(value) {
-  return {
-    Mean: "Mean",
-    StandardDeviation: "Std dev"
-  }[value] || value || "Mean";
 }
 
 function renderMachines() {
@@ -3228,8 +3218,6 @@ function setupVariableRows() {
     usl: Number(row.querySelector(".setup-usl").value),
     lcl: optionalInputNumber(row.querySelector(".setup-lcl")),
     ucl: optionalInputNumber(row.querySelector(".setup-ucl")),
-    isRequiredForCoa: false,
-    coaStatisticType: "Mean",
     displayOrder: index + 1
   }));
 }
@@ -3336,8 +3324,6 @@ async function saveInspectionSetup(event) {
           frequencyType: variable.frequencyType,
           frequencyValue: variable.frequencyValue,
           frequencyUnit: variable.frequencyUnit,
-          isRequiredForCoa: variable.isRequiredForCoa,
-          coaStatisticType: variable.coaStatisticType,
           originalProcessCode: state.editingSetup?.processCode || null,
           originalOperationSeq: state.editingSetup?.operationSeq || null,
           originalCharacteristicName: variable.originalCharacteristicName
@@ -3476,8 +3462,6 @@ function loadCsvTemplate() {
     "Lower Control",
     "Upper Control",
     "Drift Rule",
-    "COA Required",
-    "COA Statistic",
     "Startup Required",
     "Startup Sample Size",
     "Startup Frequency Type",

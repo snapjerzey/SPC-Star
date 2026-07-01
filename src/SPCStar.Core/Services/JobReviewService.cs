@@ -64,7 +64,7 @@ public sealed class JobReviewService(
             return ServiceResult<JobReviewDto>.Fail($"Job {job} is assigned to part {existingJob.PartNum}, not {part}.");
         }
 
-        var summary = qaSummaryExportService.BuildJobVariableMeans([job], requiredOnly: false);
+        var summary = qaSummaryExportService.BuildJobVariableMeans([job]);
         if (!summary.Succeeded || summary.Value is null)
         {
             return ServiceResult<JobReviewDto>.Fail(summary.Errors);

@@ -442,7 +442,6 @@ public sealed class InspectionAndOverrideTests
             Name = "Comparator profile",
             Type = CharacteristicType.Attribute,
             UnitOfMeasure = "Accept/Reject",
-            IsRequiredForCoa = true
         };
         repository.Characteristics.Add(characteristic);
         repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = 1m, Lsl = 0m, Usl = 1m });

@@ -70,7 +70,6 @@ public sealed class InspectionFrequencyServiceTests
             Name = "Diameter",
             Type = CharacteristicType.Variable,
             UnitOfMeasure = "mm",
-            IsRequiredForCoa = true
         };
 
         repository.Parts.Add(part);

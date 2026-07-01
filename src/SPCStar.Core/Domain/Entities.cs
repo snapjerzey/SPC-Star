@@ -50,8 +50,6 @@ public sealed class Characteristic
     public required string UnitOfMeasure { get; set; }
     public string Location { get; set; } = "";
     public string InspectionMethod { get; set; } = "";
-    public bool IsRequiredForCoa { get; set; }
-    public CoaStatisticType CoaStatisticType { get; set; } = CoaStatisticType.Mean;
 }
 
 public sealed class SpecLimit

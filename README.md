@@ -9,7 +9,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Core domain models for users, roles, permissions, setup data, jobs, inspection measurements, job notes, alerts, overrides, material traceability, and exports.
 - SQLite-backed local server database with JSON fallback/import for existing development data.
 - Standard Excel/CSV setup import with row types for job data, materials, measured variables, and accept/reject attributes.
-- Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, frequency, and COA-required variables.
+- Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, and frequency.
 - Machine setup screen for adding and maintaining the machine list operators choose from at job start.
 - Machine workbook import using a sheet named `SPC-Star Machine Import` with `Machine ID` and `Description` columns.
 - User management screens for operators, line techs, QA, admins, and GOD access, including shift assignment, add/edit/delete, password reset, and last-admin/GOD protection.
@@ -90,12 +90,12 @@ The blank template uses readable columns grouped for manual entry. There is no `
 
 Primary readable columns:
 
-`Part Number, Part Description, Product Group, Inspection Phase, Operation, Job Data Field, Material Name, Material Part Number, Material Description, Variable Name, Attribute Name, Required, Sort Order, Unit, Location, Inspection Method, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Drift Rule, COA Required, COA Statistic`
+`Part Number, Part Description, Product Group, Inspection Phase, Operation, Job Data Field, Material Name, Material Part Number, Material Description, Variable Name, Attribute Name, Required, Sort Order, Unit, Location, Inspection Method, Target, Lower Spec, Upper Spec, Lower Control, Upper Control, Drift Rule`
 
 - Job data rows use `Job Data Field`, `Required`, and `Sort Order`.
 - Material rows use `Material Name`, `Material Part Number`, `Material Description`, `Required`, and `Sort Order`.
-- Variable rows use `Variable Name`, `Operation`, `Unit`, `Location`, `Inspection Method`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, drift rule, and optional COA columns.
-- Attribute rows use `Attribute Name`, `Operation`, `Location`, `Inspection Method`, sample/frequency columns, drift rule, and optional COA columns.
+- Variable rows use `Variable Name`, `Operation`, `Unit`, `Location`, `Inspection Method`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, and drift rule.
+- Attribute rows use `Attribute Name`, `Operation`, `Location`, `Inspection Method`, sample/frequency columns, and drift rule.
 - Universal inspection rows can use phase-specific columns such as `Startup Required`, `Startup Sample Size`, `Setup Required`, `Setup Sample Size`, `In Process Required`, `In Process Sample Size`, `CoilChange Required`, `CoilChange Sample Size`, `Spool Required`, and `Spool Sample Size`.
 - `Attribute/Variable`, `Tool Used`, `ParameterSeq`, and other standardized inspection-sheet conversion headers are accepted for bulk import workflows.
 

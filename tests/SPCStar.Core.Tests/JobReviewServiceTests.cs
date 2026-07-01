@@ -46,7 +46,6 @@ public sealed class JobReviewServiceTests
             Name = "Diameter",
             Type = CharacteristicType.Variable,
             UnitOfMeasure = "mm",
-            IsRequiredForCoa = true
         };
         repository.Characteristics.Add(characteristic);
         repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = 5m, Lsl = 4.5m, Usl = 5.5m });

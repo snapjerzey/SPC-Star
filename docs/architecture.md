@@ -20,7 +20,7 @@ This is intentionally still behind the repository/service boundary. Business rul
 ## Implemented services
 
 - `SetupImportService`: row-type Excel/CSV setup validation and upsert for job data, material requirements, measured variables, accept/reject attributes, phase-specific requirements, sample sizes, frequency, and display order.
-- `SetupManagementService`: users, machines, global settings, capability thresholds, manual part/operation/inspection setup, part-specific job data fields, and material setup.
+- `SetupManagementService`: users, machine setup/import, global settings, capability thresholds, manual part/operation/inspection setup, part-specific job data fields, and material setup.
 - `SetupQueryService`: tablet setup snapshot, part lookup, job data field lookup, material field lookup, inspection plan lookup, and setup review data.
 - `AuthSessionService`: development login/session contract for role-aware UI flows.
 - `WorkContextService`: one-call inspection screen context for tablet entry, including live capability metrics.

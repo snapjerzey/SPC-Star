@@ -874,6 +874,12 @@ textarea {
 .custom-rule-form button {
   grid-column: span 2;
 }
+.template-preview {
+  margin: -4px 0 14px;
+  min-height: 80px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
 .setup-list {
   display: grid;
   gap: 8px;

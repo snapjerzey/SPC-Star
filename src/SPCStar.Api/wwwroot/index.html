@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260629-list-row-theme">
+  <link rel="stylesheet" href="/styles.css?v=20260701-machine-import">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -428,6 +428,15 @@
             </div>
             <button id="newMachineButton" type="button" class="secondary">New Machine</button>
           </div>
+          <form id="machineImportForm" class="stacked-form compact-form">
+            <label>
+              Import machine workbook
+              <input id="machineImportFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            </label>
+            <button type="submit" class="secondary">Import Machines</button>
+            <button id="machineTemplateButton" type="button" class="secondary">Load Machine Template</button>
+          </form>
+          <textarea id="machineTemplateText" class="template-preview" rows="3" spellcheck="false"></textarea>
           <div class="machine-admin-layout">
             <div>
               <div id="machineList" class="setup-list empty">No machines loaded.</div>
@@ -446,6 +455,7 @@
             </form>
           </div>
           <p id="machineSetupMessage" class="message"></p>
+          <p id="machineImportMessage" class="message"></p>
         </section>
       </section>
 
@@ -813,6 +823,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260624-machine-refresh"></script>
+  <script src="/app.js?v=20260701-machine-import"></script>
 </body>
 </html>

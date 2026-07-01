@@ -13,6 +13,8 @@ public sealed record UserImportResult(int Imported);
 
 public sealed record UpsertResourceMachineRequest(string ResourceId, string? Description, string? OriginalResourceId = null);
 
+public sealed record ResourceImportResult(int Imported);
+
 public sealed record UpdateSettingsRequest(
     string GlobalAlertRuleSet,
     CustomDriftRuleSetupDto? CustomDriftRule = null,
@@ -346,6 +348,55 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         return ServiceResult<UserImportResult>.Ok(new UserImportResult(requests.Count));
+    }
+
+    public ServiceResult<ResourceImportResult> ImportResourcesCsv(string csv)
+    {
+        var rows = CsvSupport.ReadRows(csv)
+            .Where(row => row.Values.Any(value => !string.IsNullOrWhiteSpace(value)))
+            .ToArray();
+        var requests = new List<UpsertResourceMachineRequest>();
+        var errors = new List<string>();
+        var rowNumber = 1;
+        var seenResources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rows)
+        {
+            rowNumber++;
+            var resourceId = Value(row, "MachineID", "Machine ID", "ResourceID", "Resource ID", "Machine", "Resource");
+            var description = Value(row, "Description", "Machine Description", "Resource Description");
+            if (string.IsNullOrWhiteSpace(resourceId))
+            {
+                errors.Add($"Row {rowNumber}: Machine ID is required.");
+                continue;
+            }
+
+            if (!seenResources.Add(resourceId.Trim()))
+            {
+                errors.Add($"Row {rowNumber}: Duplicate machine {resourceId}.");
+                continue;
+            }
+
+            var request = new UpsertResourceMachineRequest(resourceId.Trim(), description.Trim(), resourceId.Trim());
+            errors.AddRange(ValidateResource(request).Select(error => $"Row {rowNumber}: {error}"));
+            requests.Add(request);
+        }
+
+        if (errors.Count > 0)
+        {
+            return ServiceResult<ResourceImportResult>.Fail(errors);
+        }
+
+        foreach (var request in requests)
+        {
+            var result = UpsertResource(request);
+            if (!result.Succeeded)
+            {
+                return ServiceResult<ResourceImportResult>.Fail(result.Errors);
+            }
+        }
+
+        return ServiceResult<ResourceImportResult>.Ok(new ResourceImportResult(requests.Count));
     }
 
     public ServiceResult DeleteUser(string userName)

@@ -11,6 +11,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Standard Excel/CSV setup import with row types for job data, materials, measured variables, and accept/reject attributes.
 - Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, frequency, and COA-required variables.
 - Machine setup screen for adding and maintaining the machine list operators choose from at job start.
+- Machine workbook import using a sheet named `SPC-Star Machine Import` with `Machine ID` and `Description` columns.
 - User management screens for operators, line techs, QA, admins, and GOD access, including add/edit/delete with last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
 - Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, and Spool.
@@ -113,6 +114,7 @@ Initial endpoints include:
 - `POST /setup/settings`
 - `POST /setup/users`
 - `POST /setup/resources`
+- `POST /setup/resources/import-xlsx`
 - `DELETE /setup/users/{userName}`
 - `DELETE /setup/resources/{resourceId}`
 - `POST /setup/inspection-plans`

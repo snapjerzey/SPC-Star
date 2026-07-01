@@ -3290,6 +3290,42 @@ async function importXlsx(event) {
   }
 }
 
+async function importMachinesXlsx(event) {
+  event.preventDefault();
+  const file = $("machineImportFile").files[0];
+  if (!file) {
+    $("machineImportMessage").textContent = "Select a machine workbook to import.";
+    $("machineImportMessage").className = "message error";
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const result = await api("/setup/resources/import-xlsx", {
+      method: "POST",
+      body: formData
+    });
+    $("machineImportMessage").textContent = `${result.count} machines imported.`;
+    $("machineImportMessage").className = "message ok";
+    $("machineImportFile").value = "";
+    await refreshMachines(state.selectedResourceId);
+  } catch (error) {
+    $("machineImportMessage").textContent = readableError(error);
+    $("machineImportMessage").className = "message error";
+  }
+}
+
+function loadMachineTemplate() {
+  $("machineTemplateText").value = [
+    "Machine ID,Description",
+    "ETH-1,Needle Maker #1",
+    "GP-1,GRM 50 Hook Machine"
+  ].join("\\n");
+  $("machineImportMessage").textContent = "Use these columns on an Excel sheet named SPC-Star Machine Import.";
+  $("machineImportMessage").className = "message";
+}
+
 async function importCsv(event) {
   event.preventDefault();
   try {
@@ -3492,6 +3528,8 @@ $("historyExportTab").addEventListener("click", () => showHistoryView("Export"))
 $("machineSetupForm").addEventListener("submit", saveMachine);
 $("newMachineButton").addEventListener("click", newMachine);
 $("deleteSelectedMachineButton").addEventListener("click", deleteSelectedMachine);
+$("machineImportForm").addEventListener("submit", importMachinesXlsx);
+$("machineTemplateButton").addEventListener("click", loadMachineTemplate);
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
 $("newUserButton").addEventListener("click", newUser);

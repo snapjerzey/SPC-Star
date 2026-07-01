@@ -370,6 +370,40 @@ public sealed class SetupManagementServiceTests
         Assert.Contains(repository.Resources, resource => resource.ResourceId == "PRESS1");
     }
 
+    [Fact]
+    public void ImportResourcesCsv_AddsMachinesFromTemplateColumns()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.ImportResourcesCsv(string.Join(Environment.NewLine, [
+            "Machine ID,Description",
+            "ETH-1,Needle Maker #1",
+            "GP-1,GRM 50 Hook Machine"
+        ]));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, result.Value!.Imported);
+        Assert.Contains(repository.Resources, resource => resource.ResourceId == "ETH-1" && resource.Description == "Needle Maker #1");
+        Assert.Contains(repository.Resources, resource => resource.ResourceId == "GP-1" && resource.Description == "GRM 50 Hook Machine");
+    }
+
+    [Fact]
+    public void ImportResourcesCsv_RejectsDuplicateMachinesInSameFile()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.ImportResourcesCsv(string.Join(Environment.NewLine, [
+            "Machine ID,Description",
+            "ETH-1,Needle Maker #1",
+            "ETH-1,Duplicate"
+        ]));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Duplicate machine ETH-1", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static UpsertInspectionSetupRequest Request(
         string processCode,
         string characteristicName,

@@ -1844,7 +1844,7 @@ function renderReviewSummary(rows, container, emptyMessage) {
   container.className = "data-table review-summary-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Scope</span><span>Operation</span><span>Phase</span><span>Variable</span><span>Type</span><span>Mean</span><span>Std Dev</span><span>Cp</span><span>Cpk</span><span>Pp</span><span>Ppk</span><span>Count</span>
+      <span>Scope</span><span>Operation</span><span>Phase</span><span>Variable</span><span>Type</span><span>Mean</span><span>Std Dev</span><span>Cpk</span><span>Ppk</span><span>Count</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
@@ -1857,9 +1857,7 @@ function renderReviewSummary(rows, container, emptyMessage) {
       <span>${row.characteristicType === "Attribute" ? "Accept/Reject" : "Measured"}</span>
       <span>${formatNumber(row.mean)}</span>
       <span>${formatNumber(row.stdDev)}</span>
-      <span>${capabilityBadge(row.cp)}</span>
       <span>${capabilityBadge(row.cpk)}</span>
-      <span>${capabilityBadge(row.pp)}</span>
       <span>${capabilityBadge(row.ppk)}</span>
       <span>${row.count}${row.outOfSpecExcludedCount ? ` / ${row.outOfSpecExcludedCount} excluded` : ""}</span>`;
     container.appendChild(item);
@@ -1893,7 +1891,7 @@ async function saveReviewMeasurement(id, item) {
 function renderReviewMeasurements(measurements, history) {
   const container = $("jobReviewMeasurements");
   const rows = [
-    ...measurements.map((measurement) => ({ kind: "Measurement", timestamp: measurement.timestamp, measurement })),
+    ...groupReviewMeasurements(measurements).map((group) => ({ kind: "MeasurementGroup", timestamp: group.latest.timestamp, group })),
     ...history.map((entry) => ({ kind: "History", timestamp: entry.timestamp, entry }))
   ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
@@ -1906,7 +1904,7 @@ function renderReviewMeasurements(measurements, history) {
   container.className = "data-table review-measurement-table";
   container.innerHTML = `
     <div class="data-row header">
-      <span>Time</span><span>Phase</span><span>Type</span><span>Value / Details</span><span>Machine</span><span>Operation</span><span>User</span><span></span>
+      <span>Latest</span><span>Phase</span><span>Inspection Item</span><span>Summary / Details</span><span>Machine</span><span>Operation</span><span>User</span><span></span>
     </div>`;
   rows.forEach((row) => {
     if (row.kind === "History") {
@@ -1914,28 +1912,106 @@ function renderReviewMeasurements(measurements, history) {
       return;
     }
 
-    const measurement = row.measurement;
-    const item = document.createElement("div");
-    item.className = `data-row ${measurement.isOutOfSpec ? "measurement-out-spec" : measurement.isOutOfControl ? "measurement-out-control" : ""}`;
-    item.innerHTML = `
-      <span>${formatDateTime(measurement.timestamp)}</span>
-      <span>
-        <select class="review-measurement-phase">
-          <option value="Startup" ${measurement.inspectionPhase === "Startup" ? "selected" : ""}>Startup</option>
-          <option value="Setup" ${measurement.inspectionPhase === "Setup" ? "selected" : ""}>Setup</option>
-          <option value="In Process" ${measurement.inspectionPhase === "In Process" ? "selected" : ""}>In Process</option>
-          <option value="Spool" ${normalizeInspectionPhase(measurement.inspectionPhase) === "Spool" ? "selected" : ""}>Spool</option>
-        </select>
-      </span>
-      <span>${measurement.characteristicName}</span>
-      <span>${reviewMeasurementValueControl(measurement)}</span>
-      <span>${measurement.resourceId}${measurement.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : measurement.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
-      <span>${measurement.processCode} ${measurement.operationSeq}</span>
-      <span>${measurement.operatorUserId}${measurement.operatorShift ? ` (${escapeHtml(measurement.operatorShift)})` : ""}</span>
-      <span><button type="button" class="secondary compact-button">Save</button></span>`;
-    item.querySelector("button").addEventListener("click", () => saveReviewMeasurement(measurement.id, item));
-    container.appendChild(item);
+    renderReviewMeasurementGroup(container, row.group);
   });
+}
+
+function groupReviewMeasurements(measurements) {
+  const groups = new Map();
+  measurements.forEach((measurement) => {
+    const key = [
+      measurement.processCode,
+      measurement.operationSeq,
+      normalizeInspectionPhase(measurement.inspectionPhase),
+      measurement.characteristicName,
+      measurement.characteristicType
+    ].join("|");
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key).push(measurement);
+  });
+
+  return [...groups.values()].map((items, index) => {
+    const sorted = [...items].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return {
+      id: `review-measurement-group-${index}`,
+      items: sorted,
+      latest: sorted[0],
+      summary: reviewMeasurementGroupSummary(sorted)
+    };
+  });
+}
+
+function reviewMeasurementGroupSummary(items) {
+  const latest = items[0];
+  const outOfSpec = items.filter((item) => item.isOutOfSpec).length;
+  const outOfControl = items.filter((item) => item.isOutOfControl).length;
+  if (latest.characteristicType === "Attribute") {
+    const accepted = items.filter((item) => Number(item.value) === 1).length;
+    const rejected = items.length - accepted;
+    return `${items.length} entries · Accept ${accepted} · Reject ${rejected}${outOfSpec ? ` · ${outOfSpec} out of spec` : ""}`;
+  }
+
+  const values = items.map((item) => Number(item.value)).filter(Number.isFinite);
+  const mean = values.reduce((total, value) => total + value, 0) / Math.max(values.length, 1);
+  const min = values.length ? Math.min(...values) : null;
+  const max = values.length ? Math.max(...values) : null;
+  const flags = [
+    outOfSpec ? `${outOfSpec} out of spec` : "",
+    outOfControl ? `${outOfControl} out of control` : ""
+  ].filter(Boolean).join(" · ");
+  return `${items.length} entries · Mean ${formatNumber(mean)} · Range ${formatNumber(min)} - ${formatNumber(max)}${flags ? ` · ${flags}` : ""}`;
+}
+
+function renderReviewMeasurementGroup(container, group) {
+  const measurement = group.latest;
+  const machines = [...new Set(group.items.map((item) => item.resourceId))];
+  const users = [...new Set(group.items.map((item) => item.operatorShift ? `${item.operatorUserId} (${item.operatorShift})` : item.operatorUserId))];
+  const item = document.createElement("div");
+  item.className = `data-row review-measurement-group-row ${group.items.some((entry) => entry.isOutOfSpec) ? "measurement-out-spec" : group.items.some((entry) => entry.isOutOfControl) ? "measurement-out-control" : ""}`;
+  item.innerHTML = `
+    <span>${formatDateTime(measurement.timestamp)}</span>
+    <span>${escapeHtml(measurement.inspectionPhase)}</span>
+    <span>${escapeHtml(measurement.characteristicName)}<small>${escapeHtml(measurement.characteristicType === "Attribute" ? "Accept/Reject" : "Measured")}</small></span>
+    <span>${escapeHtml(group.summary)}</span>
+    <span>${escapeHtml(machines.join(", "))}</span>
+    <span>${escapeHtml(measurement.processCode)} ${measurement.operationSeq}</span>
+    <span>${escapeHtml(users.slice(0, 2).join(", "))}${users.length > 2 ? `<small>${users.length - 2} more</small>` : ""}</span>
+    <span><button type="button" class="secondary compact-button">Details</button></span>`;
+  item.querySelector("button").addEventListener("click", () => toggleReviewMeasurementGroup(container, group.id));
+  container.appendChild(item);
+  group.items.forEach((entry) => renderReviewMeasurementDetail(container, group.id, entry));
+}
+
+function toggleReviewMeasurementGroup(container, groupId) {
+  const rows = container.querySelectorAll(`[data-review-group="${groupId}"]`);
+  const shouldShow = [...rows].some((row) => row.classList.contains("hidden"));
+  rows.forEach((row) => row.classList.toggle("hidden", !shouldShow));
+}
+
+function renderReviewMeasurementDetail(container, groupId, measurement) {
+  const item = document.createElement("div");
+  item.dataset.reviewGroup = groupId;
+  item.className = `data-row review-measurement-detail-row hidden ${measurement.isOutOfSpec ? "measurement-out-spec" : measurement.isOutOfControl ? "measurement-out-control" : ""}`;
+  item.innerHTML = `
+    <span>${formatDateTime(measurement.timestamp)}</span>
+    <span>
+      <select class="review-measurement-phase">
+        <option value="Startup" ${measurement.inspectionPhase === "Startup" ? "selected" : ""}>Startup</option>
+        <option value="Setup" ${measurement.inspectionPhase === "Setup" ? "selected" : ""}>Setup</option>
+        <option value="In Process" ${measurement.inspectionPhase === "In Process" ? "selected" : ""}>In Process</option>
+        <option value="Spool" ${normalizeInspectionPhase(measurement.inspectionPhase) === "Spool" ? "selected" : ""}>Spool</option>
+      </select>
+    </span>
+    <span>${escapeHtml(measurement.characteristicName)}</span>
+    <span>${reviewMeasurementValueControl(measurement)}</span>
+    <span>${escapeHtml(measurement.resourceId)}${measurement.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : measurement.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
+    <span>${escapeHtml(measurement.processCode)} ${measurement.operationSeq}</span>
+    <span>${escapeHtml(measurement.operatorUserId)}${measurement.operatorShift ? ` (${escapeHtml(measurement.operatorShift)})` : ""}</span>
+    <span><button type="button" class="secondary compact-button">Save</button></span>`;
+  item.querySelector("button").addEventListener("click", () => saveReviewMeasurement(measurement.id, item));
+  container.appendChild(item);
 }
 
 function renderReviewHistoryEvent(container, entry) {

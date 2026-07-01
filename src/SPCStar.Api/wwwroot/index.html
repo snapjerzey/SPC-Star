@@ -505,10 +505,11 @@
                     Shift
                     <select id="setupShift">
                       <option value="">Unassigned</option>
-                      <option value="1st Shift">1st Shift</option>
-                      <option value="2nd Shift">2nd Shift</option>
-                      <option value="3rd Shift">3rd Shift</option>
-                      <option value="Weekend">Weekend</option>
+                      <option value="1st Half Days">1st Half Days</option>
+                      <option value="2nd Half Days">2nd Half Days</option>
+                      <option value="1st Half Nights">1st Half Nights</option>
+                      <option value="2nd Half Nights">2nd Half Nights</option>
+                      <option value="5 Day Shift">5 Day Shift</option>
                     </select>
                   </label>
                   <label id="setupPasswordLabel">
@@ -770,6 +771,17 @@
               <label>Part<input id="topIssuesPartNum" list="partOptions" autocomplete="off" inputmode="text" placeholder="All parts"></label>
               <label>Job<input id="topIssuesJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="All jobs"></label>
               <label>Machine<select id="topIssuesResourceId"></select></label>
+              <label>
+                Shift
+                <select id="topIssuesShift">
+                  <option value="">All shifts</option>
+                  <option value="1st Half Days">1st Half Days</option>
+                  <option value="2nd Half Days">2nd Half Days</option>
+                  <option value="1st Half Nights">1st Half Nights</option>
+                  <option value="2nd Half Nights">2nd Half Nights</option>
+                  <option value="5 Day Shift">5 Day Shift</option>
+                </select>
+              </label>
               <label>Variable / Attribute<input id="topIssuesCharacteristicName" list="reportCharacteristicOptions" autocomplete="off" placeholder="All items"></label>
               <label>From<input id="topIssuesFrom" type="datetime-local"></label>
               <label>To<input id="topIssuesTo" type="datetime-local"></label>

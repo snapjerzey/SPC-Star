@@ -7,6 +7,7 @@ public sealed record HistoryIssueSummaryRequest(
     string? PartNum,
     string? JobNum,
     string? ResourceId,
+    string? OperatorShift,
     string? CharacteristicName,
     DateTimeOffset? From,
     DateTimeOffset? To,
@@ -24,6 +25,7 @@ public sealed record HistoryIssueSummaryRow(
     DateTimeOffset LatestEventAt,
     string LatestJobNum,
     string LatestResourceId,
+    string? LatestOperatorShift,
     string? LatestDetail,
     string? LatestSolution);
 
@@ -36,6 +38,7 @@ public sealed class HistoryIssueSummaryService(ISpcRepository repository)
                 Matches(request.PartNum, alert.PartNum) &&
                 Matches(request.JobNum, alert.JobNum) &&
                 Matches(request.ResourceId, alert.ResourceId) &&
+                Matches(request.OperatorShift, alert.OperatorShift) &&
                 Matches(request.CharacteristicName, alert.CharacteristicName) &&
                 (!request.From.HasValue || alert.LockedAt >= request.From.Value) &&
                 (!request.To.HasValue || alert.LockedAt <= request.To.Value))
@@ -77,6 +80,7 @@ public sealed class HistoryIssueSummaryService(ISpcRepository repository)
                     latest.LockedAt,
                     latest.JobNum,
                     latest.ResourceId,
+                    string.IsNullOrWhiteSpace(latest.OperatorShift) ? null : latest.OperatorShift,
                     latest.Detail,
                     latestOverride?.SolutionText);
             })

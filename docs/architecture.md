@@ -35,7 +35,7 @@ This is intentionally still behind the repository/service boundary. Business rul
 - `QaSummaryExportService`: COA-style summary calculations and CSV export.
 - `JobReviewService`: part/job review data, editable inspection entries, and limit-status flags for History highlighting.
 - `HistoryExportService`: raw inspection, job history, drift alert, and material change CSV exports, including operator shift on new inspection and alert rows.
-- `HistoryIssueSummaryService`: Top Issues summaries for repeat out-of-spec, drift, and rejected-attribute events by part, inspection item, signal, cause, jobs, and machines.
+- `HistoryIssueSummaryService`: Top Issues summaries for repeat out-of-spec, drift, and rejected-attribute events by part, inspection item, signal, cause, operator shift, timeframe, jobs, and machines.
 - `OfflineSyncService`: first batch upload contract for retry-safe tablet/offline writes.
 
 ## Inspection UI behavior

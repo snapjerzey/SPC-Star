@@ -2031,6 +2031,7 @@ async function loadTopIssues(event) {
         partNum: $("topIssuesPartNum").value.trim() || null,
         jobNum: $("topIssuesJobNum").value.trim() || null,
         resourceId: $("topIssuesResourceId").value || null,
+        operatorShift: $("topIssuesShift").value || null,
         characteristicName: $("topIssuesCharacteristicName").value.trim() || null,
         from: dateTimeLocalValue("topIssuesFrom"),
         to: dateTimeLocalValue("topIssuesTo"),
@@ -2069,7 +2070,7 @@ function renderTopIssues(rows) {
       <span>${escapeHtml(row.causeCategory || "Unspecified")}</span>
       <span><strong>${row.eventCount}</strong>${row.activeCount ? `<small>${row.activeCount} active</small>` : ""}</span>
       <span>${row.distinctJobCount} job${row.distinctJobCount === 1 ? "" : "s"}<small>${row.distinctMachineCount} machine${row.distinctMachineCount === 1 ? "" : "s"}</small></span>
-      <span>${escapeHtml(row.latestJobNum)}<small>${escapeHtml(row.latestResourceId)} / ${formatDateTime(row.latestEventAt)}</small></span>
+      <span>${escapeHtml(row.latestJobNum)}<small>${escapeHtml(row.latestResourceId)}${row.latestOperatorShift ? ` / ${escapeHtml(row.latestOperatorShift)}` : ""} / ${formatDateTime(row.latestEventAt)}</small></span>
       <span>${escapeHtml(row.latestDetail || "")}${row.latestSolution ? `<small>Last solution: ${escapeHtml(row.latestSolution)}</small>` : ""}</span>`;
     container.appendChild(item);
   });

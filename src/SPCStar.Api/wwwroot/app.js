@@ -12,6 +12,7 @@ const state = {
   editingSetup: null,
   selectedUserName: "",
   selectedResourceId: "",
+  currentShift: "1st Half Days",
   historyView: "Ledger",
   historyFilters: {
     partNum: "",
@@ -165,11 +166,12 @@ async function login(event) {
   event.preventDefault();
   const userName = $("userName").value.trim();
   const password = $("password").value;
+  state.currentShift = $("loginShift").value;
   state.user = await api("/auth/login", {
     method: "POST",
     body: JSON.stringify({ userName, password })
   });
-  setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")})`, "ok");
+  setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")}) / ${state.currentShift}`, "ok");
   document.body.classList.remove("login-active");
   $("logoutButton").classList.remove("hidden");
   $("loginPanel").classList.add("hidden");
@@ -1702,6 +1704,7 @@ function logout() {
   state.activeLock = null;
   state.users = [];
   state.roles = [];
+  state.currentShift = $("loginShift").value;
   document.body.classList.add("login-active");
   setStatus($("userBadge"), "Not signed in");
   $("logoutButton").classList.add("hidden");
@@ -1731,9 +1734,6 @@ async function loadSetupAdmin() {
   renderMachines();
   renderUserProductGroupPicker();
   renderUsers();
-  if (!$("setupVariableRows").children.length) {
-    addSetupVariableRow();
-  }
 }
 
 function renderPartReviewControls() {
@@ -2112,8 +2112,9 @@ async function loadTopIssues(event) {
         limit: Number($("topIssuesLimit").value) || 25
       })
     });
-    renderTopIssues(rows);
-    $("topIssuesMessage").textContent = `${rows.length} issue group${rows.length === 1 ? "" : "s"} loaded.`;
+    const issueGroups = collapseTopIssueRows(rows);
+    renderTopIssues(issueGroups);
+    $("topIssuesMessage").textContent = `${issueGroups.length} issue group${issueGroups.length === 1 ? "" : "s"} loaded.`;
     $("topIssuesMessage").className = "message ok";
   } catch (error) {
     $("topIssuesMessage").textContent = readableError(error);
@@ -2129,25 +2130,157 @@ function renderTopIssues(rows) {
     return;
   }
 
-  container.className = "data-table top-issues-table";
+  container.className = "top-issues-list";
   container.innerHTML = `
-    <div class="data-row header">
-      <span>Part</span><span>Inspection Item</span><span>Signal</span><span>Cause</span><span>Events</span><span>Jobs / Machines</span><span>Latest</span><span>Latest Detail</span>
+    <div class="top-issue-header">
+      <span>Issue</span><span>Events</span><span>Top Signal</span><span>Top Cause</span><span>Scope</span><span>Latest</span><span>Last Solution</span>
     </div>`;
   rows.forEach((row) => {
     const item = document.createElement("div");
-    item.className = "data-row";
+    item.className = "top-issue-card";
     item.innerHTML = `
-      <span><strong>${escapeHtml(row.partNum)}</strong></span>
-      <span>${escapeHtml(row.characteristicName)}</span>
-      <span>${escapeHtml(ruleLabel(row.ruleTriggered))}</span>
-      <span>${escapeHtml(row.causeCategory || "Unspecified")}</span>
-      <span><strong>${row.eventCount}</strong>${row.activeCount ? `<small>${row.activeCount} active</small>` : ""}</span>
-      <span>${row.distinctJobCount} job${row.distinctJobCount === 1 ? "" : "s"}<small>${row.distinctMachineCount} machine${row.distinctMachineCount === 1 ? "" : "s"}</small></span>
-      <span>${escapeHtml(row.latestJobNum)}<small>${escapeHtml(row.latestResourceId)}${row.latestOperatorShift ? ` / ${escapeHtml(row.latestOperatorShift)}` : ""} / ${formatDateTime(row.latestEventAt)}</small></span>
-      <span>${escapeHtml(row.latestDetail || "")}${row.latestSolution ? `<small>Last solution: ${escapeHtml(row.latestSolution)}</small>` : ""}</span>`;
+      <div class="top-issue-main">
+        <span><strong>${escapeHtml(row.characteristicName)}</strong><small>Part ${escapeHtml(row.partNum)}</small></span>
+        <span><strong>${row.eventCount}</strong>${row.activeCount ? `<small>${row.activeCount} active</small>` : ""}</span>
+        <span>${escapeHtml(topBreakdownLabel(row.signalBreakdown, row.signalSummary || ruleLabel(row.ruleTriggered)))}</span>
+        <span>${escapeHtml(topBreakdownLabel(row.causeBreakdown, row.causeCategory || "Unspecified"))}</span>
+        <span>${row.distinctJobCount} job${row.distinctJobCount === 1 ? "" : "s"}<small>${row.distinctMachineCount} machine${row.distinctMachineCount === 1 ? "" : "s"}</small></span>
+        <span>${escapeHtml(row.latestJobNum)}<small>${escapeHtml(row.latestResourceId)}${row.latestOperatorShift ? ` / ${escapeHtml(row.latestOperatorShift)}` : ""} / ${formatDateTime(row.latestEventAt)}</small></span>
+        <span>${escapeHtml(row.latestSolution || "")}</span>
+      </div>
+      <div class="top-issue-breakdowns">
+        ${renderIssueBreakdown("Signals", row.signalBreakdown)}
+        ${renderIssueBreakdown("Causes", row.causeBreakdown)}
+        ${renderIssueBreakdown("Solutions", row.solutionBreakdown)}
+      </div>`;
     container.appendChild(item);
   });
+}
+
+function collapseTopIssueRows(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = [
+      row.partNum || "",
+      row.characteristicName || ""
+    ].join("|").toLowerCase();
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        ...row,
+        causeCounts: causeCountsFromRow(row),
+        signalCounts: signalCountsFromRow(row),
+        solutionCounts: solutionCountsFromRow(row)
+      });
+      return;
+    }
+
+    existing.eventCount += row.eventCount || 0;
+    existing.activeCount += row.activeCount || 0;
+    existing.distinctJobCount += row.distinctJobCount || 0;
+    existing.distinctMachineCount += row.distinctMachineCount || 0;
+    mergeCauseCounts(existing.causeCounts, causeCountsFromRow(row));
+    mergeCauseCounts(existing.signalCounts, signalCountsFromRow(row));
+    mergeCauseCounts(existing.solutionCounts, solutionCountsFromRow(row));
+    existing.causeCategory = topCountLabel(existing.causeCounts);
+    existing.signalSummary = topCountLabel(existing.signalCounts);
+
+    if (new Date(row.latestEventAt) > new Date(existing.latestEventAt)) {
+      existing.latestEventAt = row.latestEventAt;
+      existing.latestJobNum = row.latestJobNum;
+      existing.latestResourceId = row.latestResourceId;
+      existing.latestOperatorShift = row.latestOperatorShift;
+      existing.latestDetail = row.latestDetail;
+      existing.latestSolution = row.latestSolution;
+    } else if (!existing.latestSolution && row.latestSolution) {
+      existing.latestSolution = row.latestSolution;
+    }
+  });
+
+  return [...groups.values()]
+    .map((row) => ({
+      ...row,
+      causeCategory: topCountLabel(row.causeCounts),
+      signalSummary: row.signalSummary || topCountLabel(row.signalCounts),
+      causeBreakdown: breakdownItems(row.causeCounts),
+      signalBreakdown: row.signalBreakdown?.length ? row.signalBreakdown : breakdownItems(row.signalCounts),
+      solutionBreakdown: row.solutionBreakdown?.length ? row.solutionBreakdown : breakdownItems(row.solutionCounts)
+    }))
+    .sort((a, b) =>
+      (b.eventCount || 0) - (a.eventCount || 0) ||
+      (b.activeCount || 0) - (a.activeCount || 0) ||
+      new Date(b.latestEventAt) - new Date(a.latestEventAt));
+}
+
+function causeCountsFromRow(row) {
+  if (row.causeBreakdown?.length) {
+    return countsFromBreakdown(row.causeBreakdown);
+  }
+  return new Map([[row.causeCategory || "Unspecified", row.eventCount || 0]]);
+}
+
+function signalCountsFromRow(row) {
+  if (row.signalBreakdown?.length) {
+    return countsFromBreakdown(row.signalBreakdown);
+  }
+  const signal = row.signalSummary || ruleLabel(row.ruleTriggered) || "Unspecified";
+  return new Map([[signal, row.eventCount || 0]]);
+}
+
+function solutionCountsFromRow(row) {
+  if (row.solutionBreakdown?.length) {
+    return countsFromBreakdown(row.solutionBreakdown);
+  }
+  return new Map([[row.latestSolution || "No solution entered", row.eventCount || 0]]);
+}
+
+function countsFromBreakdown(items) {
+  const counts = new Map();
+  items.forEach((item) => {
+    const label = item.label || "Unspecified";
+    counts.set(label, (counts.get(label) || 0) + (item.count || 0));
+  });
+  return counts;
+}
+
+function mergeCauseCounts(target, source) {
+  source.forEach((count, cause) => {
+    target.set(cause, (target.get(cause) || 0) + count);
+  });
+}
+
+function breakdownItems(counts) {
+  return [...counts.entries()]
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([label, count]) => ({ label, count }));
+}
+
+function topCountLabel(counts) {
+  const items = breakdownItems(counts);
+  if (!items.length) {
+    return "Unspecified";
+  }
+  return items[0].label;
+}
+
+function topBreakdownLabel(items, fallback) {
+  return items?.length ? items[0].label : fallback;
+}
+
+function renderIssueBreakdown(title, items = []) {
+  const rows = items.length ? items : [{ label: "Unspecified", count: 0 }];
+  return `
+    <section class="issue-breakdown-panel">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="issue-breakdown-list">
+        ${rows.map((item) => `
+          <div class="issue-breakdown-row">
+            <span>${escapeHtml(item.label)}</span>
+            <strong>${item.count}</strong>
+          </div>`).join("")}
+      </div>
+    </section>`;
 }
 
 function openJobSummaryCsv() {
@@ -2816,17 +2949,19 @@ function setupVariableRowTemplate() {
     <label class="setup-type-field">
       <span>Type</span>
       <select class="setup-characteristic-type">
+        <option value=""></option>
         <option value="Variable">Measured</option>
         <option value="Attribute">Accept / Reject</option>
       </select>
     </label>
     <label class="setup-unit-field"><span>Unit</span><input class="setup-unit" required></label>
-    <label class="setup-location-field"><span>Requirement / context</span><input class="setup-location" placeholder="Front, Back, 2 places, if weld pool is present"></label>
-    <label class="setup-method-field"><span>Method / tool</span><input class="setup-method" placeholder="Caliper, comparator FX194, template T-071"></label>
+    <label class="setup-location-field"><span>Requirement / context</span><input class="setup-location"></label>
+    <label class="setup-method-field"><span>Method / tool</span><input class="setup-method"></label>
     <label class="setup-sample-field"><span>Sample size</span><input class="setup-row-sample-size" type="number" min="1" required></label>
     <label class="setup-frequency-type-field">
       <span>Frequency type</span>
       <select class="setup-row-frequency-type">
+        <option value=""></option>
         <option value="Quantity">Quantity</option>
         <option value="Time">Time</option>
         <option value="Event">Event</option>
@@ -2897,7 +3032,7 @@ function addSetupMaterialRow(values = {}) {
   $("setupMaterialRows").appendChild(row);
 }
 
-function addSetupVariableRow(values = {}, type = values.characteristicType || "Variable") {
+function addSetupVariableRow(values = {}, type = values.characteristicType || "") {
   const row = document.createElement("div");
   row.className = "setup-variable-row";
   row.dataset.originalCharacteristicName = values.characteristicName || "";
@@ -2907,10 +3042,10 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || "V
   row.querySelector(".setup-unit").value = values.unitOfMeasure || "";
   row.querySelector(".setup-location").value = values.location || "";
   row.querySelector(".setup-method").value = values.inspectionMethod || "";
-  row.querySelector(".setup-row-sample-size").value = String(values.sampleSize || $("setupSampleSize").value || 1);
-  row.querySelector(".setup-row-frequency-type").value = values.frequencyType || $("setupFrequencyType").value || "Quantity";
-  updateRowFrequencyUnits(row, values.frequencyUnit || $("setupFrequencyUnit").value || "Pieces");
-  row.querySelector(".setup-row-frequency-value").value = String(values.frequencyValue || $("setupFrequencyValue").value || 1);
+  row.querySelector(".setup-row-sample-size").value = values.sampleSize ?? "";
+  row.querySelector(".setup-row-frequency-type").value = values.frequencyType || "";
+  updateRowFrequencyUnits(row, values.frequencyUnit || "");
+  row.querySelector(".setup-row-frequency-value").value = values.frequencyValue ?? $("setupFrequencyValue").value ?? "";
   row.querySelector(".setup-nominal").value = values.nominal ?? "";
   row.querySelector(".setup-lsl").value = values.lsl ?? "";
   row.querySelector(".setup-usl").value = values.usl ?? "";
@@ -2922,10 +3057,10 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || "V
     const container = row.parentElement;
     if (container?.children.length === 1 && container.id === "setupVariableRows") {
       row.querySelectorAll("input").forEach((input) => { input.value = ""; });
-      row.querySelector(".setup-row-sample-size").value = String($("setupSampleSize").value || 1);
-      row.querySelector(".setup-row-frequency-type").value = $("setupFrequencyType").value || "Quantity";
-      updateRowFrequencyUnits(row, $("setupFrequencyUnit").value || "Pieces");
-      row.querySelector(".setup-row-frequency-value").value = String($("setupFrequencyValue").value || 1);
+      row.querySelector(".setup-row-sample-size").value = $("setupSampleSize").value;
+      row.querySelector(".setup-row-frequency-type").value = "";
+      updateRowFrequencyUnits(row, "");
+      row.querySelector(".setup-row-frequency-value").value = $("setupFrequencyValue").value;
       return;
     }
     row.remove();
@@ -3012,19 +3147,18 @@ function clearInspectionSetupForm() {
   state.editingSetup = null;
   $("setupOperationSeq").value = "10";
   $("setupProcessDescription").value = "";
-  $("setupSampleSize").value = "5";
-  $("setupProductGroup").value = "General";
-  $("setupFrequencyType").value = "Quantity";
-  $("setupFrequencyValue").value = "10000";
-  $("setupFrequencyUnit").value = "Pieces";
-  $("setupAlertRuleSet").value = "GlobalDefault";
-  $("setupInspectionPhase").value = "In Process";
+  $("setupSampleSize").value = "";
+  $("setupProductGroup").value = "";
+  $("setupFrequencyType").value = "";
+  $("setupFrequencyValue").value = "";
+  $("setupFrequencyUnit").value = "";
+  $("setupAlertRuleSet").value = "";
+  $("setupInspectionPhase").value = "";
   updateRuleDescription();
   updateSetupFrequencyUnits();
   $("setupVariableRows").innerHTML = "";
   $("setupJobDataFieldRows").innerHTML = "";
   $("setupMaterialRows").innerHTML = "";
-  addSetupVariableRow();
   $("inspectionSetupMessage").textContent = "";
   $("inspectionSetupMessage").className = "message";
 }
@@ -3102,7 +3236,8 @@ function updateRowFrequencyUnits(row, requestedUnit = null) {
     Event: [["StartOfJob", "Start of job"], ["MaterialChange", "Material change"], ["ToolChange", "Tool change"], ["Restart", "Restart"]]
   };
   const current = requestedUnit || row.querySelector(".setup-row-frequency-unit").value;
-  const units = unitsByType[row.querySelector(".setup-row-frequency-type").value] || unitsByType.Quantity;
+  const frequencyType = row.querySelector(".setup-row-frequency-type").value;
+  const units = frequencyType ? unitsByType[frequencyType] || [] : [];
   fillSelect(row.querySelector(".setup-row-frequency-unit"), units, (unit) => unit[0], (unit) => unit[1]);
   if (units.some((unit) => unit[0] === current)) {
     row.querySelector(".setup-row-frequency-unit").value = current;
@@ -3194,7 +3329,8 @@ function updateSetupFrequencyUnits() {
     Event: [["StartOfJob", "Start of job"], ["MaterialChange", "Material change"], ["ToolChange", "Tool change"], ["Restart", "Restart"]]
   };
   const current = $("setupFrequencyUnit").value;
-  const units = unitsByType[$("setupFrequencyType").value] || unitsByType.Quantity;
+  const frequencyType = $("setupFrequencyType").value;
+  const units = frequencyType ? unitsByType[frequencyType] || [] : [];
   fillSelect($("setupFrequencyUnit"), units, (unit) => unit[0], (unit) => unit[1]);
   if (units.some((unit) => unit[0] === current)) {
     $("setupFrequencyUnit").value = current;

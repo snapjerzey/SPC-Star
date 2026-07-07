@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260701-machine-import">
+  <link rel="stylesheet" href="/styles.css?v=20260707-top-issues-report">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -41,6 +41,16 @@
         <label>
           Password
           <input id="password" type="password" autocomplete="current-password" value="admin1">
+        </label>
+        <label>
+          Shift
+          <select id="loginShift">
+            <option value="1st Half Days">1st Half Days</option>
+            <option value="1st Half Nights">1st Half Nights</option>
+            <option value="2nd Half Days">2nd Half Days</option>
+            <option value="2nd Half Nights">2nd Half Nights</option>
+            <option value="5 Day Shift">5 Day Shift</option>
+          </select>
         </label>
         <button type="submit">Sign in</button>
         <button id="showChangePasswordButton" type="button" class="secondary">Change password</button>
@@ -313,22 +323,24 @@
                 <label>
                   Inspection phase
                   <select id="setupInspectionPhase">
+                    <option value=""></option>
                     <option value="Startup">Startup</option>
                     <option value="Setup">Setup</option>
-                    <option value="In Process" selected>In Process</option>
+                    <option value="In Process">In Process</option>
                     <option value="Spool">Spool</option>
                   </select>
                 </label>
-                <label>Sample size<input id="setupSampleSize" type="number" min="1" value="5" required></label>
+                <label>Sample size<input id="setupSampleSize" type="number" min="1" required></label>
                 <label>
                   Frequency type
                   <select id="setupFrequencyType">
+                    <option value=""></option>
                     <option value="Quantity">Quantity</option>
                     <option value="Time">Time</option>
                     <option value="Event">Event</option>
                   </select>
                 </label>
-                <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" value="10000" required></label>
+                <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" required></label>
                 <label>
                   Frequency unit
                   <select id="setupFrequencyUnit">
@@ -352,6 +364,7 @@
               <label class="rule-set-control">
                 Drift detection rule set
                 <select id="setupAlertRuleSet">
+                  <option value=""></option>
                   <option value="GlobalDefault">Use Global Default</option>
                   <option value="WesternElectric">Western Electric</option>
                   <option value="NelsonRules">Nelson Rules</option>
@@ -838,6 +851,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260701-machine-import"></script>
+  <script src="/app.js?v=20260707-top-issues-report"></script>
 </body>
 </html>

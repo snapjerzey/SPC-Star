@@ -1688,7 +1688,7 @@ function showSetupSection(sectionName) {
     applyHistoryFilters();
   }
 
-  const sections = ["Inspection", "Machines", "Users", "Rules", "Import", "History"];
+  const sections = ["Inspection", "Machines", "Users", "Rules", "History"];
   sections.forEach((section) => {
     $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
     $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
@@ -3714,12 +3714,12 @@ function validateVariablePhases(variables) {
   return "";
 }
 
-async function importXlsx(event) {
+async function importPartsXlsx(event) {
   event.preventDefault();
-  const file = $("xlsxImportFile").files[0];
+  const file = $("partsImportFile").files[0];
   if (!file) {
-    $("csvImportMessage").textContent = "Select an Excel workbook to import.";
-    $("csvImportMessage").className = "message error";
+    $("partsImportMessage").textContent = "Select a parts and inspections workbook to import.";
+    $("partsImportMessage").className = "message error";
     return;
   }
 
@@ -3730,13 +3730,13 @@ async function importXlsx(event) {
       method: "POST",
       body: formData
     });
-    $("csvImportMessage").textContent = "Excel workbook imported.";
-    $("csvImportMessage").className = "message ok";
-    $("xlsxImportFile").value = "";
+    $("partsImportMessage").textContent = "Parts and inspections workbook imported.";
+    $("partsImportMessage").className = "message ok";
+    $("partsImportFile").value = "";
     await loadSnapshot();
   } catch (error) {
-    $("csvImportMessage").textContent = readableError(error);
-    $("csvImportMessage").className = "message error";
+    $("partsImportMessage").textContent = readableError(error);
+    $("partsImportMessage").className = "message error";
   }
 }
 
@@ -3776,22 +3776,6 @@ function loadMachineTemplate() {
   $("machineImportMessage").className = "message";
 }
 
-async function importCsv(event) {
-  event.preventDefault();
-  try {
-    await api("/setup/import-csv", {
-      method: "POST",
-      body: JSON.stringify({ csv: $("csvImportText").value })
-    });
-    $("csvImportMessage").textContent = "CSV imported.";
-    $("csvImportMessage").className = "message ok";
-    await loadSnapshot();
-  } catch (error) {
-    $("csvImportMessage").textContent = readableError(error);
-    $("csvImportMessage").className = "message error";
-  }
-}
-
 function optionalNumber(id) {
   const value = $(id).value.trim();
   return value ? Number(value) : null;
@@ -3808,67 +3792,16 @@ function newClientRecordId() {
   return `${Date.now().toString(16)}-${random}`;
 }
 
-function loadCsvTemplate() {
-  $("csvImportText").value = [
-    "Part Number",
-    "Part Description",
-    "Product Group",
-    "Blank Code",
-    "Hole Size",
-    "Inspection Phase",
-    "Operation",
-    "Job Data Field",
-    "Material Name",
-    "Material Part Number",
-    "Material Description",
-    "Variable Name",
-    "Attribute Name",
-    "Required",
-    "Sort Order",
-    "Unit",
-    "Location",
-    "Inspection Method",
-    "Target",
-    "Lower Spec",
-    "Upper Spec",
-    "Lower Control",
-    "Upper Control",
-    "Drift Rule",
-    "Startup Required",
-    "Startup Sample Size",
-    "Startup Frequency Type",
-    "Startup Frequency",
-    "Startup Frequency Unit",
-    "Startup Drift Rule",
-    "Setup Required",
-    "Setup Sample Size",
-    "Setup Frequency Type",
-    "Setup Frequency",
-    "Setup Frequency Unit",
-    "Setup Drift Rule",
-    "Coil Change Required",
-    "Coil Change Sample Size",
-    "Coil Change Frequency Type",
-    "Coil Change Frequency",
-    "Coil Change Frequency Unit",
-    "Coil Change Drift Rule",
-    "In Process Required",
-    "In Process Sample Size",
-    "In Process Frequency Type",
-    "In Process Frequency",
-    "In Process Frequency Unit",
-    "In Process Drift Rule",
-    "Spool Required",
-    "Spool Sample Size",
-    "Spool Frequency Type",
-    "Spool Frequency",
-    "Spool Frequency Unit",
-    "Spool Drift Rule"
-  ].join(",");
-}
-
 function exportSetupTemplate() {
   window.open("/setup/export-template.csv", "_blank");
+}
+
+function exportMachineTemplate() {
+  window.open("/setup/resources/export.csv", "_blank");
+}
+
+function exportUserTemplate() {
+  window.open("/setup/users/export.csv", "_blank");
 }
 
 function parseCommaList(value) {
@@ -3985,7 +3918,6 @@ $("setupMachinesSectionTab").addEventListener("click", async () => {
 });
 $("setupUsersSectionTab").addEventListener("click", () => showSetupSection("Users"));
 $("setupRulesSectionTab").addEventListener("click", () => showSetupSection("Rules"));
-$("setupImportSectionTab").addEventListener("click", () => showSetupSection("Import"));
 $("setupHistorySectionTab").addEventListener("click", () => showSetupSection("History"));
 $("historyLedgerTab").addEventListener("click", () => showHistoryView("Ledger"));
 $("historyChartsTab").addEventListener("click", () => showHistoryView("Charts"));
@@ -3996,8 +3928,10 @@ $("newMachineButton").addEventListener("click", newMachine);
 $("deleteSelectedMachineButton").addEventListener("click", deleteSelectedMachine);
 $("machineImportForm").addEventListener("submit", importMachinesXlsx);
 $("machineTemplateButton").addEventListener("click", loadMachineTemplate);
+$("exportMachineTemplateButton").addEventListener("click", exportMachineTemplate);
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
+$("exportUserTemplateButton").addEventListener("click", exportUserTemplate);
 $("newUserButton").addEventListener("click", newUser);
 $("resetSelectedUserPasswordButton").addEventListener("click", () => resetUserPassword(state.selectedUserName));
 $("deleteSelectedUserButton").addEventListener("click", () => deleteUser(state.selectedUserName));
@@ -4031,9 +3965,7 @@ $("gettingStartedModal").addEventListener("click", (event) => {
   }
 });
 $("customRuleForm").addEventListener("submit", saveCustomRule);
-$("csvImportForm").addEventListener("submit", importCsv);
-$("xlsxImportForm").addEventListener("submit", importXlsx);
-$("csvTemplateButton").addEventListener("click", loadCsvTemplate);
+$("partsImportForm").addEventListener("submit", importPartsXlsx);
 $("exportSetupTemplateButton").addEventListener("click", exportSetupTemplate);
 $("partReviewFilter").addEventListener("input", () => {
   syncHistoryFiltersFrom("Ledger");

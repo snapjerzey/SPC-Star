@@ -263,7 +263,6 @@
         <button id="setupUsersSectionTab" type="button" class="setup-nav-button">Users</button>
         <button id="setupMachinesSectionTab" type="button" class="setup-nav-button">Machines</button>
         <button id="setupRulesSectionTab" type="button" class="setup-nav-button">Rules</button>
-        <button id="setupImportSectionTab" type="button" class="setup-nav-button">Import</button>
         <button id="setupHistorySectionTab" type="button" class="setup-nav-button">History</button>
       </div>
 
@@ -275,6 +274,15 @@
               <p>Create one inspection item list, then choose the phases, sample sizes, frequencies, and drift rules for each item.</p>
             </div>
           </div>
+          <form id="partsImportForm" class="stacked-form compact-form">
+            <label>
+              Import parts and inspections workbook
+              <input id="partsImportFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            </label>
+            <button type="submit" class="secondary">Import Parts & Inspections</button>
+            <button id="exportSetupTemplateButton" type="button" class="secondary">Export Parts & Inspections</button>
+          </form>
+          <p id="partsImportMessage" class="message"></p>
           <form id="inspectionSetupForm" class="inspection-builder">
             <div class="setup-block">
               <h3>Edit Existing Part</h3>
@@ -444,6 +452,7 @@
             </label>
             <button type="submit" class="secondary">Import Machines</button>
             <button id="machineTemplateButton" type="button" class="secondary">Load Machine Template</button>
+            <button id="exportMachineTemplateButton" type="button" class="secondary">Export Machines</button>
           </form>
           <textarea id="machineTemplateText" class="template-preview" rows="3" spellcheck="false"></textarea>
           <div class="machine-admin-layout">
@@ -500,6 +509,7 @@
               <input id="userImportFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
             </label>
             <button type="submit" class="secondary">Import Users</button>
+            <button id="exportUserTemplateButton" type="button" class="secondary">Export Users</button>
           </form>
           <div class="user-admin-layout">
             <aside class="user-list-panel">
@@ -661,37 +671,6 @@
             </article>
           </div>
         </section>
-      </section>
-
-      <section id="setupImportSection" class="setup-section hidden">
-      <section class="panel">
-        <div class="panel-heading horizontal">
-          <div>
-            <h2>Excel Import</h2>
-            <p>Upload the SPC-Star workbook. The import uses the sheet named SPC-Star Import.</p>
-          </div>
-          <div class="import-actions">
-            <button id="csvTemplateButton" type="button" class="secondary">Load Blank Template</button>
-            <button id="exportSetupTemplateButton" type="button" class="secondary">Export Current Template</button>
-          </div>
-        </div>
-        <form id="xlsxImportForm" class="stacked-form">
-          <label>
-            Excel workbook
-            <input id="xlsxImportFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-          </label>
-          <button type="submit">Import Excel Workbook</button>
-        </form>
-        <div class="import-divider"></div>
-        <form id="csvImportForm" class="stacked-form">
-          <label>
-            CSV data fallback
-            <textarea id="csvImportText" rows="7" spellcheck="false"></textarea>
-          </label>
-          <button type="submit">Import CSV</button>
-        </form>
-        <p id="csvImportMessage" class="message"></p>
-      </section>
       </section>
 
       <section id="setupHistorySection" class="setup-section hidden">
@@ -1262,6 +1241,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260729-setup-export"></script>
+  <script src="/app.js?v=20260729-setup-list-exports"></script>
 </body>
 </html>

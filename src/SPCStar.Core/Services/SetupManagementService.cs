@@ -423,6 +423,48 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return ServiceResult<ResourceImportResult>.Ok(new ResourceImportResult(requests.Count));
     }
 
+    public string ExportResourcesCsv()
+    {
+        var headers = new[] { "Machine ID", "Description", "Device Profile", "Baud Rate" };
+        var rows = repository.Resources
+            .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
+            .OrderBy(resource => resource.ResourceId)
+            .Select(resource => new Dictionary<string, string>
+            {
+                ["Machine ID"] = resource.ResourceId,
+                ["Description"] = resource.Description ?? "",
+                ["Device Profile"] = DeviceProfileLabel(resource.DeviceProfile),
+                ["Baud Rate"] = resource.SerialBaudRate.ToString()
+            });
+
+        return CsvSupport.WriteRows(headers, rows);
+    }
+
+    public string ExportUsersCsv()
+    {
+        var productGroups = LoadedProductGroups().OrderBy(group => group).ToArray();
+        var headers = new[] { "UserName", "TemporaryPassword", "Role", "Shift" }.Concat(productGroups).ToArray();
+        var rows = repository.Users
+            .OrderBy(user => user.UserName)
+            .Select(user =>
+            {
+                var row = headers.ToDictionary(header => header, _ => "", StringComparer.OrdinalIgnoreCase);
+                row["UserName"] = user.UserName;
+                row["TemporaryPassword"] = "";
+                row["Role"] = user.Roles.OrderBy(role => RoleSort(role.Name)).ThenBy(role => role.Name).FirstOrDefault()?.Name ?? "";
+                row["Shift"] = user.Shift;
+                foreach (var group in productGroups)
+                {
+                    row[group] = user.ProductGroups.Contains(group, StringComparer.OrdinalIgnoreCase) ? "X" : "";
+                }
+
+                return row;
+            });
+
+        return CsvSupport.WriteRows(headers, rows);
+    }
+
     public ServiceResult DeleteUser(string userName)
     {
         if (string.IsNullOrWhiteSpace(userName))
@@ -1199,6 +1241,26 @@ public sealed class SetupManagementService(ISpcRepository repository)
     private static string CleanProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
 
     private static string CleanOptional(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value.Trim();
+
+    private static string DeviceProfileLabel(string? value)
+    {
+        return string.Equals(value, "serial-text", StringComparison.OrdinalIgnoreCase)
+            ? "Serial text gauge"
+            : "Keyboard input";
+    }
+
+    private static int RoleSort(string roleName)
+    {
+        return roleName switch
+        {
+            RoleNames.GOD => 0,
+            RoleNames.Admin => 1,
+            RoleNames.QA => 2,
+            RoleNames.LineTech => 3,
+            RoleNames.Operator => 4,
+            _ => 99
+        };
+    }
 
     private static IReadOnlyList<string> CleanProductGroups(IReadOnlyList<string>? values)
     {

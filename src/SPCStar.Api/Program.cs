@@ -131,9 +131,25 @@ app.MapGet("/setup/users", (SetupManagementService service) =>
     return Results.Ok(service.GetUsers());
 });
 
+app.MapGet("/setup/users/export.csv", (SetupManagementService service) =>
+{
+    return Results.File(
+        System.Text.Encoding.UTF8.GetBytes(service.ExportUsersCsv()),
+        "text/csv",
+        $"spc-star-users-permissions-export-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
+});
+
 app.MapGet("/setup/resources", (SetupManagementService service) =>
 {
     return Results.Ok(service.GetResources());
+});
+
+app.MapGet("/setup/resources/export.csv", (SetupManagementService service) =>
+{
+    return Results.File(
+        System.Text.Encoding.UTF8.GetBytes(service.ExportResourcesCsv()),
+        "text/csv",
+        $"spc-star-machines-export-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
 });
 
 app.MapGet("/setup/roles", (SetupManagementService service) =>

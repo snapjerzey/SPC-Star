@@ -57,6 +57,66 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void ExportUsersCsv_WritesProductGroupPermissionColumns()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
+        repository.Parts.Add(new Part { PartNum = "61135", Description = "Needle blank", ProductGroup = "Ethicon Taperpoint - Needles" });
+        var service = new SetupManagementService(repository);
+
+        var result = service.ImportUsersCsv(string.Join(Environment.NewLine, [
+            "UserName,TemporaryPassword,Role,Shift,Schneider,Ethicon Taperpoint - Needles",
+            "Jsmith,test,Operator,1st Shift,X,",
+            "Ttech,test,LineTech,2nd Shift,,X",
+            string.Empty
+        ]));
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+
+        var csv = service.ExportUsersCsv();
+        var rows = CsvSupport.ReadRows(csv);
+
+        Assert.StartsWith("UserName,TemporaryPassword,Role,Shift,Ethicon Taperpoint - Needles,Schneider", csv);
+        var operatorRow = Assert.Single(rows, row => row["UserName"] == "Jsmith");
+        Assert.Equal("Operator", operatorRow["Role"]);
+        Assert.Equal("1st Shift", operatorRow["Shift"]);
+        Assert.Equal("X", operatorRow["Schneider"]);
+        Assert.Equal("", operatorRow["Ethicon Taperpoint - Needles"]);
+
+        var lineTechRow = Assert.Single(rows, row => row["UserName"] == "Ttech");
+        Assert.Equal("LineTech", lineTechRow["Role"]);
+        Assert.Equal("X", lineTechRow["Ethicon Taperpoint - Needles"]);
+    }
+
+    [Fact]
+    public void ExportResourcesCsv_WritesMachineImportColumns()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.ImportResourcesCsv(string.Join(Environment.NewLine, [
+            "Machine ID,Description,Device Profile,Baud Rate",
+            "ETH-1,Needle Maker #1,Keyboard input,9600",
+            "FX19,Comparator,Serial text gauge,19200",
+            string.Empty
+        ]));
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+
+        var csv = service.ExportResourcesCsv();
+        var rows = CsvSupport.ReadRows(csv);
+
+        Assert.StartsWith("Machine ID,Description,Device Profile,Baud Rate", csv);
+        var keyboard = Assert.Single(rows, row => row["Machine ID"] == "ETH-1");
+        Assert.Equal("Needle Maker #1", keyboard["Description"]);
+        Assert.Equal("Keyboard input", keyboard["Device Profile"]);
+        Assert.Equal("9600", keyboard["Baud Rate"]);
+
+        var serial = Assert.Single(rows, row => row["Machine ID"] == "FX19");
+        Assert.Equal("Serial text gauge", serial["Device Profile"]);
+        Assert.Equal("19200", serial["Baud Rate"]);
+    }
+
+    [Fact]
     public void ImportUsersCsv_RejectsUsersWithoutProductGroupAccess()
     {
         var repository = new InMemorySpcRepository();

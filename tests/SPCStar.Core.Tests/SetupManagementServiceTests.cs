@@ -184,11 +184,15 @@ public sealed class SetupManagementServiceTests
             FrequencyType.Time,
             30,
             FrequencyUnit.Minutes,
-            "WesternElectric"));
+            "WesternElectric",
+            BlankCode: "61046",
+            HoleSize: ".0145"));
 
         Assert.True(result.Succeeded);
         Assert.Single(repository.Parts);
         Assert.Equal("General", repository.Parts.Single().ProductGroup);
+        Assert.Equal("61046", repository.Parts.Single().BlankCode);
+        Assert.Equal(".0145", repository.Parts.Single().HoleSize);
         Assert.Single(repository.Operations);
         Assert.Single(repository.Characteristics);
         Assert.Single(repository.InspectionPlans);
@@ -218,15 +222,46 @@ public sealed class SetupManagementServiceTests
         Assert.True(service.UpsertInspectionSetup(Request(
             processCode: "MOLD",
             characteristicName: "Diameter",
+            inspectionPhase: "Coil Change")).Succeeded);
+        Assert.True(service.UpsertInspectionSetup(Request(
+            processCode: "MOLD",
+            characteristicName: "Diameter",
             inspectionPhase: "Spool")).Succeeded);
 
         var plans = new SetupQueryService(repository).GetInspectionPlans("P200");
 
-        Assert.Equal(4, plans.Count);
+        Assert.Equal(5, plans.Count);
         Assert.Contains(plans, plan => plan.InspectionPhase == "Startup");
         Assert.Contains(plans, plan => plan.InspectionPhase == "Setup");
         Assert.Contains(plans, plan => plan.InspectionPhase == "In Process");
+        Assert.Contains(plans, plan => plan.InspectionPhase == "Coil Change");
         Assert.Contains(plans, plan => plan.InspectionPhase == "Spool");
+    }
+
+    [Fact]
+    public void DeleteInspectionSetupPhase_RemovesOnlySelectedPhase()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        Assert.True(service.UpsertInspectionSetup(Request(
+            processCode: "MOLD",
+            characteristicName: "Diameter",
+            inspectionPhase: "Setup")).Succeeded);
+        Assert.True(service.UpsertInspectionSetup(Request(
+            processCode: "MOLD",
+            characteristicName: "Diameter",
+            inspectionPhase: "In Process")).Succeeded);
+
+        var result = service.DeleteInspectionSetupPhase(new DeleteInspectionSetupPhaseRequest(
+            "P200",
+            "MOLD",
+            10,
+            "Diameter",
+            "Setup"));
+
+        Assert.True(result.Succeeded);
+        var plan = Assert.Single(repository.InspectionPlans);
+        Assert.Equal("In Process", plan.InspectionPhase);
     }
 
     [Fact]
@@ -326,10 +361,11 @@ public sealed class SetupManagementServiceTests
         var repository = new InMemorySpcRepository();
         var service = new SetupManagementService(repository);
 
-        var result = service.UpsertResource(new UpsertResourceMachineRequest("NM-10", "Needlemaker 10"));
+        var result = service.UpsertResource(new UpsertResourceMachineRequest("NM-10", "Needlemaker 10", DeviceProfile: "serial-text", SerialBaudRate: 19200));
 
         Assert.True(result.Succeeded);
         Assert.Contains(service.GetResources(), resource => resource.ResourceId == "NM-10" && resource.Description == "Needlemaker 10");
+        Assert.Contains(service.GetResources(), resource => resource.ResourceId == "NM-10" && resource.DeviceProfile == "serial-text" && resource.SerialBaudRate == 19200);
     }
 
     [Fact]
@@ -364,15 +400,15 @@ public sealed class SetupManagementServiceTests
         var service = new SetupManagementService(repository);
 
         var result = service.ImportResourcesCsv(string.Join(Environment.NewLine, [
-            "Machine ID,Description",
-            "ETH-1,Needle Maker #1",
-            "GP-1,GRM 50 Hook Machine"
+            "Machine ID,Description,Device Profile,Baud Rate",
+            "ETH-1,Needle Maker #1,Serial text gauge,19200",
+            "GP-1,GRM 50 Hook Machine,Keyboard input,9600"
         ]));
 
         Assert.True(result.Succeeded);
         Assert.Equal(2, result.Value!.Imported);
-        Assert.Contains(repository.Resources, resource => resource.ResourceId == "ETH-1" && resource.Description == "Needle Maker #1");
-        Assert.Contains(repository.Resources, resource => resource.ResourceId == "GP-1" && resource.Description == "GRM 50 Hook Machine");
+        Assert.Contains(repository.Resources, resource => resource.ResourceId == "ETH-1" && resource.Description == "Needle Maker #1" && resource.DeviceProfile == "serial-text" && resource.SerialBaudRate == 19200);
+        Assert.Contains(repository.Resources, resource => resource.ResourceId == "GP-1" && resource.Description == "GRM 50 Hook Machine" && resource.DeviceProfile == "keyboard" && resource.SerialBaudRate == 9600);
     }
 
     [Fact]

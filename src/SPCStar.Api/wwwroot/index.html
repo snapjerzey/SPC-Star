@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260707-top-issues-report">
+  <link rel="stylesheet" href="/styles.css?v=20260709-phase-template">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -196,24 +196,6 @@
 
           <section id="devicePanel" class="device-panel hidden">
             <div class="device-controls">
-              <label>
-                Device
-                <select id="deviceProfile">
-                  <option value="keyboard">Keyboard input</option>
-                  <option value="serial-text">Serial text gauge</option>
-                </select>
-              </label>
-              <label>
-                Baud
-                <select id="serialBaudRate">
-                  <option value="9600">9600</option>
-                  <option value="4800">4800</option>
-                  <option value="19200">19200</option>
-                  <option value="38400">38400</option>
-                  <option value="57600">57600</option>
-                  <option value="115200">115200</option>
-                </select>
-              </label>
               <button id="connectSerialDeviceButton" type="button" class="secondary">Connect Gauge</button>
               <button id="disconnectSerialDeviceButton" type="button" class="secondary hidden">Disconnect</button>
             </div>
@@ -279,7 +261,7 @@
           <div class="panel-heading horizontal">
             <div>
               <h2>Part Inspection Setup</h2>
-              <p>Create the part, operation, sample size, frequency, and all variables together.</p>
+              <p>Create one inspection item list, then choose the phases, sample sizes, frequencies, and drift rules for each item.</p>
             </div>
           </div>
           <form id="inspectionSetupForm" class="inspection-builder">
@@ -301,6 +283,8 @@
                 <label>Part description<input id="setupPartDescription" required></label>
                 <label>Product group<input id="setupProductGroup" list="productGroupOptions" required></label>
                 <datalist id="productGroupOptions"></datalist>
+                <label>Blank Code<input id="setupBlankCode" autocomplete="off"></label>
+                <label>Hole Size<input id="setupHoleSize" autocomplete="off"></label>
               </div>
             </div>
 
@@ -313,7 +297,7 @@
               </div>
             </div>
 
-            <div class="setup-block">
+            <div class="setup-block hidden">
               <div class="panel-heading horizontal tight">
                 <div>
                   <h3>Inspection Timing</h3>
@@ -327,6 +311,7 @@
                     <option value="Startup">Startup</option>
                     <option value="Setup">Setup</option>
                     <option value="In Process">In Process</option>
+                    <option value="Coil Change">Coil Change</option>
                     <option value="Spool">Spool</option>
                   </select>
                 </label>
@@ -356,7 +341,7 @@
               </div>
             </div>
 
-            <div class="setup-block drift-setup-block">
+            <div class="setup-block drift-setup-block hidden">
               <div class="panel-heading tight">
                 <h3>Drift Detection</h3>
                 <p>Choose how SPC Star should detect process drift for this part setup.</p>
@@ -459,6 +444,24 @@
               <div class="user-detail-grid">
                 <label>Machine ID<input id="setupResourceId" autocomplete="off" required></label>
                 <label>Description<input id="setupResourceDescription" autocomplete="off"></label>
+                <label>
+                  Measurement device
+                  <select id="setupDeviceProfile">
+                    <option value="keyboard">Keyboard input</option>
+                    <option value="serial-text">Serial text gauge</option>
+                  </select>
+                </label>
+                <label>
+                  Serial baud rate
+                  <select id="setupSerialBaudRate">
+                    <option value="9600">9600</option>
+                    <option value="4800">4800</option>
+                    <option value="19200">19200</option>
+                    <option value="38400">38400</option>
+                    <option value="57600">57600</option>
+                    <option value="115200">115200</option>
+                  </select>
+                </label>
               </div>
               <input id="setupOriginalResourceId" type="hidden">
               <div class="user-detail-actions">
@@ -851,6 +854,6 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260707-top-issues-report"></script>
+  <script src="/app.js?v=20260728-machine-devices"></script>
 </body>
 </html>

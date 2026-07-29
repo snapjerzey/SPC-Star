@@ -28,6 +28,7 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+const INSPECTION_PHASES = ["Startup", "Setup", "In Process", "Coil Change", "Spool"];
 
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -53,6 +54,7 @@ function setStatus(element, text, kind = "neutral") {
 function inspectionSets() {
   const map = new Map();
   state.snapshot.inspectionPlans.forEach((plan) => {
+    const part = findPart(plan.partNum);
     const key = `${plan.partNum}|${plan.processCode}|${plan.operationSeq}|${plan.inspectionPhase || "In Process"}`;
     if (!map.has(key)) {
       map.set(key, {
@@ -60,6 +62,8 @@ function inspectionSets() {
         partNum: plan.partNum,
         partDescription: plan.partDescription,
         productGroup: plan.productGroup || "General",
+        blankCode: part?.blankCode || "",
+        holeSize: part?.holeSize || "",
         processCode: plan.processCode,
         processDescription: plan.processDescription,
         operationSeq: plan.operationSeq,
@@ -70,6 +74,34 @@ function inspectionSets() {
     map.get(key).plans.push(plan);
   });
   return [...map.values()];
+}
+
+function setupInspectionSets() {
+  const map = new Map();
+  state.snapshot.inspectionPlans.forEach((plan) => {
+    const part = findPart(plan.partNum);
+    const key = `${plan.partNum}|${plan.processCode}|${plan.operationSeq}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        partNum: plan.partNum,
+        partDescription: plan.partDescription,
+        productGroup: plan.productGroup || "General",
+        blankCode: part?.blankCode || "",
+        holeSize: part?.holeSize || "",
+        processCode: plan.processCode,
+        processDescription: plan.processDescription,
+        operationSeq: plan.operationSeq,
+        plans: []
+      });
+    }
+    map.get(key).plans.push(plan);
+  });
+  return [...map.values()];
+}
+
+function findPart(partNum) {
+  return (state.snapshot?.parts || []).find((part) => part.partNum.toLowerCase() === String(partNum || "").toLowerCase()) || null;
 }
 
 function selectedInspectionSet() {
@@ -316,6 +348,7 @@ function renderEmptyContext(message = "") {
   $("materialPanel").classList.add("hidden");
   $("tagsDivider").classList.add("hidden");
   $("tagsSection").classList.add("hidden");
+  $("jobTagsList").innerHTML = "";
   $("measurementVariableList").innerHTML = "";
   $("meanSummary").innerHTML = "";
   $("trendCharacteristic").innerHTML = "";
@@ -349,17 +382,18 @@ function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
   $("contextTitle").textContent = "Inspection Items";
   $("contextSubtitle").textContent = `${jobNum} / ${resourceId} / ${set.partNum} / ${set.processCode} ${set.operationSeq} / ${set.activePhase || set.inspectionPhase}`;
-  $("devicePanel").classList.remove("hidden");
+  renderDevicePanelForMachine(resourceId);
   $("measurementForm").classList.remove("hidden");
   $("trendPanel").classList.remove("hidden");
   $("jobNotesPanel").classList.remove("hidden");
   $("materialPanel").classList.remove("hidden");
   renderConfiguredJobDataFields(set);
   renderConfiguredMaterialFields(set);
-  const hasConfiguredTags = document.querySelectorAll(".job-tag-input").length > 0;
-  $("tagsDivider").classList.toggle("hidden", !hasConfiguredTags);
-  $("tagsSection").classList.toggle("hidden", !hasConfiguredTags);
-  $("jobTagsForm").classList.toggle("hidden", !hasConfiguredTags);
+  const hasEditableTags = document.querySelectorAll(".job-tag-input").length > 0;
+  const hasPartFacts = document.querySelectorAll(".job-data-fact").length > 0;
+  $("tagsDivider").classList.toggle("hidden", !hasEditableTags && !hasPartFacts);
+  $("tagsSection").classList.toggle("hidden", !hasEditableTags && !hasPartFacts);
+  $("jobTagsForm").classList.toggle("hidden", !hasEditableTags);
   state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderVariables();
@@ -374,14 +408,38 @@ function renderConfiguredJobDataFields(set) {
   const fields = (state.snapshot.partJobDataFields || [])
     .filter((field) =>
       field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
-      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase))
+      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase) &&
+      !isBuiltInOrPartStandardJobData(field.fieldName))
     .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   const form = $("jobTagsForm");
+  $("jobTagsList").innerHTML = partStandardJobData(set).map((fact) => `
+    <div class="job-data-fact">
+      <span>${escapeHtml(fact.label)}</span>
+      <strong>${escapeHtml(fact.value)}</strong>
+    </div>`).join("");
   form.innerHTML = fields.map((field) => `
     <label>
       ${escapeHtml(field.fieldName)}
       <input class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" autocomplete="off" ${field.isRequired ? "required" : ""}>
     </label>`).join("") + (fields.length ? `<button type="submit" class="secondary">Save Job Data</button>` : "");
+}
+
+function isBuiltInOrPartStandardJobData(fieldName) {
+  const normalized = String(fieldName || "").trim().toLowerCase();
+  return normalized === "machine #" ||
+    normalized === "machine number" ||
+    normalized === "machine" ||
+    normalized === "blank code" ||
+    normalized === "hole size";
+}
+
+function partStandardJobData(set) {
+  return [
+    ["Blank Code", set.blankCode],
+    ["Hole Size", set.holeSize]
+  ]
+    .filter(([, value]) => String(value || "").trim())
+    .map(([label, value]) => ({ label, value }));
 }
 
 function renderConfiguredMaterialFields(set) {
@@ -793,11 +851,26 @@ function setDeviceStatus(message, kind = "neutral") {
   $("deviceStatus").className = `message ${kind}`;
 }
 
+function selectedMachineConfig(resourceId = $("resourceId").value) {
+  return (state.snapshot?.resources || []).find((resource) => resource.resourceId.toLowerCase() === String(resourceId || "").toLowerCase()) || null;
+}
+
+function renderDevicePanelForMachine(resourceId) {
+  const resource = selectedMachineConfig(resourceId);
+  const isSerial = resource?.deviceProfile === "serial-text";
+  $("devicePanel").classList.toggle("hidden", !isSerial);
+  if (!isSerial) {
+    setDeviceStatus("Keyboard input ready.", "neutral");
+    return;
+  }
+
+  setDeviceStatus(`Gauge configured for ${resource.resourceId} at ${resource.serialBaudRate || 9600} baud.`, "neutral");
+  updateDeviceControls(Boolean(state.device.serialPort));
+}
+
 function updateDeviceControls(connected) {
   $("connectSerialDeviceButton").classList.toggle("hidden", connected);
   $("disconnectSerialDeviceButton").classList.toggle("hidden", !connected);
-  $("serialBaudRate").disabled = connected;
-  $("deviceProfile").disabled = connected;
 }
 
 async function connectSerialDevice() {
@@ -806,14 +879,15 @@ async function connectSerialDevice() {
     return;
   }
 
-  if ($("deviceProfile").value !== "serial-text") {
-    setDeviceStatus("Select Serial text gauge before connecting.", "error");
+  const resource = selectedMachineConfig();
+  if (resource?.deviceProfile !== "serial-text") {
+    setDeviceStatus("This machine is not configured for a serial gauge.", "error");
     return;
   }
 
   try {
     const port = await navigator.serial.requestPort();
-    await port.open({ baudRate: Number($("serialBaudRate").value) || 9600 });
+    await port.open({ baudRate: Number(resource.serialBaudRate) || 9600 });
     state.device.serialPort = port;
     state.device.serialReading = true;
     state.device.buffer = "";
@@ -924,7 +998,7 @@ async function disconnectSerialDevice() {
   state.device.serialPort = null;
   state.device.buffer = "";
   updateDeviceControls(false);
-  setDeviceStatus("Keyboard input ready.", "neutral");
+  renderDevicePanelForMachine($("resourceId").value);
 }
 
 function focusNextMeasurementInput(currentInput) {
@@ -1790,9 +1864,9 @@ async function loadReview() {
 }
 
 function renderSetupEditChoices() {
-  const sets = [{ key: "", label: "Create new part setup" }, ...inspectionSets().map((set) => ({
+  const sets = [{ key: "", label: "Create new part setup" }, ...setupInspectionSets().map((set) => ({
     key: set.key,
-    label: `${set.partNum} / ${set.productGroup || "General"} / ${set.processCode} / ${set.inspectionPhase}`
+    label: `${set.partNum} / ${set.productGroup || "General"} / ${set.processCode}`
   }))];
   fillSelect($("setupEditPartSelect"), sets, (set) => set.key, (set) => set.label);
 }
@@ -2641,6 +2715,8 @@ function selectMachine(resourceId) {
   $("setupResourceId").value = resource.resourceId;
   $("setupOriginalResourceId").value = resource.resourceId;
   $("setupResourceDescription").value = resource.description || "";
+  $("setupDeviceProfile").value = resource.deviceProfile || "keyboard";
+  $("setupSerialBaudRate").value = String(resource.serialBaudRate || 9600);
   $("deleteSelectedMachineButton").disabled = false;
   renderMachines();
 }
@@ -2651,6 +2727,8 @@ function newMachine() {
   $("setupResourceId").value = "";
   $("setupOriginalResourceId").value = "";
   $("setupResourceDescription").value = "";
+  $("setupDeviceProfile").value = "keyboard";
+  $("setupSerialBaudRate").value = "9600";
   $("deleteSelectedMachineButton").disabled = true;
   renderMachinesWithoutSelection();
 }
@@ -2672,7 +2750,9 @@ async function saveMachine(event) {
       body: JSON.stringify({
         resourceId: $("setupResourceId").value.trim(),
         description: $("setupResourceDescription").value.trim(),
-        originalResourceId: $("setupOriginalResourceId").value.trim() || null
+        originalResourceId: $("setupOriginalResourceId").value.trim() || null,
+        deviceProfile: $("setupDeviceProfile").value,
+        serialBaudRate: Number($("setupSerialBaudRate").value)
       })
     });
     await refreshMachines(result.resourceId);
@@ -2957,27 +3037,49 @@ function setupVariableRowTemplate() {
     <label class="setup-unit-field"><span>Unit</span><input class="setup-unit" required></label>
     <label class="setup-location-field"><span>Requirement / context</span><input class="setup-location"></label>
     <label class="setup-method-field"><span>Method / tool</span><input class="setup-method"></label>
-    <label class="setup-sample-field"><span>Sample size</span><input class="setup-row-sample-size" type="number" min="1" required></label>
-    <label class="setup-frequency-type-field">
-      <span>Frequency type</span>
-      <select class="setup-row-frequency-type">
-        <option value=""></option>
-        <option value="Quantity">Quantity</option>
-        <option value="Time">Time</option>
-        <option value="Event">Event</option>
-      </select>
-    </label>
-    <label class="setup-frequency-value-field"><span>Frequency</span><input class="setup-row-frequency-value" type="number" min="1" required></label>
-    <label class="setup-frequency-unit-field">
-      <span>Frequency unit</span>
-      <select class="setup-row-frequency-unit"></select>
-    </label>
+    <section class="setup-phase-matrix">
+      <h4>Phase requirements</h4>
+      <div class="setup-phase-grid">
+        <div class="setup-phase-grid-header"><span>Phase</span><span>Use</span><span>Sample</span><span>Frequency type</span><span>Frequency</span><span>Unit</span><span>Rule</span></div>
+        ${INSPECTION_PHASES.map((phase) => setupPhaseRowTemplate(phase)).join("")}
+      </div>
+    </section>
     <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
     <label class="numeric-setup-field"><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
     <button type="button" class="secondary compact-button remove-variable-button">Remove</button>`;
+}
+
+function setupPhaseRowTemplate(phase) {
+  return `
+    <div class="setup-phase-row" data-phase="${escapeHtml(phase)}">
+      <span>${escapeHtml(phase)}</span>
+      <input class="setup-phase-required" type="checkbox" aria-label="${escapeHtml(phase)} required">
+      <input class="setup-phase-sample-size" type="number" min="1" aria-label="${escapeHtml(phase)} sample size">
+      <select class="setup-phase-frequency-type" aria-label="${escapeHtml(phase)} frequency type">
+        <option value=""></option>
+        <option value="Quantity">Quantity</option>
+        <option value="Time">Time</option>
+        <option value="Event">Event</option>
+      </select>
+      <input class="setup-phase-frequency-value" type="number" min="1" aria-label="${escapeHtml(phase)} frequency">
+      <select class="setup-phase-frequency-unit" aria-label="${escapeHtml(phase)} frequency unit"></select>
+      <select class="setup-phase-alert-rule-set" aria-label="${escapeHtml(phase)} drift rule">
+        <option value=""></option>
+        <option value="GlobalDefault">Use Global Default</option>
+        <option value="WesternElectric">Western Electric</option>
+        <option value="NelsonRules">Nelson Rules</option>
+        <option value="Cusum">CUSUM</option>
+        <option value="Ewma">EWMA</option>
+        <option value="MovingAverageTrend">Moving Average Trend</option>
+        <option value="LinearTrendSlope">Linear Trend / Slope</option>
+        <option value="Custom">Custom Rule</option>
+        <option value="SpecLimitOnly">Spec Limit Only</option>
+        <option value="None">No Automatic Rule</option>
+      </select>
+    </div>`;
 }
 
 function setupJobDataFieldTemplate() {
@@ -3042,31 +3144,62 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || ""
   row.querySelector(".setup-unit").value = values.unitOfMeasure || "";
   row.querySelector(".setup-location").value = values.location || "";
   row.querySelector(".setup-method").value = values.inspectionMethod || "";
-  row.querySelector(".setup-row-sample-size").value = values.sampleSize ?? "";
-  row.querySelector(".setup-row-frequency-type").value = values.frequencyType || "";
-  updateRowFrequencyUnits(row, values.frequencyUnit || "");
-  row.querySelector(".setup-row-frequency-value").value = values.frequencyValue ?? $("setupFrequencyValue").value ?? "";
   row.querySelector(".setup-nominal").value = values.nominal ?? "";
   row.querySelector(".setup-lsl").value = values.lsl ?? "";
   row.querySelector(".setup-usl").value = values.usl ?? "";
   row.querySelector(".setup-lcl").value = values.lcl ?? "";
   row.querySelector(".setup-ucl").value = values.ucl ?? "";
   row.querySelector(".setup-characteristic-type").addEventListener("change", () => updateSetupVariableType(row));
-  row.querySelector(".setup-row-frequency-type").addEventListener("change", () => updateRowFrequencyUnits(row));
+  row.querySelectorAll(".setup-phase-row").forEach((phaseRow) => {
+    phaseRow.querySelector(".setup-phase-frequency-type").addEventListener("change", () => updatePhaseFrequencyUnits(phaseRow));
+  });
+  populatePhaseRows(row, values.phaseSettings || phaseSettingsFromPlan(values));
   row.querySelector(".remove-variable-button").addEventListener("click", () => {
     const container = row.parentElement;
     if (container?.children.length === 1 && container.id === "setupVariableRows") {
       row.querySelectorAll("input").forEach((input) => { input.value = ""; });
-      row.querySelector(".setup-row-sample-size").value = $("setupSampleSize").value;
-      row.querySelector(".setup-row-frequency-type").value = "";
-      updateRowFrequencyUnits(row, "");
-      row.querySelector(".setup-row-frequency-value").value = $("setupFrequencyValue").value;
+      row.querySelectorAll(".setup-phase-row").forEach((phaseRow) => {
+        phaseRow.querySelector(".setup-phase-required").checked = false;
+        phaseRow.querySelector(".setup-phase-frequency-type").value = "";
+        phaseRow.querySelector(".setup-phase-frequency-value").value = "";
+        phaseRow.querySelector(".setup-phase-alert-rule-set").value = "";
+        updatePhaseFrequencyUnits(phaseRow, "");
+      });
       return;
     }
     row.remove();
   });
   $("setupVariableRows").appendChild(row);
   updateSetupVariableType(row);
+}
+
+function phaseSettingsFromPlan(plan) {
+  if (!plan.inspectionPhase) {
+    return [];
+  }
+
+  return [{
+    inspectionPhase: plan.inspectionPhase,
+    sampleSize: plan.sampleSize,
+    frequencyType: plan.frequencyType,
+    frequencyValue: plan.frequencyValue,
+    frequencyUnit: plan.frequencyUnit,
+    alertRuleSet: plan.alertRuleSet
+  }];
+}
+
+function populatePhaseRows(row, phaseSettings = []) {
+  const byPhase = new Map(phaseSettings.map((phase) => [normalizeInspectionPhase(phase.inspectionPhase), phase]));
+  row.querySelectorAll(".setup-phase-row").forEach((phaseRow) => {
+    const phase = phaseRow.dataset.phase;
+    const setting = byPhase.get(normalizeInspectionPhase(phase));
+    phaseRow.querySelector(".setup-phase-required").checked = Boolean(setting);
+    phaseRow.querySelector(".setup-phase-sample-size").value = setting?.sampleSize ?? "";
+    phaseRow.querySelector(".setup-phase-frequency-type").value = setting?.frequencyType || "";
+    phaseRow.querySelector(".setup-phase-frequency-value").value = setting?.frequencyValue ?? "";
+    phaseRow.querySelector(".setup-phase-alert-rule-set").value = setting?.alertRuleSet || "";
+    updatePhaseFrequencyUnits(phaseRow, setting?.frequencyUnit || "");
+  });
 }
 
 function updateSetupVariableType(row) {
@@ -3099,7 +3232,7 @@ function loadSelectedPartSetup() {
     return;
   }
 
-  const set = inspectionSets().find((item) => item.key === key);
+  const set = setupInspectionSets().find((item) => item.key === key);
   if (!set) {
     return;
   }
@@ -3107,6 +3240,8 @@ function loadSelectedPartSetup() {
   $("setupPartNum").value = set.partNum;
   $("setupPartDescription").value = set.partDescription;
   $("setupProductGroup").value = set.productGroup || "General";
+  $("setupBlankCode").value = set.blankCode || "";
+  $("setupHoleSize").value = set.holeSize || "";
   $("setupProcessCode").value = set.processCode;
   $("setupProcessDescription").value = set.processDescription || set.processCode;
   $("setupOperationSeq").value = String(set.operationSeq || 10);
@@ -3114,22 +3249,24 @@ function loadSelectedPartSetup() {
     processCode: set.processCode,
     operationSeq: set.operationSeq || 10
   };
-  const firstPlan = set.plans[0];
-  $("setupInspectionPhase").value = firstPlan.inspectionPhase || "In Process";
-  $("setupSampleSize").value = String(firstPlan.sampleSize || 1);
-  $("setupFrequencyType").value = firstPlan.frequencyType;
+  const groupedPlans = setupVariableGroups(set.plans);
+  const firstPlan = groupedPlans[0]?.plans[0] || set.plans[0];
+  $("setupInspectionPhase").value = "";
+  $("setupSampleSize").value = "";
+  $("setupFrequencyType").value = "";
   updateSetupFrequencyUnits();
-  $("setupFrequencyValue").value = String(firstPlan.frequencyValue || 1);
-  $("setupFrequencyUnit").value = firstPlan.frequencyUnit;
-  $("setupAlertRuleSet").value = firstPlan.alertRuleSet || "WesternElectric";
+  $("setupFrequencyValue").value = "";
+  $("setupFrequencyUnit").value = "";
+  $("setupAlertRuleSet").value = "";
   updateRuleDescription();
   $("setupVariableRows").innerHTML = "";
-  set.plans.forEach((plan) => addSetupVariableRow(plan, plan.characteristicType));
+  groupedPlans.forEach((group) => addSetupVariableRow(group.master, group.master.characteristicType));
   $("setupJobDataFieldRows").innerHTML = "";
   (state.snapshot.partJobDataFields || [])
     .filter((field) =>
       field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
-      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(firstPlan.inspectionPhase))
+      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(firstPlan.inspectionPhase) &&
+      !isBuiltInOrPartStandardJobData(field.fieldName))
     .forEach((field) => addSetupJobDataFieldRow(field));
   $("setupMaterialRows").innerHTML = "";
   (state.snapshot.partMaterialFields || [])
@@ -3141,6 +3278,34 @@ function loadSelectedPartSetup() {
   $("inspectionSetupMessage").className = "message ok";
 }
 
+function setupVariableGroups(plans) {
+  const groups = new Map();
+  plans.forEach((plan) => {
+    const key = `${plan.characteristicName}|${plan.characteristicType}`.toLowerCase();
+    if (!groups.has(key)) {
+      groups.set(key, {
+        master: {
+          ...plan,
+          phaseSettings: []
+        },
+        plans: []
+      });
+    }
+    const group = groups.get(key);
+    group.plans.push(plan);
+    group.master.phaseSettings.push(phaseSettingsFromPlan(plan)[0]);
+  });
+
+  return [...groups.values()]
+    .map((group) => {
+      group.master.phaseSettings = group.master.phaseSettings
+        .filter(Boolean)
+        .sort((a, b) => INSPECTION_PHASES.indexOf(normalizeInspectionPhase(a.inspectionPhase)) - INSPECTION_PHASES.indexOf(normalizeInspectionPhase(b.inspectionPhase)));
+      return group;
+    })
+    .sort((a, b) => (a.master.displayOrder ?? 0) - (b.master.displayOrder ?? 0) || a.master.characteristicName.localeCompare(b.master.characteristicName));
+}
+
 function clearInspectionSetupForm() {
   $("inspectionSetupForm").reset();
   $("setupEditPartSelect").value = "";
@@ -3149,6 +3314,8 @@ function clearInspectionSetupForm() {
   $("setupProcessDescription").value = "";
   $("setupSampleSize").value = "";
   $("setupProductGroup").value = "";
+  $("setupBlankCode").value = "";
+  $("setupHoleSize").value = "";
   $("setupFrequencyType").value = "";
   $("setupFrequencyValue").value = "";
   $("setupFrequencyUnit").value = "";
@@ -3229,18 +3396,18 @@ async function saveCapabilityThresholds(event) {
   }
 }
 
-function updateRowFrequencyUnits(row, requestedUnit = null) {
+function updatePhaseFrequencyUnits(row, requestedUnit = null) {
   const unitsByType = {
     Quantity: [["Pieces", "Pieces"], ["Box", "Box"]],
     Time: [["Minutes", "Minutes"], ["Hours", "Hours"]],
     Event: [["StartOfJob", "Start of job"], ["MaterialChange", "Material change"], ["ToolChange", "Tool change"], ["Restart", "Restart"]]
   };
-  const current = requestedUnit || row.querySelector(".setup-row-frequency-unit").value;
-  const frequencyType = row.querySelector(".setup-row-frequency-type").value;
+  const current = requestedUnit || row.querySelector(".setup-phase-frequency-unit").value;
+  const frequencyType = row.querySelector(".setup-phase-frequency-type").value;
   const units = frequencyType ? unitsByType[frequencyType] || [] : [];
-  fillSelect(row.querySelector(".setup-row-frequency-unit"), units, (unit) => unit[0], (unit) => unit[1]);
+  fillSelect(row.querySelector(".setup-phase-frequency-unit"), units, (unit) => unit[0], (unit) => unit[1]);
   if (units.some((unit) => unit[0] === current)) {
-    row.querySelector(".setup-row-frequency-unit").value = current;
+    row.querySelector(".setup-phase-frequency-unit").value = current;
   }
 }
 
@@ -3345,10 +3512,7 @@ function setupVariableRows() {
     unitOfMeasure: row.querySelector(".setup-unit").value.trim(),
     location: row.querySelector(".setup-location").value.trim(),
     inspectionMethod: row.querySelector(".setup-method").value.trim(),
-    sampleSize: Number(row.querySelector(".setup-row-sample-size").value),
-    frequencyType: row.querySelector(".setup-row-frequency-type").value,
-    frequencyValue: Number(row.querySelector(".setup-row-frequency-value").value),
-    frequencyUnit: row.querySelector(".setup-row-frequency-unit").value,
+    phaseSettings: setupPhaseRows(row),
     nominal: Number(row.querySelector(".setup-nominal").value),
     lsl: Number(row.querySelector(".setup-lsl").value),
     usl: Number(row.querySelector(".setup-usl").value),
@@ -3356,6 +3520,19 @@ function setupVariableRows() {
     ucl: optionalInputNumber(row.querySelector(".setup-ucl")),
     displayOrder: index + 1
   }));
+}
+
+function setupPhaseRows(row) {
+  return [...row.querySelectorAll(".setup-phase-row")]
+    .map((phaseRow) => ({
+      inspectionPhase: phaseRow.dataset.phase,
+      isRequired: phaseRow.querySelector(".setup-phase-required").checked,
+      sampleSize: Number(phaseRow.querySelector(".setup-phase-sample-size").value),
+      frequencyType: phaseRow.querySelector(".setup-phase-frequency-type").value,
+      frequencyValue: Number(phaseRow.querySelector(".setup-phase-frequency-value").value),
+      frequencyUnit: phaseRow.querySelector(".setup-phase-frequency-unit").value,
+      alertRuleSet: phaseRow.querySelector(".setup-phase-alert-rule-set").value
+    }));
 }
 
 function setupJobDataFieldRows() {
@@ -3397,12 +3574,20 @@ async function saveInspectionSetup(event) {
     $("inspectionSetupMessage").className = "message error";
     return;
   }
+  const phaseError = validateVariablePhases(variables);
+  if (phaseError) {
+    $("inspectionSetupMessage").textContent = phaseError;
+    $("inspectionSetupMessage").className = "message error";
+    return;
+  }
 
   try {
     const baseRequest = {
       partNum: $("setupPartNum").value.trim(),
       partDescription: $("setupPartDescription").value.trim(),
       productGroup: $("setupProductGroup").value.trim(),
+      blankCode: $("setupBlankCode").value.trim(),
+      holeSize: $("setupHoleSize").value.trim(),
       processCode: $("setupProcessCode").value.trim(),
       processDescription: $("setupProcessCode").value.trim(),
       operationSeq: Number($("setupOperationSeq").value),
@@ -3441,30 +3626,50 @@ async function saveInspectionSetup(event) {
     }
 
     for (const variable of variables) {
-      await api("/setup/inspection-plans", {
-        method: "POST",
-        body: JSON.stringify({
-          ...baseRequest,
-          characteristicName: variable.characteristicName,
-          characteristicType: variable.characteristicType,
-          nominal: variable.nominal,
-          lsl: variable.lsl,
-          usl: variable.usl,
-          lcl: variable.lcl,
-          ucl: variable.ucl,
-          unitOfMeasure: variable.unitOfMeasure,
-          location: variable.location,
-          inspectionMethod: variable.inspectionMethod,
-          displayOrder: variable.displayOrder,
-          sampleSize: variable.sampleSize,
-          frequencyType: variable.frequencyType,
-          frequencyValue: variable.frequencyValue,
-          frequencyUnit: variable.frequencyUnit,
-          originalProcessCode: state.editingSetup?.processCode || null,
-          originalOperationSeq: state.editingSetup?.operationSeq || null,
-          originalCharacteristicName: variable.originalCharacteristicName
-        })
-      });
+      for (const phase of variable.phaseSettings.filter((item) => !item.isRequired)) {
+        await api("/setup/inspection-plans/delete-phase", {
+          method: "POST",
+          body: JSON.stringify({
+            partNum: baseRequest.partNum,
+            processCode: baseRequest.processCode,
+            operationSeq: baseRequest.operationSeq,
+            characteristicName: variable.characteristicName,
+            inspectionPhase: phase.inspectionPhase,
+            originalProcessCode: state.editingSetup?.processCode || null,
+            originalOperationSeq: state.editingSetup?.operationSeq || null,
+            originalCharacteristicName: variable.originalCharacteristicName
+          })
+        });
+      }
+
+      for (const phase of variable.phaseSettings.filter((item) => item.isRequired)) {
+        await api("/setup/inspection-plans", {
+          method: "POST",
+          body: JSON.stringify({
+            ...baseRequest,
+            inspectionPhase: phase.inspectionPhase,
+            alertRuleSet: phase.alertRuleSet,
+            characteristicName: variable.characteristicName,
+            characteristicType: variable.characteristicType,
+            nominal: variable.nominal,
+            lsl: variable.lsl,
+            usl: variable.usl,
+            lcl: variable.lcl,
+            ucl: variable.ucl,
+            unitOfMeasure: variable.unitOfMeasure,
+            location: variable.location,
+            inspectionMethod: variable.inspectionMethod,
+            displayOrder: variable.displayOrder,
+            sampleSize: phase.sampleSize,
+            frequencyType: phase.frequencyType,
+            frequencyValue: phase.frequencyValue,
+            frequencyUnit: phase.frequencyUnit,
+            originalProcessCode: state.editingSetup?.processCode || null,
+            originalOperationSeq: state.editingSetup?.operationSeq || null,
+            originalCharacteristicName: variable.originalCharacteristicName
+          })
+        });
+      }
     }
 
     $("inspectionSetupMessage").textContent = `${variables.length} inspection item${variables.length === 1 ? "" : "s"} saved for ${baseRequest.partNum}.`;
@@ -3478,6 +3683,27 @@ async function saveInspectionSetup(event) {
     $("inspectionSetupMessage").textContent = readableError(error);
     $("inspectionSetupMessage").className = "message error";
   }
+}
+
+function validateVariablePhases(variables) {
+  for (const variable of variables) {
+    const requiredPhases = variable.phaseSettings.filter((phase) => phase.isRequired);
+    if (!requiredPhases.length) {
+      return `${variable.characteristicName || "Inspection item"} needs at least one required phase.`;
+    }
+
+    const invalidPhase = requiredPhases.find((phase) =>
+      !phase.sampleSize ||
+      !phase.frequencyType ||
+      !phase.frequencyValue ||
+      !phase.frequencyUnit ||
+      !phase.alertRuleSet);
+    if (invalidPhase) {
+      return `${variable.characteristicName} is missing timing or rule settings for ${invalidPhase.inspectionPhase}.`;
+    }
+  }
+
+  return "";
 }
 
 async function importXlsx(event) {
@@ -3534,11 +3760,11 @@ async function importMachinesXlsx(event) {
 
 function loadMachineTemplate() {
   $("machineTemplateText").value = [
-    "Machine ID,Description",
-    "ETH-1,Needle Maker #1",
-    "GP-1,GRM 50 Hook Machine"
+    "Machine ID,Description,Device Profile,Baud Rate",
+    "ETH-1,Needle Maker #1,Keyboard input,9600",
+    "GP-1,GRM 50 Hook Machine,Serial text gauge,9600"
   ].join("\\n");
-  $("machineImportMessage").textContent = "Use these columns on an Excel sheet named SPC-Star Machine Import.";
+  $("machineImportMessage").textContent = "Use these columns on an Excel sheet named SPC-Star Machine Import. Device settings are managed by machine.";
   $("machineImportMessage").className = "message";
 }
 
@@ -3579,6 +3805,8 @@ function loadCsvTemplate() {
     "Part Number",
     "Part Description",
     "Product Group",
+    "Blank Code",
+    "Hole Size",
     "Inspection Phase",
     "Operation",
     "Job Data Field",
@@ -3603,16 +3831,31 @@ function loadCsvTemplate() {
     "Startup Frequency Type",
     "Startup Frequency",
     "Startup Frequency Unit",
+    "Startup Drift Rule",
     "Setup Required",
     "Setup Sample Size",
     "Setup Frequency Type",
     "Setup Frequency",
     "Setup Frequency Unit",
+    "Setup Drift Rule",
+    "Coil Change Required",
+    "Coil Change Sample Size",
+    "Coil Change Frequency Type",
+    "Coil Change Frequency",
+    "Coil Change Frequency Unit",
+    "Coil Change Drift Rule",
     "In Process Required",
     "In Process Sample Size",
     "In Process Frequency Type",
     "In Process Frequency",
-    "In Process Frequency Unit"
+    "In Process Frequency Unit",
+    "In Process Drift Rule",
+    "Spool Required",
+    "Spool Sample Size",
+    "Spool Frequency Type",
+    "Spool Frequency",
+    "Spool Frequency Unit",
+    "Spool Drift Rule"
   ].join(",");
 }
 
@@ -3710,9 +3953,6 @@ $("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
 $("connectSerialDeviceButton").addEventListener("click", connectSerialDevice);
 $("disconnectSerialDeviceButton").addEventListener("click", disconnectSerialDevice);
-$("deviceProfile").addEventListener("change", () => {
-  setDeviceStatus($("deviceProfile").value === "serial-text" ? "Serial gauge profile selected." : "Keyboard input ready.", "neutral");
-});
 $("overrideUserName").addEventListener("input", () => {
   $("godReasonLabel").classList.toggle("hidden", $("overrideUserName").value.trim().toLowerCase() !== "god1");
 });

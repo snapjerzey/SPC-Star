@@ -282,6 +282,19 @@ app.MapPost("/setup/inspection-plans", (UpsertInspectionSetupRequest request, Se
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapPost("/setup/inspection-plans/delete-phase", (DeleteInspectionSetupPhaseRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.DeleteInspectionSetupPhase(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.NoContent()
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapGet("/setup/parts", (SetupQueryService service) =>
 {
     return Results.Ok(service.GetParts());

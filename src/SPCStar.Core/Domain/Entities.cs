@@ -24,6 +24,8 @@ public sealed class Part
     public required string PartNum { get; set; }
     public required string Description { get; set; }
     public string ProductGroup { get; set; } = "General";
+    public string BlankCode { get; set; } = "";
+    public string HoleSize { get; set; } = "";
 }
 
 public sealed class ManufacturingProcess
@@ -160,6 +162,8 @@ public sealed class ResourceMachine
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string ResourceId { get; set; }
     public string? Description { get; set; }
+    public string DeviceProfile { get; set; } = "keyboard";
+    public int SerialBaudRate { get; set; } = 9600;
 }
 
 public sealed class Device

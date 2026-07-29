@@ -73,6 +73,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             CopyPhaseValue(row, clone, phase, "FrequencyType", "Frequency Type");
             CopyPhaseValue(row, clone, phase, "FrequencyValue", "Frequency");
             CopyPhaseValue(row, clone, phase, "FrequencyUnit", "Frequency Unit");
+            CopyPhaseValue(row, clone, phase, "AlertRuleSet", "Drift Rule");
             CopyPhaseValue(row, clone, phase, "DisplayOrder", "Display Order");
             ApplyPhaseDefaults(clone, phase.CanonicalName);
             expanded = true;
@@ -94,6 +95,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             PhaseFieldValue(row, phase, "Frequency") != "" ||
             PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
             PhaseFieldValue(row, phase, "Frequency Unit") != "" ||
+            PhaseFieldValue(row, phase, "Drift Rule") != "" ||
             PhaseFieldValue(row, phase, "Display Order") != "");
     }
 
@@ -110,6 +112,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             PhaseFieldValue(row, phase, "Frequency") != "" ||
             PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
             PhaseFieldValue(row, phase, "Frequency Unit") != "" ||
+            PhaseFieldValue(row, phase, "Drift Rule") != "" ||
             PhaseFieldValue(row, phase, "Display Order") != "";
     }
 
@@ -212,6 +215,8 @@ public sealed class SetupImportService(ISpcRepository repository)
         CopyAlias(normalized, "PartNum", "Part Number", "Part #", "Part No");
         CopyAlias(normalized, "PartDescription", "Part Description");
         CopyAlias(normalized, "ProductGroup", "Product Group");
+        CopyAlias(normalized, "BlankCode", "Blank Code", "Needle Blank", "Needle Blank Code", "Blank Part Number");
+        CopyAlias(normalized, "HoleSize", "Hole Size", "Drill Hole Size");
         CopyAlias(normalized, "InspectionPhase", "Phase", "Inspection Phase");
         CopyAlias(normalized, "Operation", "Operation Name");
         CopyAlias(normalized, "CustomerPartNum", "Customer Part Number", "Customer Part #", "Customer Part No");
@@ -642,6 +647,16 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             part.Description = row["PartDescription"].Trim();
             part.ProductGroup = CleanProductGroup(row.GetValueOrDefault("ProductGroup"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("BlankCode")))
+        {
+            part.BlankCode = row["BlankCode"].Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("HoleSize")))
+        {
+            part.HoleSize = row["HoleSize"].Trim();
         }
 
         return part;

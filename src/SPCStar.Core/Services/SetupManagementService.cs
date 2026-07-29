@@ -11,7 +11,12 @@ public sealed record ResetUserPasswordRequest(string UserName, string TemporaryP
 
 public sealed record UserImportResult(int Imported);
 
-public sealed record UpsertResourceMachineRequest(string ResourceId, string? Description, string? OriginalResourceId = null);
+public sealed record UpsertResourceMachineRequest(
+    string ResourceId,
+    string? Description,
+    string? OriginalResourceId = null,
+    string DeviceProfile = "keyboard",
+    int SerialBaudRate = 9600);
 
 public sealed record ResourceImportResult(int Imported);
 
@@ -46,7 +51,19 @@ public sealed record UpsertInspectionSetupRequest(
     string InspectionPhase = "In Process",
     string? Location = null,
     string? InspectionMethod = null,
-    int? DisplayOrder = null);
+    int? DisplayOrder = null,
+    string? BlankCode = null,
+    string? HoleSize = null);
+
+public sealed record DeleteInspectionSetupPhaseRequest(
+    string PartNum,
+    string ProcessCode,
+    int OperationSeq,
+    string CharacteristicName,
+    string InspectionPhase,
+    string? OriginalProcessCode = null,
+    int? OriginalOperationSeq = null,
+    string? OriginalCharacteristicName = null);
 
 public sealed record UpsertPartJobDataFieldRequest(
     string PartNum,
@@ -95,7 +112,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
             .OrderBy(resource => resource.ResourceId)
-            .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description))
+            .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description, resource.DeviceProfile, resource.SerialBaudRate))
             .ToArray();
     }
 
@@ -365,6 +382,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
             rowNumber++;
             var resourceId = Value(row, "MachineID", "Machine ID", "ResourceID", "Resource ID", "Machine", "Resource");
             var description = Value(row, "Description", "Machine Description", "Resource Description");
+            var deviceProfile = Value(row, "DeviceProfile", "Device Profile", "Gauge Profile", "Measurement Device");
+            var baud = Value(row, "SerialBaudRate", "Serial Baud Rate", "Baud Rate", "Baud");
             if (string.IsNullOrWhiteSpace(resourceId))
             {
                 errors.Add($"Row {rowNumber}: Machine ID is required.");
@@ -377,7 +396,12 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 continue;
             }
 
-            var request = new UpsertResourceMachineRequest(resourceId.Trim(), description.Trim(), resourceId.Trim());
+            var request = new UpsertResourceMachineRequest(
+                resourceId.Trim(),
+                description.Trim(),
+                resourceId.Trim(),
+                string.IsNullOrWhiteSpace(deviceProfile) ? "keyboard" : deviceProfile.Trim(),
+                int.TryParse(baud, out var parsedBaud) ? parsedBaud : 9600);
             errors.AddRange(ValidateResource(request).Select(error => $"Row {rowNumber}: {error}"));
             requests.Add(request);
         }
@@ -457,7 +481,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
             resource = new ResourceMachine
             {
                 ResourceId = resourceId,
-                Description = CleanOptional(request.Description)
+                Description = CleanOptional(request.Description),
+                DeviceProfile = NormalizeDeviceProfile(request.DeviceProfile),
+                SerialBaudRate = NormalizeBaudRate(request.SerialBaudRate)
             };
             repository.Resources.Add(resource);
         }
@@ -476,9 +502,11 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
             resource.ResourceId = resourceId;
             resource.Description = CleanOptional(request.Description);
+            resource.DeviceProfile = NormalizeDeviceProfile(request.DeviceProfile);
+            resource.SerialBaudRate = NormalizeBaudRate(request.SerialBaudRate);
         }
 
-        return ServiceResult<ResourceSetupDto>.Ok(new ResourceSetupDto(resource.ResourceId, resource.Description));
+        return ServiceResult<ResourceSetupDto>.Ok(new ResourceSetupDto(resource.ResourceId, resource.Description, resource.DeviceProfile, resource.SerialBaudRate));
     }
 
     public ServiceResult DeleteResource(string resourceId)
@@ -514,13 +542,22 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase));
         if (part is null)
         {
-            part = new Part { PartNum = request.PartNum.Trim(), Description = request.PartDescription.Trim(), ProductGroup = CleanProductGroup(request.ProductGroup) };
+            part = new Part
+            {
+                PartNum = request.PartNum.Trim(),
+                Description = request.PartDescription.Trim(),
+                ProductGroup = CleanProductGroup(request.ProductGroup),
+                BlankCode = CleanOptional(request.BlankCode),
+                HoleSize = CleanOptional(request.HoleSize)
+            };
             repository.Parts.Add(part);
         }
         else
         {
             part.Description = request.PartDescription.Trim();
             part.ProductGroup = CleanProductGroup(request.ProductGroup);
+            part.BlankCode = CleanOptional(request.BlankCode);
+            part.HoleSize = CleanOptional(request.HoleSize);
         }
 
         var originalProcessCode = string.IsNullOrWhiteSpace(request.OriginalProcessCode)
@@ -635,6 +672,56 @@ public sealed class SetupManagementService(ISpcRepository repository)
             item.OperationSeq == request.OperationSeq &&
             item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
             item.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    public ServiceResult DeleteInspectionSetupPhase(DeleteInspectionSetupPhaseRequest request)
+    {
+        var errors = new List<string>();
+        Required(request.PartNum, nameof(request.PartNum), errors);
+        Required(request.ProcessCode, nameof(request.ProcessCode), errors);
+        Required(request.CharacteristicName, nameof(request.CharacteristicName), errors);
+        if (!IsValidInspectionPhase(request.InspectionPhase))
+        {
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
+        }
+        if (request.OperationSeq <= 0)
+        {
+            errors.Add("OperationSeq must be greater than zero.");
+        }
+        if (errors.Count > 0)
+        {
+            return ServiceResult.Fail(errors);
+        }
+
+        var processCode = string.IsNullOrWhiteSpace(request.OriginalProcessCode)
+            ? request.ProcessCode.Trim()
+            : request.OriginalProcessCode.Trim();
+        var operationSeq = request.OriginalOperationSeq.GetValueOrDefault(request.OperationSeq);
+        var characteristicName = string.IsNullOrWhiteSpace(request.OriginalCharacteristicName)
+            ? request.CharacteristicName.Trim()
+            : request.OriginalCharacteristicName.Trim();
+        var phase = NormalizeInspectionPhase(request.InspectionPhase);
+
+        var query =
+            from part in repository.Parts
+            join operation in repository.Operations on part.Id equals operation.PartId
+            join process in repository.Processes on operation.ProcessId equals process.Id
+            join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
+            join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
+            where part.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                process.ProcessCode.Equals(processCode, StringComparison.OrdinalIgnoreCase) &&
+                operation.OperationSeq == operationSeq &&
+                characteristic.Name.Equals(characteristicName, StringComparison.OrdinalIgnoreCase) &&
+                plan.InspectionPhase.Equals(phase, StringComparison.OrdinalIgnoreCase)
+            select plan;
+
+        var match = query.FirstOrDefault();
+        if (match is not null)
+        {
+            repository.InspectionPlans.Remove(match);
+        }
+
+        return ServiceResult.Ok();
     }
 
     public ServiceResult<PartJobDataFieldSetupDto> UpsertPartJobDataField(UpsertPartJobDataFieldRequest request)
@@ -839,7 +926,45 @@ public sealed class SetupManagementService(ISpcRepository repository)
             errors.Add("Machine description must be 120 characters or fewer.");
         }
 
+        if (!new[] { "keyboard", "serial-text" }.Contains(NormalizeDeviceProfile(request.DeviceProfile), StringComparer.OrdinalIgnoreCase))
+        {
+            errors.Add("Device profile must be Keyboard input or Serial text gauge.");
+        }
+
+        if (!AllowedBaudRates.Contains(NormalizeBaudRate(request.SerialBaudRate)))
+        {
+            errors.Add("Serial baud rate is not supported.");
+        }
+
         return errors;
+    }
+
+    private static readonly int[] AllowedBaudRates = [4800, 9600, 19200, 38400, 57600, 115200];
+
+    private static string NormalizeDeviceProfile(string? profile)
+    {
+        if (string.IsNullOrWhiteSpace(profile))
+        {
+            return "keyboard";
+        }
+
+        var trimmed = profile.Trim();
+        if (trimmed.Equals("Serial text gauge", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serial-text";
+        }
+
+        if (trimmed.Equals("Keyboard input", StringComparison.OrdinalIgnoreCase))
+        {
+            return "keyboard";
+        }
+
+        return trimmed;
+    }
+
+    private static int NormalizeBaudRate(int baudRate)
+    {
+        return baudRate <= 0 ? 9600 : baudRate;
     }
 
     private bool ResourceHasHistory(string resourceId)
@@ -935,7 +1060,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.AlertRuleSet, nameof(request.AlertRuleSet), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
         }
 
         if (request.OperationSeq <= 0) errors.Add("OperationSeq must be greater than zero.");
@@ -963,7 +1088,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.FieldName, nameof(request.FieldName), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
         }
 
         if (request.DisplayOrder < 0)
@@ -983,7 +1108,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.MaterialDescription, nameof(request.MaterialDescription), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
         }
 
         if (request.DisplayOrder < 0)
@@ -1011,6 +1136,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
             value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Coil Change", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("CoilChange", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||
@@ -1034,6 +1161,11 @@ public sealed class SetupManagementService(ISpcRepository repository)
             phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
         {
             return "Spool";
+        }
+        if (phase.Equals("Coil Change", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("CoilChange", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Coil Change";
         }
 
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||

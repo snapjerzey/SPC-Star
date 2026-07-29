@@ -5,7 +5,7 @@ using System.Text;
 
 namespace SPCStar.Core.Services;
 
-public sealed record PartSetupDto(string PartNum, string Description, string ProductGroup);
+public sealed record PartSetupDto(string PartNum, string Description, string ProductGroup, string BlankCode, string HoleSize);
 
 public sealed record InspectionPlanSetupDto(
     string PartNum,
@@ -56,7 +56,7 @@ public sealed record ControlLimitSetupDto(
 
 public sealed record JobSetupDto(string JobNum, string PartNum);
 
-public sealed record ResourceSetupDto(string ResourceId, string? Description);
+public sealed record ResourceSetupDto(string ResourceId, string? Description, string DeviceProfile, int SerialBaudRate);
 
 public sealed record CustomDriftRuleSetupDto(
     string Name,
@@ -113,7 +113,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
     {
         return repository.Parts
             .OrderBy(part => part.PartNum)
-            .Select(part => new PartSetupDto(part.PartNum, part.Description, ProductGroup(part.ProductGroup)))
+            .Select(part => new PartSetupDto(part.PartNum, part.Description, ProductGroup(part.ProductGroup), part.BlankCode, part.HoleSize))
             .ToArray();
     }
 
@@ -207,7 +207,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
             .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
             .OrderBy(resource => resource.ResourceId)
-            .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description))
+            .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description, resource.DeviceProfile, resource.SerialBaudRate))
             .ToArray();
         var jobDataFields =
             (from field in repository.PartJobDataFields

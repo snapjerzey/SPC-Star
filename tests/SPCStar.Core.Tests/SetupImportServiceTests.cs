@@ -390,6 +390,41 @@ public sealed class SetupImportServiceTests
         Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Spool" && plan.DisplayOrder == 14);
     }
 
+    [Fact]
+    public void ImportCsv_UsesPhaseSpecificDriftRulesFromUniversalTemplateRows()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "PartNum", "PartDescription", "ProductGroup", "Operation",
+            "ParameterSeq", "InspectionParameter", "Attribute/Variable", "Tool Used",
+            "LowerSpec", "UpperSpec", "NominalSpec",
+            "SetupRequired", "SetupSampleSize", "SetupDriftRule",
+            "InProcessRequired", "InProcessSampleSize", "InProcessDriftRule"
+        };
+        string Row(params (string Field, string Value)[] values)
+        {
+            var row = header.ToDictionary(field => field, _ => "", StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, value) in values)
+            {
+                row[field] = value;
+            }
+
+            return string.Join(",", header.Select(field => row[field]));
+        }
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("RecordType", "INSPECTION"), ("PartNum", "70309"), ("PartDescription", "Width Test"), ("ProductGroup", "Schneider"), ("Operation", "Assembly"), ("ParameterSeq", "1"), ("InspectionParameter", "Caliper Width"), ("Attribute/Variable", "Variable"), ("Tool Used", "Caliper"), ("LowerSpec", ".100"), ("UpperSpec", ".110"), ("NominalSpec", ".105"), ("SetupRequired", "Y"), ("SetupSampleSize", "1"), ("SetupDriftRule", "SpecLimitOnly"), ("InProcessRequired", "Y"), ("InProcessSampleSize", "5"), ("InProcessDriftRule", "WesternElectric")),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.AlertRuleSet == "SpecLimitOnly");
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "In Process" && plan.AlertRuleSet == "WesternElectric");
+    }
+
     private static string ValidCsv(
         string description = "Widget",
         string lsl = "4.5",

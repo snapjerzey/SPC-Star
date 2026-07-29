@@ -483,6 +483,30 @@ textarea {
   gap: 12px;
   align-items: end;
 }
+.job-tag-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.job-data-fact {
+  border: 1px solid #d9e5f2;
+  border-radius: 6px;
+  background: #f7fbff;
+  padding: 10px 12px;
+}
+.job-data-fact span {
+  display: block;
+  color: #5a6a80;
+  font-size: 12px;
+  font-weight: 800;
+}
+.job-data-fact strong {
+  display: block;
+  color: #051a37;
+  font-size: 17px;
+  font-weight: 850;
+}
 .timing-fields {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
@@ -568,10 +592,59 @@ textarea {
 .setup-unit-field { grid-column: span 2; }
 .setup-location-field { grid-column: span 5; }
 .setup-method-field { grid-column: span 3; }
-.setup-sample-field { grid-column: span 2; }
-.setup-frequency-type-field { grid-column: span 2; }
-.setup-frequency-value-field { grid-column: span 2; }
-.setup-frequency-unit-field { grid-column: span 2; }
+.setup-phase-matrix {
+  grid-column: 1 / -1;
+  border: 1px solid #dbe6f2;
+  border-radius: 6px;
+  background: #f8fbff;
+  padding: 10px;
+}
+.setup-phase-matrix h4 {
+  color: #35516f;
+  font-size: 12px;
+  font-weight: 850;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+.setup-phase-grid {
+  display: grid;
+  gap: 6px;
+  overflow-x: auto;
+}
+.setup-phase-grid-header,
+.setup-phase-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 42px minmax(80px, .55fr) minmax(130px, .9fr) minmax(90px, .65fr) minmax(120px, .8fr) minmax(150px, 1fr);
+  gap: 6px;
+  min-width: 850px;
+  align-items: center;
+}
+.setup-phase-grid-header {
+  color: #35516f;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.setup-phase-row {
+  border-top: 1px solid #e5edf6;
+  padding-top: 6px;
+}
+.setup-phase-row > span {
+  color: #1f2a37;
+  font-size: 13px;
+  font-weight: 750;
+}
+.setup-phase-row input,
+.setup-phase-row select {
+  min-height: 34px;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+.setup-phase-row .setup-phase-required {
+  justify-self: center;
+  min-height: 18px;
+  width: 18px;
+}
 .numeric-setup-field { grid-column: span 2; }
 .remove-variable-button { grid-column: span 2; }
 .setup-type-field select {

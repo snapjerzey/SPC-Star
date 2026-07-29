@@ -954,6 +954,27 @@ textarea {
   margin: 0;
   padding-left: 18px;
 }
+.sop-language-tabs {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+}
+.sop-language-button {
+  min-height: 34px;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+}
+.sop-language-button.active {
+  background: #ffffff;
+  color: var(--primary-dark);
+  border: 1px solid var(--line);
+}
 .sop-body {
   display: grid;
   gap: 8px;

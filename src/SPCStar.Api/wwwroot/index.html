@@ -828,7 +828,11 @@
         </div>
         <button id="closeGettingStartedButton" type="button" class="secondary compact-button">Close</button>
       </div>
-      <div class="sop-body">
+      <div class="sop-language-tabs" aria-label="SOP language">
+        <button id="sopEnglishButton" type="button" class="compact-button sop-language-button active">English</button>
+        <button id="sopSpanishButton" type="button" class="compact-button sop-language-button">Español</button>
+      </div>
+      <div id="sopEnglishBody" class="sop-body">
         <h3>Purpose</h3>
         <p>This SOP explains how operators should use SPC-Star to enter inspection results, record job information, and respond to inspection issues during production.</p>
 
@@ -902,6 +906,80 @@
         <p>If SPC-Star does not load correctly, shows the wrong inspection items, rejects an entry, or displays information that does not match the inspection plan, notify a line tech, QA, or supervisor.</p>
         <p>Do not guess or enter incorrect information to move forward.</p>
       </div>
+      <div id="sopSpanishBody" class="sop-body hidden" lang="es">
+        <h3>Propósito</h3>
+        <p>Este SOP explica cómo los operadores deben usar SPC-Star para ingresar resultados de inspección, registrar información del trabajo y responder a problemas de inspección durante la producción.</p>
+
+        <h3>Alcance</h3>
+        <p>Esto aplica a operadores que usan SPC-Star durante inspecciones de arranque, preparación, en proceso, carrete u otras inspecciones asignadas.</p>
+
+        <h3>1. Iniciar sesión</h3>
+        <ol>
+          <li>Abra SPC-Star.</li>
+          <li>Ingrese su nombre de usuario.</li>
+          <li>Ingrese su contraseña.</li>
+          <li>Seleccione su turno correcto.</li>
+          <li>Haga clic en Sign In.</li>
+        </ol>
+        <p>Si no puede iniciar sesión, contacte a su técnico de línea, QA o supervisor.</p>
+
+        <h3>2. Iniciar una inspección de trabajo</h3>
+        <ol>
+          <li>Ingrese el número de trabajo.</li>
+          <li>Seleccione la máquina que está operando.</li>
+          <li>Ingrese o escanee el número de parte.</li>
+          <li>Seleccione la operación correcta.</li>
+          <li>Seleccione la fase de inspección correcta.</li>
+          <li>Haga clic en Load.</li>
+        </ol>
+        <p>SPC-Star cargará los puntos de inspección requeridos para esa parte, operación y fase de inspección.</p>
+
+        <h3>3. Ingresar datos del trabajo</h3>
+        <p>Complete cualquier campo requerido que aparezca en la pantalla. Esto puede incluir números de lote, números de bobina, números de embarque de alambre, números de serie, números de carrete u otra información requerida del trabajo.</p>
+        <p>Algunos datos del trabajo pueden permanecer iguales durante el trabajo. Actualícelos cuando cambie el material, bobina, carrete, lote u otra información requerida.</p>
+
+        <h3>4. Registrar mediciones y atributos</h3>
+        <p>Para variables medidas, ingrese la medición requerida en cada campo, use el calibrador, herramienta o dispositivo de inspección listado, y siga el tamaño de muestra requerido para ese punto de inspección.</p>
+        <p>Para atributos de aceptar/rechazar, seleccione o ingrese el resultado requerido y siga el método de inspección y tamaño de muestra listado.</p>
+        <p>No omita campos requeridos. Si un campo es requerido, SPC-Star no permitirá continuar la inspección hasta que esté completo.</p>
+
+        <h3>5. Alertas fuera de especificación o deriva del proceso</h3>
+        <p>Si SPC-Star detecta un resultado fuera de especificación o deriva del proceso, la inspección puede bloquearse.</p>
+        <ol>
+          <li>Deje de ingresar datos de inspección.</li>
+          <li>Notifique a un técnico de línea, QA o supervisor.</li>
+          <li>No continúe ingresando inspecciones de producción hasta que el problema sea revisado.</li>
+          <li>La persona autorizada debe revisar el problema, ingresar la causa, ingresar la acción correctiva y desbloquear la inspección.</li>
+        </ol>
+        <p>No intente evitar o ignorar un bloqueo.</p>
+
+        <h3>6. Cambios de material</h3>
+        <ol>
+          <li>Ingrese la nueva información de lote de material en la sección de materiales.</li>
+          <li>Confirme que la información sea correcta antes de continuar con las inspecciones.</li>
+          <li>Agregue una nota si hubo un problema, inquietud o circunstancia especial relacionada con el cambio de material.</li>
+        </ol>
+
+        <h3>7. Notas del trabajo</h3>
+        <p>Use las notas del trabajo para registrar información importante que pueda ayudar al siguiente operador, técnico de línea, QA o supervisor.</p>
+        <p>Ejemplos incluyen problemas de máquina, cambios de herramental, inquietudes de material, problemas de inspección, acciones correctivas, problemas de preparación o cualquier situación inusual durante el trabajo.</p>
+        <p>Las notas deben ser claras, objetivas y profesionales.</p>
+
+        <h3>8. Revisar historial del trabajo</h3>
+        <p>El área de historial del trabajo muestra actividad de inspección, notas, eventos de bloqueo, cambios de material y otros registros del trabajo. Los operadores deben revisar el historial al tomar un trabajo o cuando intentan entender problemas recientes.</p>
+
+        <h3>9. Cerrar sesión</h3>
+        <ol>
+          <li>Confirme que sus entradas estén completas.</li>
+          <li>Agregue cualquier nota necesaria del trabajo.</li>
+          <li>Haga clic en Sign Out.</li>
+        </ol>
+        <p>Siempre cierre sesión para que el siguiente usuario no ingrese datos de inspección bajo su nombre.</p>
+
+        <h3>10. Preguntas o problemas</h3>
+        <p>Si SPC-Star no carga correctamente, muestra puntos de inspección incorrectos, rechaza una entrada o muestra información que no coincide con el plan de inspección, notifique a un técnico de línea, QA o supervisor.</p>
+        <p>No adivine ni ingrese información incorrecta para continuar.</p>
+      </div>
     </div>
   </section>
   <section id="ruleDetailModal" class="modal-backdrop hidden">
@@ -951,8 +1029,17 @@
     (() => {
       const open = () => document.getElementById("gettingStartedModal")?.classList.remove("hidden");
       const close = () => document.getElementById("gettingStartedModal")?.classList.add("hidden");
+      const setLanguage = (language) => {
+        const showSpanish = language === "es";
+        document.getElementById("sopEnglishBody")?.classList.toggle("hidden", showSpanish);
+        document.getElementById("sopSpanishBody")?.classList.toggle("hidden", !showSpanish);
+        document.getElementById("sopEnglishButton")?.classList.toggle("active", !showSpanish);
+        document.getElementById("sopSpanishButton")?.classList.toggle("active", showSpanish);
+      };
       document.getElementById("showGettingStartedButton")?.addEventListener("click", open);
       document.getElementById("closeGettingStartedButton")?.addEventListener("click", close);
+      document.getElementById("sopEnglishButton")?.addEventListener("click", () => setLanguage("en"));
+      document.getElementById("sopSpanishButton")?.addEventListener("click", () => setLanguage("es"));
       document.getElementById("gettingStartedModal")?.addEventListener("click", (event) => {
         if (event.target.id === "gettingStartedModal") close();
       });

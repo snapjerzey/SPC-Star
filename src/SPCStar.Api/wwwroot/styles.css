@@ -442,6 +442,12 @@ textarea {
   background: var(--line);
   margin: 4px 0;
 }
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
 
 .setup-nav {
   display: flex;

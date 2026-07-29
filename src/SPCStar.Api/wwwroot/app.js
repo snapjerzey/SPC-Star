@@ -3867,6 +3867,10 @@ function loadCsvTemplate() {
   ].join(",");
 }
 
+function exportSetupTemplate() {
+  window.open("/setup/export-template.csv", "_blank");
+}
+
 function parseCommaList(value) {
   return value
     .split(",")
@@ -4030,6 +4034,7 @@ $("customRuleForm").addEventListener("submit", saveCustomRule);
 $("csvImportForm").addEventListener("submit", importCsv);
 $("xlsxImportForm").addEventListener("submit", importXlsx);
 $("csvTemplateButton").addEventListener("click", loadCsvTemplate);
+$("exportSetupTemplateButton").addEventListener("click", exportSetupTemplate);
 $("partReviewFilter").addEventListener("input", () => {
   syncHistoryFiltersFrom("Ledger");
   applyHistoryFilters();

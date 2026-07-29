@@ -670,7 +670,10 @@
             <h2>Excel Import</h2>
             <p>Upload the SPC-Star workbook. The import uses the sheet named SPC-Star Import.</p>
           </div>
-          <button id="csvTemplateButton" type="button" class="secondary">Load Blank Template</button>
+          <div class="import-actions">
+            <button id="csvTemplateButton" type="button" class="secondary">Load Blank Template</button>
+            <button id="exportSetupTemplateButton" type="button" class="secondary">Export Current Template</button>
+          </div>
         </div>
         <form id="xlsxImportForm" class="stacked-form">
           <label>
@@ -1259,6 +1262,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260729-login-sop"></script>
+  <script src="/app.js?v=20260729-setup-export"></script>
 </body>
 </html>

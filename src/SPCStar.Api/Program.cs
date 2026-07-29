@@ -20,6 +20,7 @@ builder.Services.AddSingleton<WesternElectricRuleService>();
 builder.Services.AddSingleton<PermissionService>();
 builder.Services.AddSingleton<CredentialService>();
 builder.Services.AddSingleton<SetupImportService>();
+builder.Services.AddSingleton<SetupTemplateExportService>();
 builder.Services.AddSingleton<InspectionMeasurementService>();
 builder.Services.AddSingleton<AlertOverrideService>();
 builder.Services.AddSingleton<QaSummaryExportService>();
@@ -88,6 +89,14 @@ app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService s
     return result.Succeeded
         ? Results.Ok(new { imported = true })
         : Results.BadRequest(new { imported = false, errors = result.Errors });
+});
+
+app.MapGet("/setup/export-template.csv", (SetupTemplateExportService service) =>
+{
+    return Results.File(
+        System.Text.Encoding.UTF8.GetBytes(service.ExportCsv()),
+        "text/csv",
+        $"spc-star-parts-inspections-export-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
 });
 
 app.MapPost("/setup/import-xlsx", async (IFormFile file, SetupImportService service, IRepositoryPersistence persistence) =>

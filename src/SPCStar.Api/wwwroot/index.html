@@ -994,7 +994,11 @@
         </div>
         <button id="closeLineTechSopButton" type="button" class="secondary compact-button">Close</button>
       </div>
-      <div class="sop-body">
+      <div class="sop-language-tabs" aria-label="Line tech SOP language">
+        <button id="lineTechSopEnglishButton" type="button" class="compact-button sop-language-button active">English</button>
+        <button id="lineTechSopSpanishButton" type="button" class="compact-button sop-language-button">Español</button>
+      </div>
+      <div id="lineTechSopEnglishBody" class="sop-body">
         <h3>Purpose</h3>
         <p>This SOP explains how line techs should use SPC-Star to support production inspections, respond to lockouts, document issues, and help maintain inspection traceability.</p>
 
@@ -1084,6 +1088,96 @@
         </ol>
         <p>Always sign out so another user does not enter data under your name.</p>
       </div>
+      <div id="lineTechSopSpanishBody" class="sop-body hidden" lang="es">
+        <h3>Propósito</h3>
+        <p>Este SOP explica cómo los técnicos de línea deben usar SPC-Star para apoyar las inspecciones de producción, responder a bloqueos, documentar problemas y mantener la trazabilidad de inspección.</p>
+
+        <h3>Alcance</h3>
+        <p>Esto aplica a técnicos de línea que usan SPC-Star mientras apoyan actividades de arranque, preparación, en proceso, carrete, cambio de material, solución de problemas y acciones correctivas.</p>
+
+        <h3>1. Iniciar sesión</h3>
+        <ol>
+          <li>Abra SPC-Star.</li>
+          <li>Ingrese su nombre de usuario.</li>
+          <li>Ingrese su contraseña.</li>
+          <li>Seleccione su turno correcto.</li>
+          <li>Haga clic en Sign In.</li>
+        </ol>
+        <p>Los técnicos de línea pueden realizar inspecciones de nivel operador cuando sean asignados, y también pueden liberar ciertos bloqueos de inspección cuando estén autorizados.</p>
+
+        <h3>2. Apoyar el arranque y la preparación del trabajo</h3>
+        <ol>
+          <li>Confirme que el operador seleccionó el número de trabajo correcto.</li>
+          <li>Confirme que la máquina correcta está seleccionada.</li>
+          <li>Confirme que el número de parte correcto fue ingresado o escaneado.</li>
+          <li>Confirme que la operación y la fase de inspección correctas están seleccionadas.</li>
+          <li>Confirme que los datos requeridos del trabajo estén completos antes de continuar con las inspecciones.</li>
+        </ol>
+        <p>Si algo no coincide con la documentación del trabajo o el plan de inspección, deténgase y resuelva la diferencia antes de que continúe la producción.</p>
+
+        <h3>3. Realizar inspecciones cuando sea necesario</h3>
+        <p>Los técnicos de línea pueden ingresar resultados de inspección cuando están operando una máquina, cubriendo a un operador o asistiendo producción.</p>
+        <ol>
+          <li>Use la fase de inspección correcta.</li>
+          <li>Siga el tamaño de muestra indicado.</li>
+          <li>Use la herramienta o método de inspección mostrado en SPC-Star.</li>
+          <li>Ingrese las variables medidas exactamente como fueron leídas.</li>
+          <li>Ingrese los atributos de aceptar/rechazar con precisión.</li>
+          <li>No omita campos requeridos.</li>
+        </ol>
+        <p>Todas las entradas hechas bajo su inicio de sesión son trazables a usted.</p>
+
+        <h3>4. Responder a bloqueos</h3>
+        <p>SPC-Star puede bloquear una inspección cuando un resultado está fuera de especificación, un atributo es rechazado o se detecta deriva del proceso.</p>
+        <ol>
+          <li>Revise el mensaje de bloqueo.</li>
+          <li>Identifique qué variable o atributo causó el bloqueo.</li>
+          <li>Determine si el problema está relacionado con máquina, herramental, material, error del usuario, método de medición, deriva del proceso u otra causa.</li>
+          <li>Inspeccione la parte, máquina, herramental, material y método de medición según sea necesario.</li>
+          <li>No libere el bloqueo hasta que el problema haya sido revisado y se haya tomado una acción correctiva.</li>
+        </ol>
+
+        <h3>5. Liberar un bloqueo</h3>
+        <p>Libere un bloqueo solo cuando el problema haya sido revisado y la producción pueda continuar de manera segura.</p>
+        <ol>
+          <li>Ingrese su nombre de usuario y contraseña autorizados.</li>
+          <li>Seleccione la categoría de causa correcta.</li>
+          <li>Ingrese detalles claros de la causa.</li>
+          <li>Ingrese la acción correctiva o solución.</li>
+          <li>Confirme que la información sea correcta.</li>
+          <li>Libere el bloqueo.</li>
+        </ol>
+        <p>El registro de liberación del bloqueo pasa a formar parte del historial del trabajo. No escriba notas vagas como fixed u ok. Explique qué ocurrió y qué se hizo.</p>
+
+        <h3>6. Documentar acciones correctivas</h3>
+        <p>Use las notas del trabajo para documentar cualquier información importante durante el trabajo, incluyendo ajustes de máquina, cambios de herramental, inquietudes de material, fallas de inspección, deriva del proceso, dudas sobre el método de medición, reparaciones, pasos de solución de problemas, inquietudes del operador o participación de supervisor/QA.</p>
+        <p>Las notas deben ser claras, objetivas y útiles para la siguiente persona que revise el trabajo.</p>
+
+        <h3>7. Cambios de material</h3>
+        <ol>
+          <li>Confirme que se está usando el material correcto.</li>
+          <li>Confirme que se ingresó el nuevo número de lote.</li>
+          <li>Verifique que el cambio esté documentado en SPC-Star.</li>
+          <li>Agregue una nota del trabajo si hubo un problema de material, inquietud o condición inusual.</li>
+        </ol>
+        <p>Los registros de cambio de material ayudan a preservar la trazabilidad.</p>
+
+        <h3>8. Revisar historial del trabajo</h3>
+        <p>Antes de liberar un problema o tomar un trabajo, revise el historial del trabajo. El historial puede incluir entradas de inspección, notas de operadores, notas de técnicos de línea, bloqueos, liberaciones de bloqueo, cambios de material y registros de inspección editados.</p>
+        <p>Use el historial para entender qué ya ocurrió antes de hacer ajustes o liberar bloqueos.</p>
+
+        <h3>9. Escalar cuando sea necesario</h3>
+        <p>Escale a QA, supervisión o gerencia si el mismo problema se repite, las partes continúan acercándose a un límite, la causa no está clara, un requisito del cliente puede estar afectado, la trazabilidad del material está en duda, los datos de inspección parecen incorrectos, el plan de inspección parece incorrecto o no está seguro si la producción debe continuar.</p>
+        <p>No libere un bloqueo solo para mantener la producción en movimiento si el problema no se ha entendido.</p>
+
+        <h3>10. Cerrar sesión</h3>
+        <ol>
+          <li>Confirme que las notas requeridas estén ingresadas.</li>
+          <li>Confirme que cualquier acción de bloqueo esté documentada.</li>
+          <li>Cierre sesión en SPC-Star.</li>
+        </ol>
+        <p>Siempre cierre sesión para que otro usuario no ingrese datos bajo su nombre.</p>
+      </div>
     </div>
   </section>
   <section id="ruleDetailModal" class="modal-backdrop hidden">
@@ -1142,12 +1236,21 @@
         document.getElementById("sopEnglishButton")?.classList.toggle("active", !showSpanish);
         document.getElementById("sopSpanishButton")?.classList.toggle("active", showSpanish);
       };
+      const setLineTechLanguage = (language) => {
+        const showSpanish = language === "es";
+        document.getElementById("lineTechSopEnglishBody")?.classList.toggle("hidden", showSpanish);
+        document.getElementById("lineTechSopSpanishBody")?.classList.toggle("hidden", !showSpanish);
+        document.getElementById("lineTechSopEnglishButton")?.classList.toggle("active", !showSpanish);
+        document.getElementById("lineTechSopSpanishButton")?.classList.toggle("active", showSpanish);
+      };
       document.getElementById("showGettingStartedButton")?.addEventListener("click", open);
       document.getElementById("showLineTechSopButton")?.addEventListener("click", openLineTech);
       document.getElementById("closeGettingStartedButton")?.addEventListener("click", close);
       document.getElementById("closeLineTechSopButton")?.addEventListener("click", closeLineTech);
       document.getElementById("sopEnglishButton")?.addEventListener("click", () => setLanguage("en"));
       document.getElementById("sopSpanishButton")?.addEventListener("click", () => setLanguage("es"));
+      document.getElementById("lineTechSopEnglishButton")?.addEventListener("click", () => setLineTechLanguage("en"));
+      document.getElementById("lineTechSopSpanishButton")?.addEventListener("click", () => setLineTechLanguage("es"));
       document.getElementById("gettingStartedModal")?.addEventListener("click", (event) => {
         if (event.target.id === "gettingStartedModal") close();
       });

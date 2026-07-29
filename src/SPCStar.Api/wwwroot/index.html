@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260729-login-compact">
+  <link rel="stylesheet" href="/styles.css?v=20260729-login-brand-panel">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -23,9 +23,17 @@
     </section>
 
     <section id="loginPanel" class="login-screen">
+      <div class="login-welcome" aria-label="Welcome to SPC-Star">
+        <img src="/spc-star-mark.svg" alt="" class="login-welcome-mark">
+        <div>
+          <p class="eyebrow">Welcome to</p>
+          <h1>SPC-Star</h1>
+          <p>Inspection control, traceability, and process visibility.</p>
+        </div>
+      </div>
+
       <form id="loginForm" class="panel login-card">
         <div class="panel-heading">
-          <p class="eyebrow">SPC Star</p>
           <h2>Sign In</h2>
           <p>Inspection Console</p>
         </div>

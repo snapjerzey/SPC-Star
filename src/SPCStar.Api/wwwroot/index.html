@@ -32,8 +32,11 @@
         </div>
         <div class="login-start-card">
           <h2>Getting Started</h2>
-          <p>New to SPC-Star? Review the operator quick SOP before signing in.</p>
-          <button id="showGettingStartedButton" type="button" class="secondary">Review SOP</button>
+          <p>Review the quick SOP for your role before signing in.</p>
+          <div class="login-sop-actions">
+            <button id="showGettingStartedButton" type="button" class="secondary">Operator SOP</button>
+            <button id="showLineTechSopButton" type="button" class="secondary">Line Tech SOP</button>
+          </div>
         </div>
       </div>
 
@@ -982,6 +985,107 @@
       </div>
     </div>
   </section>
+  <section id="lineTechSopModal" class="modal-backdrop hidden">
+    <div class="panel app-modal">
+      <div class="panel-heading horizontal">
+        <div>
+          <h2>SPC-Star Line Tech Quick SOP</h2>
+          <p>Production support and lockout response guide</p>
+        </div>
+        <button id="closeLineTechSopButton" type="button" class="secondary compact-button">Close</button>
+      </div>
+      <div class="sop-body">
+        <h3>Purpose</h3>
+        <p>This SOP explains how line techs should use SPC-Star to support production inspections, respond to lockouts, document issues, and help maintain inspection traceability.</p>
+
+        <h3>Scope</h3>
+        <p>This applies to line techs using SPC-Star while supporting startup, setup, in-process, spool, material change, troubleshooting, and corrective action activities.</p>
+
+        <h3>1. Log in</h3>
+        <ol>
+          <li>Open SPC-Star.</li>
+          <li>Enter your username.</li>
+          <li>Enter your password.</li>
+          <li>Select your correct shift.</li>
+          <li>Click Sign In.</li>
+        </ol>
+        <p>Line techs may perform operator-level inspections when assigned, and may also clear certain inspection lockouts when authorized.</p>
+
+        <h3>2. Support job startup and setup</h3>
+        <ol>
+          <li>Confirm the operator selected the correct job number.</li>
+          <li>Confirm the correct machine is selected.</li>
+          <li>Confirm the correct part number is entered or scanned.</li>
+          <li>Confirm the correct operation and inspection phase are selected.</li>
+          <li>Confirm required job data is complete before inspections continue.</li>
+        </ol>
+        <p>If anything does not match the job paperwork or inspection plan, stop and resolve the mismatch before production continues.</p>
+
+        <h3>3. Perform inspections when needed</h3>
+        <p>Line techs may enter inspection results when running a machine, covering for an operator, or assisting production.</p>
+        <ol>
+          <li>Use the correct inspection phase.</li>
+          <li>Follow the listed sample size.</li>
+          <li>Use the tool or inspection method shown in SPC-Star.</li>
+          <li>Enter measured variables exactly as read.</li>
+          <li>Enter accept/reject attributes accurately.</li>
+          <li>Do not skip required fields.</li>
+        </ol>
+        <p>All entries made under your login are traceable to you.</p>
+
+        <h3>4. Respond to lockouts</h3>
+        <p>SPC-Star may lock an inspection when a result is out of specification, an attribute is rejected, or process drift is detected.</p>
+        <ol>
+          <li>Review the lockout message.</li>
+          <li>Identify which variable or attribute caused the lock.</li>
+          <li>Determine whether the issue is related to machine, tooling, material, user error, measurement method, process drift, or another cause.</li>
+          <li>Inspect the part, machine, tooling, material, and measurement method as needed.</li>
+          <li>Do not clear the lock until the issue has been reviewed and a corrective action has been taken.</li>
+        </ol>
+
+        <h3>5. Clear a lockout</h3>
+        <p>Only clear a lockout when the issue has been reviewed and production can safely continue.</p>
+        <ol>
+          <li>Enter your authorized username and password.</li>
+          <li>Select the correct cause category.</li>
+          <li>Enter clear cause details.</li>
+          <li>Enter the corrective action or solution.</li>
+          <li>Confirm the information is accurate.</li>
+          <li>Clear the lock.</li>
+        </ol>
+        <p>The lock-clear record becomes part of the job history. Do not enter vague notes such as fixed or ok. Explain what happened and what was done.</p>
+
+        <h3>6. Document corrective actions</h3>
+        <p>Use job notes to document anything important during the job, including machine adjustments, tooling changes, material concerns, inspection failures, process drift, measurement method concerns, repairs, troubleshooting steps, operator concerns, or supervisor/QA involvement.</p>
+        <p>Notes should be clear, factual, and useful to the next person reviewing the job.</p>
+
+        <h3>7. Material changes</h3>
+        <ol>
+          <li>Confirm the correct material is being used.</li>
+          <li>Confirm the new lot number is entered.</li>
+          <li>Verify that the change is documented in SPC-Star.</li>
+          <li>Add a job note if there was a material issue, concern, or unusual condition.</li>
+        </ol>
+        <p>Material change records help preserve traceability.</p>
+
+        <h3>8. Review job history</h3>
+        <p>Before clearing an issue or taking over a job, review the job history. Job history may include inspection entries, operator notes, line tech notes, lockouts, lock-clear actions, material changes, and edited inspection records.</p>
+        <p>Use the history to understand what has already happened before making adjustments or clearing locks.</p>
+
+        <h3>9. Escalate when needed</h3>
+        <p>Escalate to QA, supervision, or management if the same issue repeats, parts continue to trend toward a limit, the cause is unclear, a customer requirement may be affected, material traceability is questionable, inspection data appears incorrect, the inspection plan appears wrong, or you are unsure whether production should continue.</p>
+        <p>Do not clear a lockout just to keep production moving if the issue has not been understood.</p>
+
+        <h3>10. Sign out</h3>
+        <ol>
+          <li>Confirm required notes are entered.</li>
+          <li>Confirm any lockout actions are documented.</li>
+          <li>Sign out of SPC-Star.</li>
+        </ol>
+        <p>Always sign out so another user does not enter data under your name.</p>
+      </div>
+    </div>
+  </section>
   <section id="ruleDetailModal" class="modal-backdrop hidden">
     <div class="panel app-modal rule-detail-modal">
       <div class="panel-heading horizontal">
@@ -1029,6 +1133,8 @@
     (() => {
       const open = () => document.getElementById("gettingStartedModal")?.classList.remove("hidden");
       const close = () => document.getElementById("gettingStartedModal")?.classList.add("hidden");
+      const openLineTech = () => document.getElementById("lineTechSopModal")?.classList.remove("hidden");
+      const closeLineTech = () => document.getElementById("lineTechSopModal")?.classList.add("hidden");
       const setLanguage = (language) => {
         const showSpanish = language === "es";
         document.getElementById("sopEnglishBody")?.classList.toggle("hidden", showSpanish);
@@ -1037,11 +1143,16 @@
         document.getElementById("sopSpanishButton")?.classList.toggle("active", showSpanish);
       };
       document.getElementById("showGettingStartedButton")?.addEventListener("click", open);
+      document.getElementById("showLineTechSopButton")?.addEventListener("click", openLineTech);
       document.getElementById("closeGettingStartedButton")?.addEventListener("click", close);
+      document.getElementById("closeLineTechSopButton")?.addEventListener("click", closeLineTech);
       document.getElementById("sopEnglishButton")?.addEventListener("click", () => setLanguage("en"));
       document.getElementById("sopSpanishButton")?.addEventListener("click", () => setLanguage("es"));
       document.getElementById("gettingStartedModal")?.addEventListener("click", (event) => {
         if (event.target.id === "gettingStartedModal") close();
+      });
+      document.getElementById("lineTechSopModal")?.addEventListener("click", (event) => {
+        if (event.target.id === "lineTechSopModal") closeLineTech();
       });
     })();
   </script>

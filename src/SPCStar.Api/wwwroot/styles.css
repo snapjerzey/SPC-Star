@@ -170,18 +170,18 @@ hr {
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(340px, 390px);
-  align-items: center;
+  align-items: start;
   gap: 12px;
   justify-items: stretch;
 }
 
 .login-welcome {
-  min-height: 390px;
+  min-height: 0;
   display: grid;
-  align-content: center;
+  align-content: start;
   justify-items: start;
   gap: 18px;
-  padding: 30px;
+  padding: 26px;
   border: 1px solid rgba(148, 163, 184, .18);
   border-radius: 6px;
   background:
@@ -213,6 +213,30 @@ hr {
   color: #cbd5e1;
   font-size: 17px;
   line-height: 1.45;
+}
+
+.login-start-card {
+  width: 100%;
+  margin-top: 6px;
+  padding: 16px;
+  border: 1px solid rgba(203, 213, 225, .24);
+  border-radius: 6px;
+  background: rgba(248, 250, 252, .08);
+}
+
+.login-start-card h2 {
+  color: #f8fafc;
+  font-size: 18px;
+}
+
+.login-start-card p {
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.login-start-card button.secondary {
+  width: 100%;
+  background: rgba(248, 250, 252, .94);
 }
 
 .brand-mark {
@@ -909,10 +933,13 @@ textarea {
   padding: 18px;
   background: rgba(15, 23, 42, .48);
 }
-.rule-detail-modal {
+.app-modal {
   width: min(920px, 100%);
   max-height: 92vh;
   overflow: auto;
+}
+.rule-detail-modal {
+  width: min(920px, 100%);
 }
 .rule-detail-body {
   display: grid;
@@ -926,6 +953,18 @@ textarea {
 .rule-detail-body ul {
   margin: 0;
   padding-left: 18px;
+}
+.sop-body {
+  display: grid;
+  gap: 8px;
+  color: #344054;
+  line-height: 1.45;
+}
+.sop-body h3 {
+  margin: 8px 0 0;
+}
+.sop-body p {
+  margin-bottom: 2px;
 }
 .custom-rule-form {
   display: grid;

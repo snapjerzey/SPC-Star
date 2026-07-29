@@ -3467,6 +3467,14 @@ function closeRuleDetail() {
   $("ruleDetailModal").classList.add("hidden");
 }
 
+function openGettingStarted() {
+  $("gettingStartedModal").classList.remove("hidden");
+}
+
+function closeGettingStarted() {
+  $("gettingStartedModal").classList.add("hidden");
+}
+
 async function saveCustomRule(event) {
   event.preventDefault();
   try {
@@ -4009,6 +4017,13 @@ $("closeRuleDetailButton").addEventListener("click", closeRuleDetail);
 $("ruleDetailModal").addEventListener("click", (event) => {
   if (event.target.id === "ruleDetailModal") {
     closeRuleDetail();
+  }
+});
+$("showGettingStartedButton").addEventListener("click", openGettingStarted);
+$("closeGettingStartedButton").addEventListener("click", closeGettingStarted);
+$("gettingStartedModal").addEventListener("click", (event) => {
+  if (event.target.id === "gettingStartedModal") {
+    closeGettingStarted();
   }
 });
 $("customRuleForm").addEventListener("submit", saveCustomRule);

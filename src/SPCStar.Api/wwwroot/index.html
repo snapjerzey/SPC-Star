@@ -30,6 +30,11 @@
           <h1>SPC-Star</h1>
           <p>Inspection control, traceability, and process visibility.</p>
         </div>
+        <div class="login-start-card">
+          <h2>Getting Started</h2>
+          <p>New to SPC-Star? Review the operator quick SOP before signing in.</p>
+          <button id="showGettingStartedButton" type="button" class="secondary">Review SOP</button>
+        </div>
       </div>
 
       <form id="loginForm" class="panel login-card">
@@ -814,8 +819,35 @@
       </section>
     </section>
   </main>
+  <section id="gettingStartedModal" class="modal-backdrop hidden">
+    <div class="panel app-modal">
+      <div class="panel-heading horizontal">
+        <div>
+          <h2>SPC-Star Operator Quick SOP</h2>
+          <p>First-time operator guide</p>
+        </div>
+        <button id="closeGettingStartedButton" type="button" class="secondary compact-button">Close</button>
+      </div>
+      <div class="sop-body">
+        <h3>1. Sign in</h3>
+        <p>Enter your username and password, select the correct shift, then sign in.</p>
+        <h3>2. Load the job</h3>
+        <p>Enter the job number, select the machine, enter or scan the part number, then select the correct operation and inspection phase.</p>
+        <h3>3. Complete job data</h3>
+        <p>Fill in required job information such as lot, coil, wire shipment, serial, spool, or other fields shown for that part.</p>
+        <h3>4. Record inspections</h3>
+        <p>Enter measured values for variables and accept/reject results for attributes. Use the listed tool and required sample size.</p>
+        <h3>5. Respond to alerts</h3>
+        <p>If SPC-Star shows an out-of-spec, drift, or lockout alert, stop entering data and notify a line tech, QA, or supervisor.</p>
+        <h3>6. Add notes</h3>
+        <p>Use job notes for machine issues, tooling changes, material concerns, corrective actions, or anything unusual during the job.</p>
+        <h3>7. Sign out</h3>
+        <p>When finished, confirm your entries are complete, add any needed notes, and sign out so the next user does not enter data under your name.</p>
+      </div>
+    </div>
+  </section>
   <section id="ruleDetailModal" class="modal-backdrop hidden">
-    <div class="panel rule-detail-modal">
+    <div class="panel app-modal rule-detail-modal">
       <div class="panel-heading horizontal">
         <div>
           <h2 id="ruleDetailTitle">Rule Details</h2>

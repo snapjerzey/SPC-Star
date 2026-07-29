@@ -829,20 +829,78 @@
         <button id="closeGettingStartedButton" type="button" class="secondary compact-button">Close</button>
       </div>
       <div class="sop-body">
-        <h3>1. Sign in</h3>
-        <p>Enter your username and password, select the correct shift, then sign in.</p>
-        <h3>2. Load the job</h3>
-        <p>Enter the job number, select the machine, enter or scan the part number, then select the correct operation and inspection phase.</p>
-        <h3>3. Complete job data</h3>
-        <p>Fill in required job information such as lot, coil, wire shipment, serial, spool, or other fields shown for that part.</p>
-        <h3>4. Record inspections</h3>
-        <p>Enter measured values for variables and accept/reject results for attributes. Use the listed tool and required sample size.</p>
-        <h3>5. Respond to alerts</h3>
-        <p>If SPC-Star shows an out-of-spec, drift, or lockout alert, stop entering data and notify a line tech, QA, or supervisor.</p>
-        <h3>6. Add notes</h3>
-        <p>Use job notes for machine issues, tooling changes, material concerns, corrective actions, or anything unusual during the job.</p>
-        <h3>7. Sign out</h3>
-        <p>When finished, confirm your entries are complete, add any needed notes, and sign out so the next user does not enter data under your name.</p>
+        <h3>Purpose</h3>
+        <p>This SOP explains how operators should use SPC-Star to enter inspection results, record job information, and respond to inspection issues during production.</p>
+
+        <h3>Scope</h3>
+        <p>This applies to operators using SPC-Star during startup, setup, in-process, spool, or other assigned inspections.</p>
+
+        <h3>1. Log in</h3>
+        <ol>
+          <li>Open SPC-Star.</li>
+          <li>Enter your username.</li>
+          <li>Enter your password.</li>
+          <li>Select your correct shift.</li>
+          <li>Click Sign In.</li>
+        </ol>
+        <p>If you cannot log in, contact your line tech, QA, or supervisor.</p>
+
+        <h3>2. Start a job inspection</h3>
+        <ol>
+          <li>Enter the job number.</li>
+          <li>Select the machine you are running.</li>
+          <li>Enter or scan the part number.</li>
+          <li>Select the correct operation.</li>
+          <li>Select the correct inspection phase.</li>
+          <li>Click Load.</li>
+        </ol>
+        <p>SPC-Star will load the inspection items required for that part, operation, and inspection phase.</p>
+
+        <h3>3. Enter job data</h3>
+        <p>Complete any required job data fields shown on the screen. These may include lot numbers, coil numbers, wire shipment numbers, serial numbers, spool numbers, or other required job information.</p>
+        <p>Some job data may stay the same during the job. Update it when the material, coil, spool, lot, or required job information changes.</p>
+
+        <h3>4. Record measurements and attributes</h3>
+        <p>For measured variables, enter the required measurement in each field, use the correct gauge, tool, or inspection device listed, and follow the required sample size shown for that inspection item.</p>
+        <p>For accept/reject attributes, select or enter the required result and follow the listed inspection method and sample size.</p>
+        <p>Do not skip required fields. If a field is required, SPC-Star will not allow the inspection to continue until it is completed.</p>
+
+        <h3>5. Out-of-spec or process drift alerts</h3>
+        <p>If SPC-Star detects an out-of-spec result or process drift, the inspection may lock.</p>
+        <ol>
+          <li>Stop entering inspection data.</li>
+          <li>Notify a line tech, QA, or supervisor.</li>
+          <li>Do not continue production inspection entries until the issue is reviewed.</li>
+          <li>The authorized person must review the issue, enter the cause, enter the corrective action, and unlock the inspection.</li>
+        </ol>
+        <p>Do not attempt to bypass or ignore a lockout.</p>
+
+        <h3>6. Material changes</h3>
+        <ol>
+          <li>Enter the new material lot information in the material section.</li>
+          <li>Confirm the information is correct before continuing inspections.</li>
+          <li>Add a note if there was an issue, concern, or special circumstance related to the material change.</li>
+        </ol>
+
+        <h3>7. Job notes</h3>
+        <p>Use job notes to record important information that may help the next operator, line tech, QA, or supervisor.</p>
+        <p>Examples include machine issues, tooling changes, material concerns, inspection problems, corrective actions, setup concerns, or anything unusual during the job.</p>
+        <p>Notes should be clear, factual, and professional.</p>
+
+        <h3>8. Review job history</h3>
+        <p>The job history area shows inspection activity, notes, lock events, material changes, and other job records. Operators should review the history when taking over a job or when trying to understand recent issues.</p>
+
+        <h3>9. Sign out</h3>
+        <ol>
+          <li>Confirm your entries are complete.</li>
+          <li>Add any needed job notes.</li>
+          <li>Click Sign Out.</li>
+        </ol>
+        <p>Always sign out so the next user does not enter inspection data under your name.</p>
+
+        <h3>10. Questions or problems</h3>
+        <p>If SPC-Star does not load correctly, shows the wrong inspection items, rejects an entry, or displays information that does not match the inspection plan, notify a line tech, QA, or supervisor.</p>
+        <p>Do not guess or enter incorrect information to move forward.</p>
       </div>
     </div>
   </section>

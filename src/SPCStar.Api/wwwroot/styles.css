@@ -966,6 +966,13 @@ textarea {
 .sop-body p {
   margin-bottom: 2px;
 }
+.sop-body ol {
+  margin: 0 0 4px;
+  padding-left: 22px;
+}
+.sop-body li {
+  margin-bottom: 4px;
+}
 .custom-rule-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(180px, 1fr));

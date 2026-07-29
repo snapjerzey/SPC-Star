@@ -889,6 +889,17 @@
       <p id="customRuleMessage" class="message"></p>
     </div>
   </section>
-  <script src="/app.js?v=20260728-machine-devices"></script>
+  <script>
+    (() => {
+      const open = () => document.getElementById("gettingStartedModal")?.classList.remove("hidden");
+      const close = () => document.getElementById("gettingStartedModal")?.classList.add("hidden");
+      document.getElementById("showGettingStartedButton")?.addEventListener("click", open);
+      document.getElementById("closeGettingStartedButton")?.addEventListener("click", close);
+      document.getElementById("gettingStartedModal")?.addEventListener("click", (event) => {
+        if (event.target.id === "gettingStartedModal") close();
+      });
+    })();
+  </script>
+  <script src="/app.js?v=20260729-login-sop"></script>
 </body>
 </html>

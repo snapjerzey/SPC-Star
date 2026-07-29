@@ -3766,16 +3766,6 @@ async function importMachinesXlsx(event) {
   }
 }
 
-function loadMachineTemplate() {
-  $("machineTemplateText").value = [
-    "Machine ID,Description,Device Profile,Baud Rate",
-    "ETH-1,Needle Maker #1,Keyboard input,9600",
-    "GP-1,GRM 50 Hook Machine,Serial text gauge,9600"
-  ].join("\\n");
-  $("machineImportMessage").textContent = "Use these columns on an Excel sheet named SPC-Star Machine Import. Device settings are managed by machine.";
-  $("machineImportMessage").className = "message";
-}
-
 function optionalNumber(id) {
   const value = $(id).value.trim();
   return value ? Number(value) : null;
@@ -3927,7 +3917,6 @@ $("machineSetupForm").addEventListener("submit", saveMachine);
 $("newMachineButton").addEventListener("click", newMachine);
 $("deleteSelectedMachineButton").addEventListener("click", deleteSelectedMachine);
 $("machineImportForm").addEventListener("submit", importMachinesXlsx);
-$("machineTemplateButton").addEventListener("click", loadMachineTemplate);
 $("exportMachineTemplateButton").addEventListener("click", exportMachineTemplate);
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);

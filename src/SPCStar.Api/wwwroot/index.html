@@ -451,10 +451,8 @@
               <input id="machineImportFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
             </label>
             <button type="submit" class="secondary">Import Machines</button>
-            <button id="machineTemplateButton" type="button" class="secondary">Load Machine Template</button>
             <button id="exportMachineTemplateButton" type="button" class="secondary">Export Machines</button>
           </form>
-          <textarea id="machineTemplateText" class="template-preview" rows="3" spellcheck="false"></textarea>
           <div class="machine-admin-layout">
             <div>
               <div id="machineList" class="setup-list empty">No machines loaded.</div>
@@ -1241,6 +1239,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260729-setup-list-exports"></script>
+  <script src="/app.js?v=20260729-machine-import-export-cleanup"></script>
 </body>
 </html>

@@ -53,6 +53,23 @@ app.UseStaticFiles();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", app = "SPC Star" }));
 
+app.MapPost("/admin/backups", (BackupRequest request, HttpContext httpContext, IRepositoryPersistence persistence) =>
+{
+    var remoteAddress = httpContext.Connection.RemoteIpAddress;
+    if (remoteAddress is null || !System.Net.IPAddress.IsLoopback(remoteAddress))
+    {
+        return Results.NotFound();
+    }
+
+    if (string.IsNullOrWhiteSpace(request.BackupPath))
+    {
+        return Results.BadRequest(new { backedUp = false, errors = new[] { "Backup path is required." } });
+    }
+
+    persistence.BackupTo(request.BackupPath);
+    return Results.Ok(new { backedUp = true, backupPath = request.BackupPath });
+});
+
 app.MapPost("/auth/login", (LoginRequest request, AuthSessionService service) =>
 {
     var result = service.Login(request);
@@ -664,6 +681,8 @@ static IRepositoryPersistence CreateRepository(WebApplicationBuilder builder, st
 app.Run();
 
 public sealed record CsvImportRequest(string Csv);
+
+public sealed record BackupRequest(string BackupPath);
 
 public sealed record AlertOverrideApiRequest(
     string OverrideUserName,

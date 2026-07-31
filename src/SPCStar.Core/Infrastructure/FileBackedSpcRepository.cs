@@ -41,6 +41,18 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         File.Move(tempPath, StoragePath);
     }
 
+    public void BackupTo(string backupPath)
+    {
+        SaveChanges();
+        var directory = Path.GetDirectoryName(backupPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.Copy(StoragePath, backupPath, overwrite: true);
+    }
+
     private void Load()
     {
         if (!File.Exists(StoragePath))

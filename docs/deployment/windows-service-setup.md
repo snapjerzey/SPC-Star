@@ -64,6 +64,16 @@ sc.exe query "SPC-Star"
 
 The service can also be managed from Windows Services.
 
+## Back Up the Database
+
+Use SPC-Star's backup script from the project folder:
+
+```powershell
+.\deploy\backup-data.ps1 -InstallRoot "C:\SPC-Star"
+```
+
+When SPC-Star is running, the script uses the local server to create an online SQLite backup. Operators can remain logged in and continue working. The backup contains a consistent snapshot of all submitted/saved data up to the backup point.
+
 ## Update SPC-Star
 
 1. Stop the service.

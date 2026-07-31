@@ -164,4 +164,44 @@ public sealed class FileBackedSpcRepositoryTests
             }
         }
     }
+
+    [Fact]
+    public void SqliteBackupTo_CreatesReloadableBackup()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), $"spcstar-{Guid.NewGuid():N}.db");
+        var backupPath = Path.Combine(Path.GetTempPath(), $"spcstar-backup-{Guid.NewGuid():N}.db");
+        try
+        {
+            var repository = new SqliteBackedSpcRepository(storagePath);
+            SeedData.SeedAll(repository);
+            repository.Measurements.Add(new InspectionMeasurement
+            {
+                JobNum = "J200",
+                PartNum = "P200",
+                ProcessCode = "STAMP",
+                OperationSeq = 10,
+                ResourceId = "PRESS1",
+                CharacteristicName = "Width",
+                Value = 1.23m,
+                Timestamp = DateTimeOffset.Parse("2026-05-05T12:00:00Z"),
+                OperatorUserId = "operator1",
+                SubmittedAt = DateTimeOffset.Parse("2026-05-05T12:00:01Z")
+            });
+
+            repository.BackupTo(backupPath);
+
+            var reloaded = new SqliteBackedSpcRepository(backupPath);
+            Assert.Contains(reloaded.Measurements, measurement => measurement.JobNum == "J200" && measurement.Value == 1.23m);
+        }
+        finally
+        {
+            foreach (var path in new[] { storagePath, $"{storagePath}-wal", $"{storagePath}-shm", backupPath, $"{backupPath}-wal", $"{backupPath}-shm" })
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
+    }
 }

@@ -45,6 +45,10 @@ This stops the scheduled task, creates a database backup, publishes the newest a
 
 Backups are stored in `C:\SPCStar\backups`.
 
+When SPC-Star is running, the backup script asks the local SPC-Star server to create an online SQLite backup. Operators can stay logged in and continue submitting inspections while the backup is created. The backup captures a consistent snapshot of all data saved before the backup finishes; newer submissions continue into the live database and will be included in the next backup.
+
+If SPC-Star is stopped or unavailable, the script falls back to a direct file copy for offline recovery use.
+
 ## Notes
 
 - The scripts use a Windows Scheduled Task named `SPC-Star Server` so the app can start automatically.

@@ -7,6 +7,7 @@ namespace SPCStar.Core.Infrastructure;
 public sealed class SqliteBackedSpcRepository : InMemorySpcRepository, IRepositoryPersistence
 {
     private const int CurrentSchemaVersion = 1;
+    private readonly object sync = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false,
@@ -29,26 +30,32 @@ public sealed class SqliteBackedSpcRepository : InMemorySpcRepository, IReposito
 
     public void SaveChanges()
     {
-        var snapshot = RepositorySnapshot.FromRepository(this);
-        var json = JsonSerializer.Serialize(snapshot, JsonOptions);
+        lock (sync)
+        {
+            SaveChangesCore();
+        }
+    }
 
-        using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO repository_snapshots (id, schema_version, saved_at_utc, payload_json)
-            VALUES (1, $schemaVersion, $savedAtUtc, $payloadJson)
-            ON CONFLICT(id) DO UPDATE SET
-                schema_version = excluded.schema_version,
-                saved_at_utc = excluded.saved_at_utc,
-                payload_json = excluded.payload_json;
-            """;
-        command.Parameters.AddWithValue("$schemaVersion", CurrentSchemaVersion);
-        command.Parameters.AddWithValue("$savedAtUtc", DateTimeOffset.UtcNow.ToString("O"));
-        command.Parameters.AddWithValue("$payloadJson", json);
-        command.ExecuteNonQuery();
-        transaction.Commit();
+    public void BackupTo(string backupPath)
+    {
+        lock (sync)
+        {
+            SaveChangesCore();
+            var directory = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            using var source = OpenConnection();
+            using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = backupPath,
+                Pooling = false
+            }.ToString());
+            destination.Open();
+            source.BackupDatabase(destination);
+        }
     }
 
     private void Load()
@@ -100,6 +107,30 @@ public sealed class SqliteBackedSpcRepository : InMemorySpcRepository, IReposito
         var connection = new SqliteConnection(builder.ToString());
         connection.Open();
         return connection;
+    }
+
+    private void SaveChangesCore()
+    {
+        var snapshot = RepositorySnapshot.FromRepository(this);
+        var json = JsonSerializer.Serialize(snapshot, JsonOptions);
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO repository_snapshots (id, schema_version, saved_at_utc, payload_json)
+            VALUES (1, $schemaVersion, $savedAtUtc, $payloadJson)
+            ON CONFLICT(id) DO UPDATE SET
+                schema_version = excluded.schema_version,
+                saved_at_utc = excluded.saved_at_utc,
+                payload_json = excluded.payload_json;
+            """;
+        command.Parameters.AddWithValue("$schemaVersion", CurrentSchemaVersion);
+        command.Parameters.AddWithValue("$savedAtUtc", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$payloadJson", json);
+        command.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     private static void ExecuteNonQuery(SqliteConnection connection, string commandText)

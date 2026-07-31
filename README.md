@@ -186,6 +186,8 @@ The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\
 
 See `deploy/README.md` for the deployment workflow.
 
+For a production-style server install where SPC-Star keeps running after PowerShell closes and after the server user logs out, install it as a Windows Service. See `docs/deployment/windows-service-setup.md`.
+
 The API seeds demo security users and one sample inspection plan:
 
 - Users `operator1`, `linetech1`, `qa1`, `admin1`, and `god1`

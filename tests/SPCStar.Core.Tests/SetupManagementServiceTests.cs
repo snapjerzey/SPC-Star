@@ -78,6 +78,7 @@ public sealed class SetupManagementServiceTests
 
         Assert.StartsWith("UserName,TemporaryPassword,Role,Shift,Ethicon Taperpoint - Needles,Schneider", csv);
         var operatorRow = Assert.Single(rows, row => row["UserName"] == "Jsmith");
+        Assert.Equal("test", operatorRow["TemporaryPassword"]);
         Assert.Equal("Operator", operatorRow["Role"]);
         Assert.Equal("1st Shift", operatorRow["Shift"]);
         Assert.Equal("X", operatorRow["Schneider"]);

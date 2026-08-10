@@ -451,7 +451,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             {
                 var row = headers.ToDictionary(header => header, _ => "", StringComparer.OrdinalIgnoreCase);
                 row["UserName"] = user.UserName;
-                row["TemporaryPassword"] = "";
+                row["TemporaryPassword"] = "test";
                 row["Role"] = user.Roles.OrderBy(role => RoleSort(role.Name)).ThenBy(role => role.Name).FirstOrDefault()?.Name ?? "";
                 row["Shift"] = user.Shift;
                 foreach (var group in productGroups)

@@ -119,8 +119,11 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
                 row["Target"] = FormatDecimal(item.Spec?.Nominal);
                 row["Lower Spec"] = FormatDecimal(item.Spec?.Lsl);
                 row["Upper Spec"] = FormatDecimal(item.Spec?.Usl);
-                row["Lower Control"] = FormatDecimal(item.Control?.Lcl);
-                row["Upper Control"] = FormatDecimal(item.Control?.Ucl);
+                if (item.Control?.Lcl < item.Control?.Ucl)
+                {
+                    row["Lower Control"] = FormatDecimal(item.Control?.Lcl);
+                    row["Upper Control"] = FormatDecimal(item.Control?.Ucl);
+                }
             }
             else
             {

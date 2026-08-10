@@ -56,6 +56,23 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_DoesNotCreateControlLimitsForExactSpecVariables()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "Variable,P100,Widget,General,In Process,MOLD,,,,,Raw * Dim,Variable,0.029,0.029,0.029,,,in,3,Event,1,ToolChange,SpecLimitOnly,true,1",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Single(repository.SpecLimits);
+        Assert.Empty(repository.ControlLimits);
+    }
+
+    [Fact]
     public void ImportCsv_AllowsRecordOnlyVariablesWithoutSpecLimits()
     {
         var repository = new InMemorySpcRepository();

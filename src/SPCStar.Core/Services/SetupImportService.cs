@@ -908,8 +908,23 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         var nominal = decimal.Parse(row["Nominal"]);
-        var lcl = OptionalDecimal(row, "LCL", out var parsedLcl) && parsedLcl.HasValue ? parsedLcl.Value : decimal.Parse(row["LSL"]);
-        var ucl = OptionalDecimal(row, "UCL", out var parsedUcl) && parsedUcl.HasValue ? parsedUcl.Value : decimal.Parse(row["USL"]);
+        var hasExplicitLcl = OptionalDecimal(row, "LCL", out var parsedLcl) && parsedLcl.HasValue;
+        var hasExplicitUcl = OptionalDecimal(row, "UCL", out var parsedUcl) && parsedUcl.HasValue;
+        var specLsl = decimal.Parse(row["LSL"]);
+        var specUsl = decimal.Parse(row["USL"]);
+        var lcl = hasExplicitLcl ? parsedLcl!.Value : specLsl;
+        var ucl = hasExplicitUcl ? parsedUcl!.Value : specUsl;
+
+        if (lcl >= ucl)
+        {
+            repository.ControlLimits.RemoveAll(limit =>
+                limit.PartNum.Equals(part.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                limit.ProcessCode.Equals(process.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                limit.OperationSeq == operationSeq &&
+                limit.CharacteristicName.Equals(row["CharacteristicName"], StringComparison.OrdinalIgnoreCase));
+            return;
+        }
+
         var limit = repository.ControlLimits.FirstOrDefault(item =>
             item.PartNum.Equals(part.PartNum, StringComparison.OrdinalIgnoreCase) &&
             item.ProcessCode.Equals(process.ProcessCode, StringComparison.OrdinalIgnoreCase) &&

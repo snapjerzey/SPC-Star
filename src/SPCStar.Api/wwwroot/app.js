@@ -507,7 +507,27 @@ function renderLock(activeLock) {
   detail.textContent = lockText;
   panel.querySelector(".panel-heading").appendChild(detail);
   $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
-  $("godReasonLabel").classList.toggle("hidden", !state.user?.roles?.includes("GOD"));
+  updateGodReasonVisibility();
+}
+
+function overrideUserHasGodRole() {
+  const userName = $("overrideUserName").value.trim();
+  if (!userName) {
+    return false;
+  }
+
+  if (state.user?.userName?.toLowerCase() === userName.toLowerCase() &&
+    (state.user.roles || []).some((role) => role.toLowerCase() === "god")) {
+    return true;
+  }
+
+  return (state.users || []).some((user) =>
+    user.userName.toLowerCase() === userName.toLowerCase() &&
+    (user.roles || []).some((role) => role.toLowerCase() === "god"));
+}
+
+function updateGodReasonVisibility() {
+  $("godReasonLabel").classList.toggle("hidden", !overrideUserHasGodRole());
 }
 
 function renderVariables() {
@@ -4048,9 +4068,7 @@ $("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
 $("connectSerialDeviceButton").addEventListener("click", connectSerialDevice);
 $("disconnectSerialDeviceButton").addEventListener("click", disconnectSerialDevice);
-$("overrideUserName").addEventListener("input", () => {
-  $("godReasonLabel").classList.toggle("hidden", $("overrideUserName").value.trim().toLowerCase() !== "god1");
-});
+$("overrideUserName").addEventListener("input", updateGodReasonVisibility);
 $("trendCharacteristic").addEventListener("change", () => {
   state.trendCharacteristic = $("trendCharacteristic").value;
   loadTrend();

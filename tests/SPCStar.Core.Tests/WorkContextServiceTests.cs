@@ -12,6 +12,7 @@ public sealed class WorkContextServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
         SeedData.SeedSampleInspectionPlans(repository);
         repository.Measurements.Add(new InspectionMeasurement
         {

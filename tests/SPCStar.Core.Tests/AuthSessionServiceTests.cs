@@ -12,6 +12,7 @@ public sealed class AuthSessionServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         var service = new AuthSessionService(repository, new CredentialService(repository));
 
         var result = service.Login(new LoginRequest("qa1", "qa1"));
@@ -26,7 +27,7 @@ public sealed class AuthSessionServiceTests
         Assert.Contains("CanManageUsers", result.Value.Permissions);
         Assert.DoesNotContain("CanImportSetupData", result.Value.Permissions);
         Assert.DoesNotContain("CanUseGodMode", result.Value.Permissions);
-        Assert.Empty(result.Value.ProductGroups);
+        Assert.Contains("General", result.Value.ProductGroups);
         Assert.Equal("dev-session:qa1", result.Value.SessionToken);
     }
 
@@ -35,6 +36,7 @@ public sealed class AuthSessionServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         var service = new AuthSessionService(repository, new CredentialService(repository));
 
         var result = service.Login(new LoginRequest("qa1", "wrong"));
@@ -47,6 +49,7 @@ public sealed class AuthSessionServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         var service = new AuthSessionService(repository, new CredentialService(repository));
 
         var result = service.ChangePassword(new ChangePasswordRequest("qa1", "qa1", "test", "test"));
@@ -61,6 +64,7 @@ public sealed class AuthSessionServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         var service = new AuthSessionService(repository, new CredentialService(repository));
 
         var result = service.ChangePassword(new ChangePasswordRequest("qa1", "wrong", "test", "test"));
@@ -73,6 +77,7 @@ public sealed class AuthSessionServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         var service = new AuthSessionService(repository, new CredentialService(repository));
 
         var result = service.Login(new LoginRequest("linetech1", "linetech1"));
@@ -81,7 +86,7 @@ public sealed class AuthSessionServiceTests
         Assert.Contains("LineTech", result.Value!.Roles);
         Assert.Contains("CanEnterInspections", result.Value.Permissions);
         Assert.Contains("CanOverrideDriftLock", result.Value.Permissions);
-        Assert.Empty(result.Value.ProductGroups);
+        Assert.Contains("General", result.Value.ProductGroups);
     }
 
     [Fact]
@@ -100,6 +105,7 @@ public sealed class AuthSessionServiceTests
         });
 
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
 
         Assert.Contains(lineTech.Permissions, permission => permission == "CanEnterInspections");
         Assert.Contains(lineTech.Permissions, permission => permission == "CanOverrideDriftLock");
@@ -120,6 +126,7 @@ public sealed class AuthSessionServiceTests
         });
 
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
 
         Assert.DoesNotContain(repository.Roles, role => role.Name == "Admin");
         var user = Assert.Single(repository.Users, item => item.UserName == "oldadmin");

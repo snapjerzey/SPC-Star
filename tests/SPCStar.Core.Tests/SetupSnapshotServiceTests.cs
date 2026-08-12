@@ -11,6 +11,7 @@ public sealed class SetupSnapshotServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
         SeedData.SeedSampleInspectionPlans(repository);
 
         var snapshot = new SetupQueryService(repository)
@@ -26,7 +27,7 @@ public sealed class SetupSnapshotServiceTests
         Assert.Equal(3, snapshot.InspectionPlans.Count(plan => plan.PartNum == "P100" && plan.ProcessCode == "MOLD" && plan.OperationSeq == 10));
         Assert.Contains(snapshot.ControlLimits, limit => limit.ResourceIndependentKey() == "P100|MOLD|10|Diameter");
         Assert.Contains(snapshot.Jobs, job => job.JobNum == "J100");
-        Assert.Contains(snapshot.Resources, resource => resource.ResourceId == "PRESS1");
+        Assert.Empty(snapshot.Resources);
     }
 
     [Fact]
@@ -34,6 +35,7 @@ public sealed class SetupSnapshotServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
         SeedData.SeedSampleInspectionPlans(repository);
         var service = new SetupQueryService(repository);
         var before = service.GetSetupSnapshot();

@@ -15,6 +15,7 @@ public sealed class FileBackedSpcRepositoryTests
         {
             var repository = new FileBackedSpcRepository(storagePath);
             SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
             SeedData.SeedSampleInspectionPlans(repository);
             repository.Measurements.Add(new InspectionMeasurement
             {
@@ -92,6 +93,7 @@ public sealed class FileBackedSpcRepositoryTests
         {
             var repository = new SqliteBackedSpcRepository(storagePath);
             SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
             SeedData.SeedSampleInspectionPlans(repository);
             repository.Measurements.Add(new InspectionMeasurement
             {
@@ -174,6 +176,7 @@ public sealed class FileBackedSpcRepositoryTests
         {
             var repository = new SqliteBackedSpcRepository(storagePath);
             SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
             repository.Measurements.Add(new InspectionMeasurement
             {
                 JobNum = "J200",

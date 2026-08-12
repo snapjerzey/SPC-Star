@@ -39,17 +39,11 @@ public static class SeedData
             PermissionNames.CanUseGodMode);
 
         MigrateAdminRoleToQa(repository, qa);
-        AddDefaultUser(repository, "operator1", "operator1", operatorRole);
-        AddDefaultUser(repository, "linetech1", "linetech1", lineTech);
-        AddDefaultUser(repository, "qa1", "qa1", qa);
-        AddDefaultUser(repository, "god1", "god1", god);
+        AddDefaultUser(repository, "Archon", "archon", god);
     }
 
     public static void SeedSampleInspectionPlans(ISpcRepository repository)
     {
-        AddProductGroupToDemoUser(repository, "operator1", "General");
-        AddProductGroupToDemoUser(repository, "linetech1", "General");
-
         if (repository.Parts.Any(part => part.PartNum.Equals("P100", StringComparison.OrdinalIgnoreCase)))
         {
             return;
@@ -191,12 +185,4 @@ public static class SeedData
         });
     }
 
-    private static void AddProductGroupToDemoUser(ISpcRepository repository, string userName, string productGroup)
-    {
-        var user = repository.Users.FirstOrDefault(user => user.UserName.Equals(userName, StringComparison.OrdinalIgnoreCase));
-        if (user is not null && !user.ProductGroups.Contains(productGroup, StringComparer.OrdinalIgnoreCase))
-        {
-            user.ProductGroups.Add(productGroup);
-        }
-    }
 }

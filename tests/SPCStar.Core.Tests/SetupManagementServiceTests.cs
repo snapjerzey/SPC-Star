@@ -12,6 +12,7 @@ public sealed class SetupManagementServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         var service = new SetupManagementService(repository);
 
         var result = service.UpsertUser(new UpsertUserRequest("inspector2", "secret", [RoleNames.Operator], ["Needles"], "2nd Shift"));
@@ -28,6 +29,7 @@ public sealed class SetupManagementServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
         repository.Parts.Add(new Part { PartNum = "61135", Description = "Needle blank", ProductGroup = "Ethicon Taperpoint - Needles" });
         var service = new SetupManagementService(repository);
@@ -61,6 +63,7 @@ public sealed class SetupManagementServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
         repository.Parts.Add(new Part { PartNum = "61135", Description = "Needle blank", ProductGroup = "Ethicon Taperpoint - Needles" });
         var service = new SetupManagementService(repository);
@@ -122,6 +125,7 @@ public sealed class SetupManagementServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
         var service = new SetupManagementService(repository);
 
@@ -141,6 +145,7 @@ public sealed class SetupManagementServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         var service = new SetupManagementService(repository);
         Assert.True(service.UpsertUser(new UpsertUserRequest("inspector2", "secret", [RoleNames.Operator])).Succeeded);
 
@@ -157,7 +162,7 @@ public sealed class SetupManagementServiceTests
         SeedData.SeedSecurity(repository);
         var service = new SetupManagementService(repository);
 
-        var result = service.DeleteUser("god1");
+        var result = service.DeleteUser("Archon");
 
         Assert.False(result.Succeeded);
         Assert.Contains(result.Errors, error => error.Contains("GOD user", StringComparison.OrdinalIgnoreCase));
@@ -168,6 +173,7 @@ public sealed class SetupManagementServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         var service = new SetupManagementService(repository);
         var credentialService = new CredentialService(repository);
 

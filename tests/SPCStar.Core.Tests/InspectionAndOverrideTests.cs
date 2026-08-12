@@ -399,6 +399,7 @@ public sealed class InspectionAndOverrideTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         SeedData.SeedSampleInspectionPlans(repository);
         repository.ControlLimits.Add(new ControlLimitSet
         {

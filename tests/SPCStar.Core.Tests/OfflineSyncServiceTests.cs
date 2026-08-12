@@ -11,6 +11,7 @@ public sealed class OfflineSyncServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
         SeedData.SeedSampleInspectionPlans(repository);
         var service = SyncService(repository);
         var measurement = new InspectionMeasurementEntry(

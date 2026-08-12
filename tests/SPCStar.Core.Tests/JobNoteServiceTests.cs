@@ -11,6 +11,7 @@ public sealed class JobNoteServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
         SeedData.SeedSampleInspectionPlans(repository);
         var service = new JobNoteService(repository);
 
@@ -34,6 +35,7 @@ public sealed class JobNoteServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
         SeedData.SeedSampleInspectionPlans(repository);
         var service = new JobNoteService(repository);
         service.Add(new JobNoteEntry("J100", "P100", "PRESS1", "operator1", "First note", DateTimeOffset.Parse("2026-05-12T08:00:00Z")));
@@ -49,6 +51,7 @@ public sealed class JobNoteServiceTests
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
         SeedData.SeedSampleInspectionPlans(repository);
 
         var result = new JobNoteService(repository).Add(new JobNoteEntry("J100", "P100", "PRESS1", "operator1", " "));

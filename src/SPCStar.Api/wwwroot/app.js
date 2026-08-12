@@ -1738,7 +1738,7 @@ function hasPermission(permission) {
 }
 
 function canManageSetup() {
-  return canManageInspectionSetup() || canManageMachines() || canManageUsers() || canManageRules();
+  return canManageInspectionSetup() || canManageMachines() || canManageUsers() || canManageRules() || canArchiveData();
 }
 
 function canManageInspectionSetup() {
@@ -1761,6 +1761,10 @@ function canImportSetupData() {
   return hasPermission("CanImportSetupData");
 }
 
+function canArchiveData() {
+  return hasPermission("CanUseGodMode");
+}
+
 function canViewHistory() {
   return hasPermission("CanExportQAData") || canManageSetup();
 }
@@ -1775,16 +1779,17 @@ function setupSectionAccess(sectionName) {
     Machines: canManageMachines(),
     Users: canManageUsers(),
     Rules: canManageRules(),
-    History: canViewHistory()
+    History: canViewHistory(),
+    Archive: canArchiveData()
   }[sectionName] === true;
 }
 
 function defaultSetupSection() {
-  return ["Inspection", "Machines", "Users", "Rules", "History"].find(setupSectionAccess) || "History";
+  return ["Inspection", "Machines", "Users", "Rules", "History", "Archive"].find(setupSectionAccess) || "History";
 }
 
 function configureSetupAccess() {
-  ["Inspection", "Machines", "Users", "Rules", "History"].forEach((section) => {
+  ["Inspection", "Machines", "Users", "Rules", "History", "Archive"].forEach((section) => {
     $(`setup${section}SectionTab`).classList.toggle("hidden", !setupSectionAccess(section));
     $(`setup${section}Section`).classList.toggle("hidden", !setupSectionAccess(section));
   });
@@ -1815,7 +1820,7 @@ function showSetupSection(sectionName) {
     applyHistoryFilters();
   }
 
-  const sections = ["Inspection", "Machines", "Users", "Rules", "History"];
+  const sections = ["Inspection", "Machines", "Users", "Rules", "History", "Archive"];
   sections.forEach((section) => {
     $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
     $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
@@ -3996,6 +4001,95 @@ function exportUserTemplate() {
   window.open("/setup/users/export.csv", "_blank");
 }
 
+function archiveCutoffIso() {
+  const value = $("archiveCutoffDate").value;
+  return value ? new Date(`${value}T00:00:00`).toISOString() : "";
+}
+
+function archiveCountRows(counts) {
+  return [
+    ["Measurements", counts.measurements],
+    ["Edited measurements", counts.measurementEditAudits],
+    ["Job notes", counts.jobNotes],
+    ["Inspection completions", counts.jobPhaseCompletions],
+    ["Job data tags", counts.jobTags],
+    ["Locks", counts.alerts],
+    ["Rule violations", counts.ruleViolations],
+    ["Lock clear records", counts.alertOverrides],
+    ["Material changes", counts.materialChanges]
+  ];
+}
+
+function renderArchiveCounts(counts) {
+  $("archiveCounts").innerHTML = archiveCountRows(counts)
+    .map(([label, value]) => `<div class="archive-count-card"><span>${label}</span><strong>${value}</strong></div>`)
+    .join("");
+}
+
+async function previewArchive(event) {
+  event.preventDefault();
+  $("archiveMessage").textContent = "";
+  $("archiveMessage").className = "message";
+  $("archiveResultPanel").classList.add("hidden");
+  try {
+    const cutoffDate = archiveCutoffIso();
+    if (!cutoffDate) {
+      throw new Error("Archive cutoff date is required.");
+    }
+
+    const preview = await api("/setup/archive/preview", {
+      method: "POST",
+      body: JSON.stringify({ cutoffDate })
+    });
+    renderArchiveCounts(preview.counts);
+    $("archivePreviewPanel").classList.remove("hidden");
+    $("archiveWarning").textContent = preview.activeLocksBeforeCutoff > 0
+      ? `${preview.activeLocksBeforeCutoff} active lock(s) exist before this cutoff. Clear those locks before archiving.`
+      : "Review these counts before creating the archive. This will remove matching records from the live database after the archive file is written.";
+    $("archiveWarning").className = preview.activeLocksBeforeCutoff > 0 ? "message error" : "message";
+  } catch (error) {
+    $("archivePreviewPanel").classList.add("hidden");
+    $("archiveMessage").textContent = readableError(error);
+    $("archiveMessage").className = "message error";
+  }
+}
+
+async function createArchive() {
+  const button = $("createArchiveButton");
+  button.disabled = true;
+  $("archiveMessage").textContent = "Creating archive...";
+  $("archiveMessage").className = "message";
+  try {
+    const result = await api("/setup/archive", {
+      method: "POST",
+      body: JSON.stringify({
+        cutoffDate: archiveCutoffIso(),
+        archiveUserName: $("archiveUserName").value.trim(),
+        archivePassword: $("archivePassword").value,
+        confirmationText: $("archiveConfirmationText").value.trim()
+      })
+    });
+    renderArchiveCounts(result.counts);
+    $("archiveMessage").textContent = "Archive created and live records were removed.";
+    $("archiveMessage").className = "message ok";
+    $("archivePassword").value = "";
+    $("archiveConfirmationText").value = "";
+    $("archiveResultPanel").classList.remove("hidden");
+    $("archiveResultPanel").innerHTML = `
+      <h3>Archive File</h3>
+      <p><strong>${escapeHtml(result.archiveFileName)}</strong></p>
+      <p>${escapeHtml(result.archivePath)}</p>
+      <a class="secondary archive-download-link" href="${result.downloadPath}" download>Download archive file</a>
+    `;
+    await loadSnapshot();
+  } catch (error) {
+    $("archiveMessage").textContent = readableError(error);
+    $("archiveMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function parseCommaList(value) {
   return value
     .split(",")
@@ -4109,6 +4203,7 @@ $("setupMachinesSectionTab").addEventListener("click", async () => {
 $("setupUsersSectionTab").addEventListener("click", () => showSetupSection("Users"));
 $("setupRulesSectionTab").addEventListener("click", () => showSetupSection("Rules"));
 $("setupHistorySectionTab").addEventListener("click", () => showSetupSection("History"));
+$("setupArchiveSectionTab").addEventListener("click", () => showSetupSection("Archive"));
 $("historyLedgerTab").addEventListener("click", () => showHistoryView("Ledger"));
 $("historyChartsTab").addEventListener("click", () => showHistoryView("Charts"));
 $("historyIssuesTab").addEventListener("click", () => showHistoryView("Issues"));
@@ -4121,6 +4216,8 @@ $("exportMachineTemplateButton").addEventListener("click", exportMachineTemplate
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
 $("exportUserTemplateButton").addEventListener("click", exportUserTemplate);
+$("archivePreviewForm").addEventListener("submit", previewArchive);
+$("createArchiveButton").addEventListener("click", createArchive);
 $("newUserButton").addEventListener("click", newUser);
 $("resetSelectedUserPasswordButton").addEventListener("click", () => resetUserPassword(state.selectedUserName));
 $("deleteSelectedUserButton").addEventListener("click", () => deleteUser(state.selectedUserName));

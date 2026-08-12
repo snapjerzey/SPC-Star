@@ -1611,6 +1611,50 @@ textarea {
 .empty, .message { color: var(--muted); }
 .message.error { color: var(--danger); font-weight: 700; }
 .message.ok { color: var(--ok); font-weight: 700; }
+.archive-form {
+  max-width: 480px;
+}
+.archive-preview-panel,
+.archive-result-panel {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 16px;
+  margin-top: 14px;
+  background: #fbfdff;
+}
+.archive-count-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.archive-count-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: #ffffff;
+}
+.archive-count-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.archive-count-card strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 22px;
+}
+.archive-confirm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+}
+.archive-confirm-grid button {
+  min-height: 48px;
+}
 .hidden { display: none; }
 
 @media (max-width: 700px) {
@@ -1660,7 +1704,7 @@ textarea {
   .status-row { justify-content: flex-start; }
   .job-data-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .job-data-form button { grid-column: span 2; }
-  .form-grid, .measurement-form, .device-controls, .override-form, .job-summary-form, .top-issues-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .machine-admin-layout, .user-detail-grid, .global-rule-form, .capability-threshold-form, .material-form, .material-field-row { grid-template-columns: 1fr; }
+  .form-grid, .measurement-form, .device-controls, .override-form, .job-summary-form, .top-issues-form, .report-filter-form, .review-filter-bar, .timing-fields, .edit-setup-fields, .user-admin-layout, .machine-admin-layout, .user-detail-grid, .global-rule-form, .capability-threshold-form, .material-form, .material-field-row, .archive-confirm-grid, .archive-count-grid { grid-template-columns: 1fr; }
   .top-issues-form button { grid-column: auto; }
   .material-field-row h3 { grid-column: auto; }
   .report-filter-form button { grid-column: auto; }

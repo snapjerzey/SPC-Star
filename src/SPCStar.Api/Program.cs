@@ -42,6 +42,11 @@ builder.Services.AddSingleton<OfflineSyncService>();
 builder.Services.AddSingleton<AuthSessionService>();
 builder.Services.AddSingleton<WorkContextService>();
 builder.Services.AddSingleton<JobReviewService>();
+builder.Services.AddSingleton(provider => new ArchiveService(
+    provider.GetRequiredService<ISpcRepository>(),
+    provider.GetRequiredService<CredentialService>(),
+    provider.GetRequiredService<PermissionService>(),
+    Path.Combine(projectRoot, ".appdata", "archives")));
 
 var app = builder.Build();
 
@@ -68,6 +73,35 @@ app.MapPost("/admin/backups", (BackupRequest request, HttpContext httpContext, I
 
     persistence.BackupTo(request.BackupPath);
     return Results.Ok(new { backedUp = true, backupPath = request.BackupPath });
+});
+
+app.MapPost("/setup/archive/preview", (ArchivePreviewRequest request, ArchiveService service) =>
+{
+    return Results.Ok(service.Preview(request));
+});
+
+app.MapPost("/setup/archive", (CreateArchiveRequest request, ArchiveService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.Create(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { archived = false, errors = result.Errors });
+});
+
+app.MapGet("/setup/archive/files/{fileName}", (string fileName, ArchiveService service) =>
+{
+    var archivePath = service.ArchivePathFor(fileName);
+    if (!System.IO.File.Exists(archivePath))
+    {
+        return Results.NotFound();
+    }
+
+    return Results.File(archivePath, "application/json", Path.GetFileName(archivePath));
 });
 
 app.MapPost("/auth/login", (LoginRequest request, AuthSessionService service) =>

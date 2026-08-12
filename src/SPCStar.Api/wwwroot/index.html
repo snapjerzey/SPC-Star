@@ -266,6 +266,7 @@
         <button id="setupMachinesSectionTab" type="button" class="setup-nav-button">Machines</button>
         <button id="setupRulesSectionTab" type="button" class="setup-nav-button">Rules</button>
         <button id="setupHistorySectionTab" type="button" class="setup-nav-button">History</button>
+        <button id="setupArchiveSectionTab" type="button" class="setup-nav-button">Archive</button>
       </div>
 
       <section id="setupInspectionSection" class="setup-section">
@@ -800,6 +801,46 @@
             <p id="topIssuesMessage" class="message"></p>
             <div id="topIssuesList" class="data-table empty">Run a top issues report to see repeat out-of-spec, drift, and rejected-attribute events.</div>
           </section>
+        </section>
+      </section>
+
+      <section id="setupArchiveSection" class="setup-section hidden">
+        <section class="panel">
+          <div class="panel-heading horizontal">
+            <div>
+              <h2>Archive</h2>
+              <p>Create a long-term archive file for records before a cutoff date, then remove those records from the live database.</p>
+            </div>
+          </div>
+          <form id="archivePreviewForm" class="stacked-form compact-form archive-form">
+            <label>
+              Archive records before
+              <input id="archiveCutoffDate" type="date" required>
+            </label>
+            <button type="submit" class="secondary">Preview Archive</button>
+          </form>
+          <div id="archivePreviewPanel" class="archive-preview-panel hidden">
+            <h3>Archive Preview</h3>
+            <div id="archiveCounts" class="archive-count-grid"></div>
+            <p id="archiveWarning" class="message"></p>
+            <div class="archive-confirm-grid">
+              <label>
+                GOD user
+                <input id="archiveUserName" autocomplete="off" autocapitalize="none" spellcheck="false">
+              </label>
+              <label>
+                GOD password
+                <input id="archivePassword" type="password" autocomplete="off">
+              </label>
+              <label>
+                Type ARCHIVE
+                <input id="archiveConfirmationText" autocomplete="off" autocapitalize="characters" spellcheck="false">
+              </label>
+              <button id="createArchiveButton" type="button" class="danger-button">Create Archive</button>
+            </div>
+          </div>
+          <p id="archiveMessage" class="message"></p>
+          <div id="archiveResultPanel" class="archive-result-panel hidden"></div>
         </section>
       </section>
     </section>
@@ -1410,6 +1451,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260812-login-field-reset"></script>
+  <script src="/app.js?v=20260812-archive-tab"></script>
 </body>
 </html>

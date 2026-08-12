@@ -195,7 +195,7 @@ http://SERVER-NAME:5000/
 
 The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar.db`, keep archive files at `C:\SPCStar\data\archives`, keep backups in `C:\SPCStar\backups`, and create Windows Scheduled Tasks named `SPC-Star Server` and `SPC-Star Daily Backup`.
 
-See `deploy/README.md` for the deployment workflow.
+See `deploy/README.md` for the deployment workflow and `deploy/IT-SERVER-REFERENCE.md` for the IT handoff covering scheduled tasks, backups, restore, archive folders, and health checks.
 
 For a production-style server install where SPC-Star keeps running after PowerShell closes and after the server user logs out, install it as a Windows Service. See `docs/deployment/windows-service-setup.md`.
 

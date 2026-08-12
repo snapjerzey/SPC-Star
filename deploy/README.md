@@ -2,6 +2,8 @@
 
 This folder contains the local-network deployment scripts for SPC-Star.
 
+For a detailed IT handoff covering scheduled tasks, backups, restore, archive folders, and health checks, see `deploy/IT-SERVER-REFERENCE.md`.
+
 Recommended server layout:
 
 - `C:\SPCStar\app` - published SPC-Star application files
@@ -28,7 +30,7 @@ The install creates two Windows Scheduled Tasks:
 To choose a different daily backup time:
 
 ```powershell
-.\deploy\install-server.ps1 -BackupTime "23:30"
+.\deploy\install-server.ps1 -BackupTime "03:00"
 ```
 
 Default local network URL:

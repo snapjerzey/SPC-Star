@@ -331,6 +331,62 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_ReimportingWorkbookUpdatesExistingSetupWithoutDuplicates()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "PartNum", "PartDescription", "ProductGroup", "Operation",
+            "MaterialRole", "MaterialPartNum", "MaterialDescription", "RequiresLotEntry",
+            "ParameterSeq", "InspectionParameter", "Attribute/Variable", "EntryType", "RequirementText", "Tool Used",
+            "LowerSpec", "UpperSpec", "NominalSpec", "UOM",
+            "SetupRequired", "SetupSampleSize", "InProcessRequired", "InProcessSampleSize", "InProcessFrequencyQty", "InProcessFrequencyUnit"
+        };
+        string Row(params (string Field, string Value)[] values)
+        {
+            var row = header.ToDictionary(field => field, _ => "", StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, value) in values)
+            {
+                row[field] = value;
+            }
+
+            return string.Join(",", header.Select(field => row[field]));
+        }
+
+        var firstImport = string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("RecordType", "PART"), ("PartNum", "70305"), ("PartDescription", "Original Jaw Assy"), ("ProductGroup", "Schneider"), ("Operation", "General Production")),
+            Row(("RecordType", "MATERIAL"), ("PartNum", "70305"), ("PartDescription", "Original Jaw Assy"), ("ProductGroup", "Schneider"), ("Operation", "General Production"), ("MaterialRole", "Copper"), ("MaterialPartNum", "51475"), ("MaterialDescription", "Copper"), ("RequiresLotEntry", "Y")),
+            Row(("RecordType", "JOBDATA"), ("PartNum", "70305"), ("PartDescription", "Original Jaw Assy"), ("ProductGroup", "Schneider"), ("Operation", "General Production"), ("ParameterSeq", "1"), ("InspectionParameter", "Lot #"), ("SetupRequired", "Y")),
+            Row(("RecordType", "INSPECTION"), ("PartNum", "70305"), ("PartDescription", "Original Jaw Assy"), ("ProductGroup", "Schneider"), ("Operation", "General Production"), ("ParameterSeq", "2"), ("InspectionParameter", "Material Thickness"), ("Attribute/Variable", "Variable"), ("EntryType", "Actual measurement"), ("RequirementText", ".050 +/- .001"), ("Tool Used", "Micrometer"), ("LowerSpec", ".049"), ("UpperSpec", ".051"), ("NominalSpec", ".050"), ("UOM", "in"), ("SetupRequired", "Y"), ("SetupSampleSize", "2"), ("InProcessRequired", "Y"), ("InProcessSampleSize", "3"), ("InProcessFrequencyQty", "5000"), ("InProcessFrequencyUnit", "Pieces"))
+        ]);
+        var secondImport = string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("RecordType", "PART"), ("PartNum", "70305"), ("PartDescription", "Updated Jaw Assy"), ("ProductGroup", "Schneider"), ("Operation", "General Production")),
+            Row(("RecordType", "MATERIAL"), ("PartNum", "70305"), ("PartDescription", "Updated Jaw Assy"), ("ProductGroup", "Schneider"), ("Operation", "General Production"), ("MaterialRole", "Copper"), ("MaterialPartNum", "51475-A"), ("MaterialDescription", "Copper Updated"), ("RequiresLotEntry", "Y")),
+            Row(("RecordType", "JOBDATA"), ("PartNum", "70305"), ("PartDescription", "Updated Jaw Assy"), ("ProductGroup", "Schneider"), ("Operation", "General Production"), ("ParameterSeq", "1"), ("InspectionParameter", "Lot #"), ("SetupRequired", "Y")),
+            Row(("RecordType", "INSPECTION"), ("PartNum", "70305"), ("PartDescription", "Updated Jaw Assy"), ("ProductGroup", "Schneider"), ("Operation", "General Production"), ("ParameterSeq", "2"), ("InspectionParameter", "Material Thickness"), ("Attribute/Variable", "Variable"), ("EntryType", "Actual measurement"), ("RequirementText", ".050 +/- .001"), ("Tool Used", "Micrometer"), ("LowerSpec", ".048"), ("UpperSpec", ".052"), ("NominalSpec", ".050"), ("UOM", "in"), ("SetupRequired", "Y"), ("SetupSampleSize", "4"), ("InProcessRequired", "Y"), ("InProcessSampleSize", "5"), ("InProcessFrequencyQty", "7500"), ("InProcessFrequencyUnit", "Pieces"))
+        ]);
+
+        Assert.True(service.ImportCsv(firstImport).Succeeded);
+        var result = service.ImportCsv(secondImport);
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Single(repository.Parts);
+        Assert.Single(repository.PartMaterialFields);
+        Assert.Single(repository.PartJobDataFields);
+        Assert.Single(repository.Characteristics);
+        Assert.Equal(2, repository.InspectionPlans.Count);
+        Assert.Single(repository.SpecLimits);
+        Assert.Single(repository.ControlLimits);
+        Assert.Equal("Updated Jaw Assy", repository.Parts.Single().Description);
+        Assert.Equal("51475-A", repository.PartMaterialFields.Single().MaterialPartNum);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.SampleSize == 4);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "In Process" && plan.SampleSize == 5 && plan.Frequency.Value == 7500);
+    }
+
+    [Fact]
     public void ImportCsv_ImportsJobDataFromUniversalTemplateRows()
     {
         var repository = new InMemorySpcRepository();

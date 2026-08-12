@@ -550,7 +550,11 @@ function overrideUserHasGodRole() {
 }
 
 function updateGodReasonVisibility() {
-  $("godReasonLabel").classList.toggle("hidden", !overrideUserHasGodRole());
+  const isGodOverride = overrideUserHasGodRole();
+  $("godReasonLabel").classList.toggle("hidden", !isGodOverride);
+  $("causeCategoryLabel").classList.toggle("hidden", isGodOverride);
+  $("causeTextLabel").classList.toggle("hidden", isGodOverride);
+  $("solutionTextLabel").classList.toggle("hidden", isGodOverride);
 }
 
 function renderVariables() {
@@ -1730,14 +1734,15 @@ async function clearLock(event) {
   }
 
   try {
+    const isGodOverride = overrideUserHasGodRole();
     await api(`/alerts/${state.activeLock.alertId}/override`, {
       method: "POST",
       body: JSON.stringify({
         overrideUserName: $("overrideUserName").value.trim(),
         overridePassword: $("overridePassword").value,
-        causeCategory: $("causeCategory").value,
-        causeText: $("causeText").value.trim(),
-        solutionText: $("solutionText").value.trim(),
+        causeCategory: isGodOverride ? "Unspecified" : $("causeCategory").value,
+        causeText: isGodOverride ? "" : $("causeText").value.trim(),
+        solutionText: isGodOverride ? "" : $("solutionText").value.trim(),
         whyStandardProcessWasBypassed: $("bypassReason").value.trim() || null,
         unlockedAt: new Date().toISOString()
       })

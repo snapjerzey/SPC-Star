@@ -361,6 +361,22 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void Override_AllowsGodBypassWithoutCauseOrSolution()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var service = OverrideService(repository);
+
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "", "", "Architect-approved bypass for test entry.", DateTimeOffset.UtcNow));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(AlertStatus.Overridden, alert.Status);
+        Assert.Equal(RoleNames.GOD, result.Value!.OverrideRole);
+        Assert.Equal("GOD Bypass", result.Value.CauseCategory);
+        Assert.Equal("Architect-approved bypass for test entry.", result.Value.WhyStandardProcessWasBypassed);
+    }
+
+    [Fact]
     public void Override_RejectsInvalidCredentials()
     {
         var repository = RepositoryWithSecurityAndLimits();

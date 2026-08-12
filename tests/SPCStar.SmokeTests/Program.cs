@@ -16,6 +16,7 @@ var tests = new (string Name, Action Run)[]
     ("override allows QA", OverrideAllowsQa),
     ("override rejects bad credentials", OverrideRejectsBadCredentials),
     ("GOD override requires bypass reason", GodOverrideRequiresBypassReason),
+    ("GOD override allows bypass reason only", GodOverrideAllowsBypassReasonOnly),
     ("QA export requires characteristic", QaExportRequiresCharacteristic),
     ("QA export calculates summary CSV", QaExportCalculatesSummaryCsv),
     ("material change validates required fields", MaterialChangeValidatesRequiredFields),
@@ -215,6 +216,17 @@ static void GodOverrideRequiresBypassReason()
     var result = OverrideService(repository)
         .Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "Emergency", "Released", null, DateTimeOffset.UtcNow));
     AssertFalse(result.Succeeded);
+}
+
+static void GodOverrideAllowsBypassReasonOnly()
+{
+    var repository = RepositoryWithSecurityAndLimits();
+    var alert = AddAlert(repository);
+    var result = OverrideService(repository)
+        .Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "", "", "Architect-approved bypass.", DateTimeOffset.UtcNow));
+    AssertTrue(result.Succeeded);
+    AssertEqual(AlertStatus.Overridden, alert.Status);
+    AssertEqual("GOD Bypass", result.Value!.CauseCategory);
 }
 
 static void QaExportRequiresCharacteristic()

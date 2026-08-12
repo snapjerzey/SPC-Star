@@ -51,24 +51,25 @@ public sealed class AlertOverrideService(
         }
 
         var overrideRole = permissionService.HighestOverrideRole(request.OverrideUserName);
+        var isGodOverride = overrideRole == RoleNames.GOD;
         if (!IsSupportedCauseCategory(request.CauseCategory))
         {
             return ServiceResult<AlertOverride>.Fail("CauseCategory is not supported.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.CauseText))
+        if (isGodOverride && string.IsNullOrWhiteSpace(request.WhyStandardProcessWasBypassed))
+        {
+            return ServiceResult<AlertOverride>.Fail("WhyStandardProcessWasBypassed is required for GOD overrides.");
+        }
+
+        if (!isGodOverride && string.IsNullOrWhiteSpace(request.CauseText))
         {
             return ServiceResult<AlertOverride>.Fail("CauseText is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.SolutionText))
+        if (!isGodOverride && string.IsNullOrWhiteSpace(request.SolutionText))
         {
             return ServiceResult<AlertOverride>.Fail("SolutionText is required.");
-        }
-
-        if (overrideRole == RoleNames.GOD && string.IsNullOrWhiteSpace(request.WhyStandardProcessWasBypassed))
-        {
-            return ServiceResult<AlertOverride>.Fail("WhyStandardProcessWasBypassed is required for GOD overrides.");
         }
 
         var audit = new AlertOverride
@@ -84,9 +85,9 @@ public sealed class AlertOverrideService(
             ResourceId = alert.ResourceId,
             CharacteristicName = alert.CharacteristicName,
             RuleTriggered = alert.RuleTriggered,
-            CauseCategory = NormalizeCauseCategory(request.CauseCategory),
-            CauseText = request.CauseText.Trim(),
-            SolutionText = request.SolutionText.Trim(),
+            CauseCategory = isGodOverride ? "GOD Bypass" : NormalizeCauseCategory(request.CauseCategory),
+            CauseText = isGodOverride ? "Standard correction workflow bypassed by GOD access." : request.CauseText.Trim(),
+            SolutionText = isGodOverride ? "Bypass approved. See bypass reason." : request.SolutionText.Trim(),
             WhyStandardProcessWasBypassed = request.WhyStandardProcessWasBypassed?.Trim(),
             LockedAt = alert.LockedAt,
             UnlockedAt = request.UnlockedAt,

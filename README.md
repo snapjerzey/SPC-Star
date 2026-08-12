@@ -34,6 +34,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - History measurement highlighting: red for out-of-spec values and yellow for out-of-control values.
 - QA summary views and CSV export for one or more jobs, including mean, min, max, standard deviation, Cp, Cpk, Pp, and Ppk.
 - Raw inspection, alert, material, and job history CSV exports, with operator shift stamped on new inspection and alert rows for shift-based reporting.
+- GOD-only Archive tab for exporting old historical records to a JSON archive file before removing them from the live database.
 - USB keyboard-style measurement capture support for gauges/scales/calipers that enter values into focused fields, including value cleanup and Enter-to-next-field behavior.
 - Web Serial text-gauge capture for USB devices that expose serial readings instead of acting like a keyboard.
 - Offline-oriented setup snapshot and retry-safe sync contracts.
@@ -149,6 +150,9 @@ Initial endpoints include:
 - `POST /exports/drift-alerts.csv`
 - `POST /exports/material-changes.csv`
 - `POST /history/top-issues`
+- `POST /setup/archive/preview`
+- `POST /setup/archive`
+- `GET /setup/archive/files/{fileName}`
 - `POST /sync/offline-changes`
 - `GET /alerts/active`
 
@@ -188,17 +192,44 @@ See `deploy/README.md` for the deployment workflow.
 
 For a production-style server install where SPC-Star keeps running after PowerShell closes and after the server user logs out, install it as a Windows Service. See `docs/deployment/windows-service-setup.md`.
 
-The API seeds demo security users and one sample inspection plan:
+The API seeds one protected system manager account when the database is empty:
 
-- Users `operator1`, `linetech1`, `qa1`, `admin1`, and `god1`
-- Demo passwords match the usernames
-- Part `P100`
-- Process `MOLD`
-- Operation `10`
-- Characteristics `Diameter`, `Length`, and `Weight`
-- Diameter spec limits `4.5` to `5.5` mm
-- Diameter control limits `4.0` to `6.0`
-- Time frequency every `30` minutes
+- User `Archon`
+- Password `archon`
+- Role `GOD`
+
+There are no seeded operator, line tech, QA, or admin demo users in the production seed.
+
+## Archive Process
+
+SPC-Star includes a GOD-only `Setup > Archive` tab for long-term record retention and live database cleanup.
+
+Archive workflow:
+
+1. Open `Setup > Archive`.
+2. Select a cutoff date. Records before that date are eligible for archive.
+3. Click `Preview Archive` to review the record counts.
+4. Enter GOD credentials.
+5. Type `ARCHIVE` to confirm.
+6. Click `Create Archive`.
+
+The archive process writes a JSON file first, then removes matching records from the live database only after the file is created successfully. Archive files are stored in `.appdata/archives` for local development and under the server app data/archive location for deployed environments. The UI also provides a download link after the archive is created.
+
+Archived historical record types:
+
+- Inspection measurements
+- Measurement edit audit records
+- Job notes
+- Inspection phase completion records
+- Job data tag updates
+- Process locks / alerts
+- Drift rule violations
+- Lock clear / override records
+- Material lot change records
+
+Archive does not remove setup master data. Parts, inspection plans, users, roles, machines, rules, specifications, and control limits stay in the live system.
+
+Archive is blocked if active locks exist before the selected cutoff date. Those locks must be reviewed and cleared before the data can be archived.
 
 ## Current Data / Import Status
 

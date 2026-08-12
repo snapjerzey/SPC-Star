@@ -49,6 +49,14 @@ When SPC-Star is running, the backup script asks the local SPC-Star server to cr
 
 If SPC-Star is stopped or unavailable, the script falls back to a direct file copy for offline recovery use.
 
+## Archiving Old Records
+
+Use `Setup > Archive` inside SPC-Star when old historical records need to be removed from the live database for space management while keeping the seven-year record hold.
+
+Only GOD access can create an archive. The workflow previews record counts for a selected cutoff date, requires GOD credentials, requires typing `ARCHIVE`, writes a JSON archive file, and only then removes matching history records from the live database. Archive does not delete parts, inspection plans, users, machines, rules, specifications, or control limits.
+
+Archive files should be copied into the company's normal local retention location after creation.
+
 ## Notes
 
 - The scripts use a Windows Scheduled Task named `SPC-Star Server` so the app can start automatically.

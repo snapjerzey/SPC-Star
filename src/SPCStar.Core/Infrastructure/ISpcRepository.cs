@@ -19,6 +19,7 @@ public interface ISpcRepository
     List<InspectionMeasurement> Measurements { get; }
     List<MeasurementEditAudit> MeasurementEditAudits { get; }
     List<JobNote> JobNotes { get; }
+    List<JobPhaseCompletion> JobPhaseCompletions { get; }
     List<JobTag> JobTags { get; }
     List<PartJobDataField> PartJobDataFields { get; }
     List<PartMaterialField> PartMaterialFields { get; }

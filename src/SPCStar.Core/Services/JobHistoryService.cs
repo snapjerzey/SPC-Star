@@ -30,7 +30,10 @@ public sealed record JobHistoryEntryDto(
     decimal? OldValue = null,
     decimal? NewValue = null,
     string? OldInspectionPhase = null,
-    string? NewInspectionPhase = null);
+    string? NewInspectionPhase = null,
+    string? InspectionPhase = null,
+    string? ProcessCode = null,
+    int? OperationSeq = null);
 
 public sealed class JobHistoryService(ISpcRepository repository)
 {
@@ -101,6 +104,21 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 QuantityLoaded: change.QuantityLoaded,
                 Reason: change.Reason));
 
+        var phaseCompletions = repository.JobPhaseCompletions
+            .Where(completion => completion.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Select(completion => new JobHistoryEntryDto(
+                completion.Id,
+                "PhaseComplete",
+                completion.JobNum,
+                completion.PartNum,
+                completion.ResourceId,
+                completion.CompletedByUserId,
+                completion.OperatorShift,
+                completion.CompletedAt,
+                InspectionPhase: completion.InspectionPhase,
+                ProcessCode: completion.ProcessCode,
+                OperationSeq: completion.OperationSeq));
+
         var edits = repository.MeasurementEditAudits
             .Where(edit => edit.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
             .Select(edit => new JobHistoryEntryDto(
@@ -121,6 +139,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
         return notes
             .Concat(locks)
             .Concat(materialChanges)
+            .Concat(phaseCompletions)
             .Concat(edits)
             .OrderByDescending(entry => entry.Timestamp)
             .ToArray();

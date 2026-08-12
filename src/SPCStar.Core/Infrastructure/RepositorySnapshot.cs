@@ -18,6 +18,7 @@ internal sealed record RepositorySnapshot(
     List<InspectionMeasurement> Measurements,
     List<MeasurementEditAudit>? MeasurementEditAudits,
     List<JobNote>? JobNotes,
+    List<JobPhaseCompletion>? JobPhaseCompletions,
     List<JobTag>? JobTags,
     List<PartJobDataField>? PartJobDataFields,
     List<PartMaterialField>? PartMaterialFields,
@@ -45,6 +46,7 @@ internal sealed record RepositorySnapshot(
             [.. repository.Measurements],
             [.. repository.MeasurementEditAudits],
             [.. repository.JobNotes],
+            [.. repository.JobPhaseCompletions],
             [.. repository.JobTags],
             [.. repository.PartJobDataFields],
             [.. repository.PartMaterialFields],
@@ -78,6 +80,7 @@ internal sealed record RepositorySnapshot(
         repository.Measurements.AddRange(Measurements);
         repository.MeasurementEditAudits.AddRange(MeasurementEditAudits ?? []);
         repository.JobNotes.AddRange(JobNotes ?? []);
+        repository.JobPhaseCompletions.AddRange(JobPhaseCompletions ?? []);
         repository.JobTags.AddRange(JobTags ?? []);
         repository.PartJobDataFields.AddRange(PartJobDataFields ?? []);
         repository.PartMaterialFields.AddRange(PartMaterialFields ?? []);

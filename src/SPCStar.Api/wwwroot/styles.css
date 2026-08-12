@@ -1219,10 +1219,19 @@ textarea {
   border-left: 4px solid #0f63b8;
   padding-left: 6px;
 }
+.review-measurement-table .phase-complete-history-row {
+  background: #ecfdf3;
+  border-left: 4px solid var(--ok);
+  color: #075f3d;
+  padding-left: 6px;
+}
 .review-measurement-table .review-history-event-row span:nth-child(4) {
   color: #475467;
   font-weight: 500;
   line-height: 1.35;
+}
+.review-measurement-table .phase-complete-history-row span:nth-child(4) {
+  color: #075f3d;
 }
 .review-measurement-table .review-measurement-group-row {
   background: #ffffff;
@@ -1562,6 +1571,13 @@ textarea {
   background: #f6fef9;
 }
 .material-history-item .job-note-meta strong {
+  color: var(--ok);
+}
+.phase-complete-history-item {
+  border-color: #abefc6;
+  background: #ecfdf3;
+}
+.phase-complete-history-item .job-note-meta strong {
   color: var(--ok);
 }
 .job-note-meta {

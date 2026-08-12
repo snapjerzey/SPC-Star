@@ -19,6 +19,7 @@ public class InMemorySpcRepository : ISpcRepository
     public List<InspectionMeasurement> Measurements { get; } = [];
     public List<MeasurementEditAudit> MeasurementEditAudits { get; } = [];
     public List<JobNote> JobNotes { get; } = [];
+    public List<JobPhaseCompletion> JobPhaseCompletions { get; } = [];
     public List<JobTag> JobTags { get; } = [];
     public List<PartJobDataField> PartJobDataFields { get; } = [];
     public List<PartMaterialField> PartMaterialFields { get; } = [];

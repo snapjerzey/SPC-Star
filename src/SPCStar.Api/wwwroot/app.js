@@ -1544,7 +1544,7 @@ function renderHistoryList(list, entries) {
   list.innerHTML = "";
   entries.forEach((entry) => {
     const item = document.createElement("article");
-    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : entry.entryType === "Material" ? "material-history-item" : ""}`;
+    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : entry.entryType === "Material" ? "material-history-item" : entry.entryType === "PhaseComplete" ? "phase-complete-history-item" : ""}`;
     const meta = document.createElement("div");
     meta.className = "job-note-meta";
     const user = document.createElement("strong");
@@ -1556,6 +1556,8 @@ function renderHistoryList(list, entries) {
       text.textContent = lockHistoryText(entry);
     } else if (entry.entryType === "Material") {
       text.textContent = materialHistoryText(entry);
+    } else if (entry.entryType === "PhaseComplete") {
+      text.textContent = phaseCompletionHistoryText(entry);
     } else if (entry.entryType === "MeasurementEdit") {
       text.textContent = measurementEditHistoryText(entry);
     } else if (entry.entryType === "Measurement") {
@@ -1586,6 +1588,10 @@ function historyEntryTitle(entry) {
     return `Material ${entry.reason || "event"}`;
   }
 
+  if (entry.entryType === "PhaseComplete") {
+    return `${entry.inspectionPhase || "Inspection phase"} completed`;
+  }
+
   return entry.operatorUserId;
 }
 
@@ -1608,6 +1614,13 @@ function measurementHistoryText(entry) {
 
 function measurementEditHistoryText(entry) {
   return `Edited from ${entry.oldInspectionPhase}: ${formatNumber(entry.oldValue)} to ${entry.newInspectionPhase}: ${formatNumber(entry.newValue)} by ${entry.operatorUserId}.`;
+}
+
+function phaseCompletionHistoryText(entry) {
+  const operation = entry.processCode
+    ? ` Operation: ${entry.processCode}${entry.operationSeq ? ` ${entry.operationSeq}` : ""}.`
+    : "";
+  return `${entry.inspectionPhase || "Inspection phase"} completed by ${historyEntryUser(entry)}.${operation}`;
 }
 
 function lockHistoryText(entry) {
@@ -2163,14 +2176,16 @@ function renderReviewMeasurementDetail(container, groupId, measurement) {
 
 function renderReviewHistoryEvent(container, entry) {
   const item = document.createElement("div");
-  item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""}`;
+  item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""} ${entry.entryType === "PhaseComplete" ? "phase-complete-history-row" : ""}`;
   const details = entry.entryType === "Lock"
     ? lockHistoryText(entry)
     : entry.entryType === "Material"
       ? materialHistoryText(entry)
-      : entry.entryType === "MeasurementEdit"
-        ? measurementEditHistoryText(entry)
-        : entry.noteText;
+      : entry.entryType === "PhaseComplete"
+        ? phaseCompletionHistoryText(entry)
+        : entry.entryType === "MeasurementEdit"
+          ? measurementEditHistoryText(entry)
+          : entry.noteText;
   item.innerHTML = `
     <span>${formatDateTime(entry.timestamp)}</span>
     <span>-</span>

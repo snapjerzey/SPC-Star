@@ -123,6 +123,20 @@ public sealed class JobNote
     public DateTimeOffset Timestamp { get; set; }
 }
 
+public sealed class JobPhaseCompletion
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string JobNum { get; set; }
+    public required string PartNum { get; set; }
+    public required string ProcessCode { get; set; }
+    public int OperationSeq { get; set; }
+    public required string ResourceId { get; set; }
+    public required string InspectionPhase { get; set; }
+    public required string CompletedByUserId { get; set; }
+    public string OperatorShift { get; set; } = "";
+    public DateTimeOffset CompletedAt { get; set; }
+}
+
 public sealed class JobTag
 {
     public Guid Id { get; init; } = Guid.NewGuid();

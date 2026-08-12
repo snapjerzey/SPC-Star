@@ -80,7 +80,95 @@ public sealed class InspectionMeasurementService(
 
         repository.Measurements.Add(measurement);
         CreateAlertsForViolations(measurement, entry);
+        TryRecordPhaseCompletion(measurement);
         return ServiceResult<InspectionMeasurement>.Ok(measurement);
+    }
+
+    private void TryRecordPhaseCompletion(InspectionMeasurement measurement)
+    {
+        var phase = NormalizeInspectionPhase(measurement.InspectionPhase);
+        if (!IsCompletablePhase(phase))
+        {
+            return;
+        }
+
+        if (repository.JobPhaseCompletions.Any(item =>
+            item.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
+            item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == measurement.OperationSeq &&
+            item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+            item.InspectionPhase.Equals(phase, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var plans = PlansForMeasurementPhase(measurement, phase);
+        if (plans.Count == 0 || !plans.All(plan => SubmittedSampleCount(measurement, phase, plan) >= plan.Plan.SampleSize))
+        {
+            return;
+        }
+
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = measurement.JobNum,
+            PartNum = measurement.PartNum,
+            ProcessCode = measurement.ProcessCode,
+            OperationSeq = measurement.OperationSeq,
+            ResourceId = measurement.ResourceId,
+            InspectionPhase = phase,
+            CompletedByUserId = measurement.OperatorUserId,
+            OperatorShift = measurement.OperatorShift,
+            CompletedAt = measurement.Timestamp
+        });
+    }
+
+    private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansForMeasurementPhase(InspectionMeasurement measurement, string phase)
+    {
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase));
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase));
+        if (part is null || process is null)
+        {
+            return [];
+        }
+
+        var operation = repository.Operations.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.ProcessId == process.Id &&
+            item.OperationSeq == measurement.OperationSeq);
+        if (operation is null)
+        {
+            return [];
+        }
+
+        return (from characteristic in repository.Characteristics
+                join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
+                where characteristic.OperationId == operation.Id &&
+                    plan.SampleSize > 0 &&
+                    NormalizeInspectionPhase(plan.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase)
+                select (plan, characteristic))
+            .ToArray();
+    }
+
+    private int SubmittedSampleCount(
+        InspectionMeasurement measurement,
+        string phase,
+        (InspectionPlan Plan, Characteristic Characteristic) plan)
+    {
+        return repository.Measurements.Count(item =>
+            item.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
+            item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == measurement.OperationSeq &&
+            item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+            item.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase) &&
+            NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsCompletablePhase(string phase)
+    {
+        return phase.Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Setup", StringComparison.OrdinalIgnoreCase);
     }
 
     private ServiceResult UpsertJob(InspectionMeasurementEntry entry)

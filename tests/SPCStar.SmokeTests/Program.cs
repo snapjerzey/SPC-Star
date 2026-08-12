@@ -10,6 +10,7 @@ var tests = new (string Name, Action Run)[]
     ("western electric detects beyond limit", WesternElectricDetectsBeyondLimit),
     ("measurement rejects unknown inspection target", MeasurementRejectsUnknownInspectionTarget),
     ("measurement creates lock alert", MeasurementCreatesLockAlert),
+    ("measurement records setup phase completion", MeasurementRecordsSetupPhaseCompletion),
     ("override rejects operator", OverrideRejectsOperator),
     ("override allows QA", OverrideAllowsQa),
     ("override rejects bad credentials", OverrideRejectsBadCredentials),
@@ -121,6 +122,26 @@ static void MeasurementRejectsUnknownInspectionTarget()
     var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
     var result = service.EnterMeasurement(Entry(5m) with { CharacteristicName = "Unknown" });
     AssertFalse(result.Succeeded);
+}
+
+static void MeasurementRecordsSetupPhaseCompletion()
+{
+    var repository = RepositoryWithSecurityAndLimits();
+    foreach (var plan in repository.InspectionPlans)
+    {
+        plan.InspectionPhase = "Setup";
+        plan.SampleSize = 1;
+    }
+
+    var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+    AssertTrue(service.EnterMeasurement(Entry(5m) with { InspectionPhase = "Setup" }).Succeeded);
+    AssertTrue(repository.JobPhaseCompletions.Count == 0);
+    AssertTrue(service.EnterMeasurement(Entry(42m, 1) with { CharacteristicName = "Length", InspectionPhase = "Setup" }).Succeeded);
+    AssertTrue(repository.JobPhaseCompletions.Count == 0);
+    AssertTrue(service.EnterMeasurement(Entry(18m, 2) with { CharacteristicName = "Weight", InspectionPhase = "Setup" }).Succeeded);
+    AssertTrue(repository.JobPhaseCompletions.Count == 1);
+    AssertEqual("Setup", repository.JobPhaseCompletions.Single().InspectionPhase);
+    AssertEqual("operator1", repository.JobPhaseCompletions.Single().CompletedByUserId);
 }
 
 static void OverrideRejectsOperator()

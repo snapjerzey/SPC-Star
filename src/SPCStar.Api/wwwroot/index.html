@@ -36,6 +36,7 @@
           <div class="login-sop-actions">
             <button id="showGettingStartedButton" type="button" class="secondary">Operator SOP</button>
             <button id="showLineTechSopButton" type="button" class="secondary">Line Tech SOP</button>
+            <button id="showQaSopButton" type="button" class="secondary">QA SOP</button>
           </div>
         </div>
       </div>
@@ -1160,6 +1161,159 @@
       </div>
     </div>
   </section>
+  <section id="qaSopModal" class="modal-backdrop hidden">
+    <div class="panel app-modal">
+      <div class="panel-heading horizontal">
+        <div>
+          <h2>SPC-Star QA Quick SOP</h2>
+          <p>Quality review, setup control, and data export guide</p>
+        </div>
+        <button id="closeQaSopButton" type="button" class="secondary compact-button">Close</button>
+      </div>
+      <div class="sop-language-tabs" aria-label="QA SOP language">
+        <button id="qaSopEnglishButton" type="button" class="compact-button sop-language-button active">English</button>
+        <button id="qaSopSpanishButton" type="button" class="compact-button sop-language-button">Espanol</button>
+      </div>
+      <div id="qaSopEnglishBody" class="sop-body">
+        <h3>Purpose</h3>
+        <p>This SOP explains how QA should use SPC-Star to review inspection data, export records, maintain setup information manually, and respond to quality-related lockouts.</p>
+
+        <h3>Scope</h3>
+        <p>This applies to QA personnel using SPC-Star for inspection review, job history review, reports, setup maintenance, user maintenance, machine maintenance, drift-rule settings, and normal lock clearing.</p>
+
+        <h3>1. Log in</h3>
+        <ol>
+          <li>Open SPC-Star.</li>
+          <li>Enter your username and password.</li>
+          <li>Select your correct shift.</li>
+          <li>Click Sign In.</li>
+        </ol>
+        <p>All activity completed under your login is traceable to your user account.</p>
+
+        <h3>2. Review inspection data</h3>
+        <ol>
+          <li>Open Setup, then History.</li>
+          <li>Use Ledger to review inspection records, notes, lock events, material changes, and edit history.</li>
+          <li>Use Charts to review trends by part, job, machine, operation, and inspection item.</li>
+          <li>Use Top Issues to review repeat out-of-spec, drift, or rejected-attribute events.</li>
+          <li>Use Export to pull data needed for review, documentation, reporting, or customer support.</li>
+        </ol>
+
+        <h3>3. Maintain setup manually</h3>
+        <p>QA may manually create or update parts, operations, job data fields, materials, variables, attributes, sample sizes, frequencies, and drift-rule selections.</p>
+        <ol>
+          <li>Confirm the inspection plan source before making changes.</li>
+          <li>Confirm the correct part number, product group, operation, and inspection phase.</li>
+          <li>Enter variables and attributes in the correct inspection order.</li>
+          <li>Confirm sample sizes, frequencies, limits, methods, tools used, and phase requirements before saving.</li>
+          <li>Review the inspection screen after changes to confirm the operator view is correct.</li>
+        </ol>
+
+        <h3>4. User and machine maintenance</h3>
+        <p>QA may manually add or edit users, assign roles, assign product group access, assign shifts, reset passwords, and maintain machine records.</p>
+        <p>Only assign access that matches the employee's role, training, and product group authorization.</p>
+
+        <h3>5. Rules and custom rules</h3>
+        <p>QA may update the global drift detection rule, adjust capability thresholds, and configure custom rule behavior when required by the quality plan.</p>
+        <p>Rule changes affect inspection behavior. Review the rule description before saving changes and confirm that the selected rule is appropriate for the product and process.</p>
+
+        <h3>6. Lock clearing</h3>
+        <p>QA may clear lockouts through the normal correction workflow. QA does not have GOD bypass access.</p>
+        <ol>
+          <li>Review the lock message and affected inspection item.</li>
+          <li>Confirm whether the issue is out of specification, out of control, drift-related, or attribute-related.</li>
+          <li>Select the correct cause category.</li>
+          <li>Enter clear cause details.</li>
+          <li>Enter the action taken or required corrective action.</li>
+          <li>Clear the lock only when the issue has been reviewed and production may continue.</li>
+        </ol>
+
+        <h3>7. Import restriction</h3>
+        <p>QA should not bulk import parts, users, or machines from workbooks. Bulk import is restricted to GOD access because a bad workbook can change large amounts of setup data at once.</p>
+        <p>If a bulk import is needed, prepare or review the file, then escalate it to the system architect for loading.</p>
+
+        <h3>8. Data integrity</h3>
+        <p>Do not delete or change inspection setup, users, machines, limits, or rule settings unless the change is intentional, verified, and traceable to the correct source.</p>
+        <p>If inspection data appears incorrect, review the job history and edit audit trail before making corrections.</p>
+
+        <h3>9. Sign out</h3>
+        <ol>
+          <li>Finish any setup, review, or export activity.</li>
+          <li>Confirm changes were saved correctly.</li>
+          <li>Click Sign Out.</li>
+        </ol>
+      </div>
+      <div id="qaSopSpanishBody" class="sop-body hidden" lang="es">
+        <h3>Proposito</h3>
+        <p>Este SOP explica como QA debe usar SPC-Star para revisar datos de inspeccion, exportar registros, mantener informacion de configuracion manualmente y responder a bloqueos relacionados con calidad.</p>
+
+        <h3>Alcance</h3>
+        <p>Esto aplica a personal de QA que usa SPC-Star para revisar inspecciones, historial de trabajos, reportes, mantenimiento de configuracion, usuarios, maquinas, reglas de deriva y liberacion normal de bloqueos.</p>
+
+        <h3>1. Iniciar sesion</h3>
+        <ol>
+          <li>Abra SPC-Star.</li>
+          <li>Ingrese su usuario y contrasena.</li>
+          <li>Seleccione su turno correcto.</li>
+          <li>Haga clic en Sign In.</li>
+        </ol>
+        <p>Toda actividad realizada con su usuario queda trazable a su cuenta.</p>
+
+        <h3>2. Revisar datos de inspeccion</h3>
+        <ol>
+          <li>Abra Setup y luego History.</li>
+          <li>Use Ledger para revisar registros de inspeccion, notas, bloqueos, cambios de material e historial de edicion.</li>
+          <li>Use Charts para revisar tendencias por parte, trabajo, maquina, operacion y punto de inspeccion.</li>
+          <li>Use Top Issues para revisar eventos repetidos fuera de especificacion, deriva o atributos rechazados.</li>
+          <li>Use Export para obtener datos necesarios para revision, documentacion, reportes o soporte al cliente.</li>
+        </ol>
+
+        <h3>3. Mantener configuracion manualmente</h3>
+        <p>QA puede crear o actualizar manualmente partes, operaciones, campos de datos del trabajo, materiales, variables, atributos, tamanos de muestra, frecuencias y reglas de deriva.</p>
+        <ol>
+          <li>Confirme la fuente del plan de inspeccion antes de hacer cambios.</li>
+          <li>Confirme el numero de parte, grupo de producto, operacion y fase de inspeccion correctos.</li>
+          <li>Ingrese variables y atributos en el orden correcto de inspeccion.</li>
+          <li>Confirme tamanos de muestra, frecuencias, limites, metodos, herramientas usadas y requisitos por fase antes de guardar.</li>
+          <li>Revise la pantalla de inspeccion despues de los cambios para confirmar que la vista del operador sea correcta.</li>
+        </ol>
+
+        <h3>4. Mantenimiento de usuarios y maquinas</h3>
+        <p>QA puede agregar o editar usuarios manualmente, asignar roles, asignar acceso a grupos de producto, asignar turnos, restablecer contrasenas y mantener registros de maquinas.</p>
+        <p>Asigne solo el acceso que corresponda al rol, entrenamiento y autorizacion de grupo de producto del empleado.</p>
+
+        <h3>5. Reglas y reglas personalizadas</h3>
+        <p>QA puede actualizar la regla global de deteccion de deriva, ajustar limites de capacidad y configurar reglas personalizadas cuando el plan de calidad lo requiera.</p>
+        <p>Los cambios de reglas afectan el comportamiento de inspeccion. Revise la descripcion de la regla antes de guardar y confirme que sea apropiada para el producto y proceso.</p>
+
+        <h3>6. Liberacion de bloqueos</h3>
+        <p>QA puede liberar bloqueos mediante el flujo normal de correccion. QA no tiene acceso de bypass GOD.</p>
+        <ol>
+          <li>Revise el mensaje de bloqueo y el punto de inspeccion afectado.</li>
+          <li>Confirme si el problema esta fuera de especificacion, fuera de control, relacionado con deriva o relacionado con atributo.</li>
+          <li>Seleccione la categoria de causa correcta.</li>
+          <li>Ingrese detalles claros de la causa.</li>
+          <li>Ingrese la accion tomada o accion correctiva requerida.</li>
+          <li>Libere el bloqueo solo cuando el problema haya sido revisado y la produccion pueda continuar.</li>
+        </ol>
+
+        <h3>7. Restriccion de importacion</h3>
+        <p>QA no debe importar partes, usuarios o maquinas de forma masiva desde libros de Excel. La importacion masiva esta restringida a acceso GOD porque un archivo incorrecto puede cambiar muchos datos de configuracion a la vez.</p>
+        <p>Si se necesita una importacion masiva, prepare o revise el archivo y escale la carga al arquitecto del sistema.</p>
+
+        <h3>8. Integridad de datos</h3>
+        <p>No elimine ni cambie configuracion de inspeccion, usuarios, maquinas, limites o reglas a menos que el cambio sea intencional, verificado y trazable a la fuente correcta.</p>
+        <p>Si los datos de inspeccion parecen incorrectos, revise el historial del trabajo y la auditoria de edicion antes de hacer correcciones.</p>
+
+        <h3>9. Cerrar sesion</h3>
+        <ol>
+          <li>Termine cualquier actividad de configuracion, revision o exportacion.</li>
+          <li>Confirme que los cambios se guardaron correctamente.</li>
+          <li>Haga clic en Sign Out.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
   <section id="ruleDetailModal" class="modal-backdrop hidden">
     <div class="panel app-modal rule-detail-modal">
       <div class="panel-heading horizontal">
@@ -1209,6 +1363,8 @@
       const close = () => document.getElementById("gettingStartedModal")?.classList.add("hidden");
       const openLineTech = () => document.getElementById("lineTechSopModal")?.classList.remove("hidden");
       const closeLineTech = () => document.getElementById("lineTechSopModal")?.classList.add("hidden");
+      const openQa = () => document.getElementById("qaSopModal")?.classList.remove("hidden");
+      const closeQa = () => document.getElementById("qaSopModal")?.classList.add("hidden");
       const setLanguage = (language) => {
         const showSpanish = language === "es";
         document.getElementById("sopEnglishBody")?.classList.toggle("hidden", showSpanish);
@@ -1223,19 +1379,33 @@
         document.getElementById("lineTechSopEnglishButton")?.classList.toggle("active", !showSpanish);
         document.getElementById("lineTechSopSpanishButton")?.classList.toggle("active", showSpanish);
       };
+      const setQaLanguage = (language) => {
+        const showSpanish = language === "es";
+        document.getElementById("qaSopEnglishBody")?.classList.toggle("hidden", showSpanish);
+        document.getElementById("qaSopSpanishBody")?.classList.toggle("hidden", !showSpanish);
+        document.getElementById("qaSopEnglishButton")?.classList.toggle("active", !showSpanish);
+        document.getElementById("qaSopSpanishButton")?.classList.toggle("active", showSpanish);
+      };
       document.getElementById("showGettingStartedButton")?.addEventListener("click", open);
       document.getElementById("showLineTechSopButton")?.addEventListener("click", openLineTech);
+      document.getElementById("showQaSopButton")?.addEventListener("click", openQa);
       document.getElementById("closeGettingStartedButton")?.addEventListener("click", close);
       document.getElementById("closeLineTechSopButton")?.addEventListener("click", closeLineTech);
+      document.getElementById("closeQaSopButton")?.addEventListener("click", closeQa);
       document.getElementById("sopEnglishButton")?.addEventListener("click", () => setLanguage("en"));
       document.getElementById("sopSpanishButton")?.addEventListener("click", () => setLanguage("es"));
       document.getElementById("lineTechSopEnglishButton")?.addEventListener("click", () => setLineTechLanguage("en"));
       document.getElementById("lineTechSopSpanishButton")?.addEventListener("click", () => setLineTechLanguage("es"));
+      document.getElementById("qaSopEnglishButton")?.addEventListener("click", () => setQaLanguage("en"));
+      document.getElementById("qaSopSpanishButton")?.addEventListener("click", () => setQaLanguage("es"));
       document.getElementById("gettingStartedModal")?.addEventListener("click", (event) => {
         if (event.target.id === "gettingStartedModal") close();
       });
       document.getElementById("lineTechSopModal")?.addEventListener("click", (event) => {
         if (event.target.id === "lineTechSopModal") closeLineTech();
+      });
+      document.getElementById("qaSopModal")?.addEventListener("click", (event) => {
+        if (event.target.id === "qaSopModal") closeQa();
       });
     })();
   </script>

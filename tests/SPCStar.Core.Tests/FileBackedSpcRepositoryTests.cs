@@ -66,9 +66,9 @@ public sealed class FileBackedSpcRepositoryTests
 
             var reloaded = new FileBackedSpcRepository(storagePath);
 
-            Assert.Contains(reloaded.Users, user => user.UserName == "admin1");
-            Assert.True(new CredentialService(reloaded).ValidateCredential("admin1", "admin1"));
-            Assert.True(new PermissionService(reloaded).UserHasPermission("admin1", PermissionNames.CanManageUsers));
+            Assert.Contains(reloaded.Users, user => user.UserName == "qa1");
+            Assert.True(new CredentialService(reloaded).ValidateCredential("qa1", "qa1"));
+            Assert.True(new PermissionService(reloaded).UserHasPermission("qa1", PermissionNames.CanManageUsers));
             Assert.Contains(reloaded.Characteristics, characteristic => characteristic.Name == "Diameter");
             Assert.Contains(reloaded.Measurements, measurement => measurement.Value == 5.1m);
             Assert.Contains(reloaded.MaterialChanges, change => change.NewLotNum == "LOT-1");
@@ -144,9 +144,9 @@ public sealed class FileBackedSpcRepositoryTests
             var reloaded = new SqliteBackedSpcRepository(storagePath);
 
             Assert.True(File.Exists(storagePath));
-            Assert.Contains(reloaded.Users, user => user.UserName == "admin1");
-            Assert.True(new CredentialService(reloaded).ValidateCredential("admin1", "admin1"));
-            Assert.True(new PermissionService(reloaded).UserHasPermission("admin1", PermissionNames.CanManageUsers));
+            Assert.Contains(reloaded.Users, user => user.UserName == "qa1");
+            Assert.True(new CredentialService(reloaded).ValidateCredential("qa1", "qa1"));
+            Assert.True(new PermissionService(reloaded).UserHasPermission("qa1", PermissionNames.CanManageUsers));
             Assert.Contains(reloaded.Characteristics, characteristic => characteristic.Name == "Diameter");
             Assert.Contains(reloaded.Measurements, measurement => measurement.Value == 5.1m);
             Assert.Contains(reloaded.MaterialChanges, change => change.NewLotNum == "LOT-1");

@@ -16,6 +16,5 @@ public static class RoleNames
     public const string Operator = nameof(Operator);
     public const string LineTech = nameof(LineTech);
     public const string QA = nameof(QA);
-    public const string Admin = nameof(Admin);
     public const string GOD = nameof(GOD);
 }

@@ -151,16 +151,16 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
-    public void DeleteUser_KeepsAtLeastOneAdminOrGod()
+    public void DeleteUser_KeepsAtLeastOneGodUser()
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
         var service = new SetupManagementService(repository);
-        Assert.True(service.DeleteUser("admin1").Succeeded);
 
         var result = service.DeleteUser("god1");
 
         Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("GOD user", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

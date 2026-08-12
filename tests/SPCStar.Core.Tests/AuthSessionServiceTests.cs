@@ -19,7 +19,13 @@ public sealed class AuthSessionServiceTests
         Assert.True(result.Succeeded);
         Assert.Equal("qa1", result.Value!.UserName);
         Assert.Contains("QA", result.Value.Roles);
+        Assert.Contains("CanEnterInspections", result.Value.Permissions);
         Assert.Contains("CanOverrideDriftLock", result.Value.Permissions);
+        Assert.Contains("CanManageInspectionPlans", result.Value.Permissions);
+        Assert.Contains("CanImportSetupData", result.Value.Permissions);
+        Assert.Contains("CanExportQAData", result.Value.Permissions);
+        Assert.Contains("CanManageUsers", result.Value.Permissions);
+        Assert.DoesNotContain("CanUseGodMode", result.Value.Permissions);
         Assert.Empty(result.Value.ProductGroups);
         Assert.Equal("dev-session:qa1", result.Value.SessionToken);
     }
@@ -97,5 +103,27 @@ public sealed class AuthSessionServiceTests
 
         Assert.Contains(lineTech.Permissions, permission => permission == "CanEnterInspections");
         Assert.Contains(lineTech.Permissions, permission => permission == "CanOverrideDriftLock");
+    }
+
+    [Fact]
+    public void SeedSecurity_MigratesExistingAdminUsersToQa()
+    {
+        var repository = new InMemorySpcRepository();
+        var admin = new Role { Name = "Admin" };
+        repository.Roles.Add(admin);
+        repository.Users.Add(new User
+        {
+            UserName = "oldadmin",
+            PasswordHash = "hash",
+            PasswordSalt = "salt",
+            Roles = { admin }
+        });
+
+        SeedData.SeedSecurity(repository);
+
+        Assert.DoesNotContain(repository.Roles, role => role.Name == "Admin");
+        var user = Assert.Single(repository.Users, item => item.UserName == "oldadmin");
+        Assert.Contains(user.Roles, role => role.Name == RoleNames.QA);
+        Assert.DoesNotContain(user.Roles, role => role.Name == "Admin");
     }
 }

@@ -478,19 +478,15 @@ public sealed class SetupManagementService(ISpcRepository repository)
             return ServiceResult.Fail("User was not found.");
         }
 
-        var hasAdminRole = user.Roles.Any(role =>
-            role.Name.Equals(RoleNames.Admin, StringComparison.OrdinalIgnoreCase) ||
-            role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase));
-        if (hasAdminRole)
+        var hasGodRole = user.Roles.Any(role => role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase));
+        if (hasGodRole)
         {
-            var remainingAdmins = repository.Users.Count(item =>
+            var remainingGodUsers = repository.Users.Count(item =>
                 item.Id != user.Id &&
-                item.Roles.Any(role =>
-                    role.Name.Equals(RoleNames.Admin, StringComparison.OrdinalIgnoreCase) ||
-                    role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)));
-            if (remainingAdmins == 0)
+                item.Roles.Any(role => role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)));
+            if (remainingGodUsers == 0)
             {
-                return ServiceResult.Fail("At least one Admin or GOD user must remain.");
+                return ServiceResult.Fail("At least one GOD user must remain.");
             }
         }
 
@@ -1029,7 +1025,10 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
         var password = Value(row, "TemporaryPassword", "Temporary Password", "Password");
         var shift = Value(row, "Shift", "Work Shift", "Assigned Shift");
-        var roles = SplitValues(Value(row, "Role", "Roles", "Access Level"));
+        var roles = SplitValues(Value(row, "Role", "Roles", "Access Level"))
+            .Select(NormalizeRoleName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var groups = new List<string>();
         groups.AddRange(SplitValues(Value(row, "ProductGroups", "Product Groups")));
 
@@ -1065,6 +1064,11 @@ public sealed class SetupManagementService(ISpcRepository repository)
             .Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .ToArray();
+    }
+
+    private static string NormalizeRoleName(string roleName)
+    {
+        return roleName.Equals("Admin", StringComparison.OrdinalIgnoreCase) ? RoleNames.QA : roleName;
     }
 
     private static string Value(Dictionary<string, string> row, params string[] fields)
@@ -1254,10 +1258,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return roleName switch
         {
             RoleNames.GOD => 0,
-            RoleNames.Admin => 1,
-            RoleNames.QA => 2,
-            RoleNames.LineTech => 3,
-            RoleNames.Operator => 4,
+            RoleNames.QA => 1,
+            RoleNames.LineTech => 2,
+            RoleNames.Operator => 3,
             _ => 99
         };
     }

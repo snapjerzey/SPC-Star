@@ -159,7 +159,7 @@ public sealed class InspectionMeasurementService(
         }
 
         if (user.Roles.Any(role =>
-            role.Name.Equals(RoleNames.Admin, StringComparison.OrdinalIgnoreCase) ||
+            role.Name.Equals(RoleNames.QA, StringComparison.OrdinalIgnoreCase) ||
             role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)))
         {
             return true;

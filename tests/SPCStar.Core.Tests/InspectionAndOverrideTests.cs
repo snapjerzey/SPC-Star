@@ -215,16 +215,15 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
-    public void EnterMeasurement_RejectsUserWithoutInspectionPermission()
+    public void EnterMeasurement_AllowsQaInspectionWithoutProductGroupAssignment()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         var result = service.EnterMeasurement(Entry(10m) with { OperatorUserId = "qa1" });
 
-        Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("not authorized", StringComparison.OrdinalIgnoreCase));
-        Assert.Empty(repository.Measurements);
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Single(repository.Measurements);
     }
 
     [Fact]
@@ -286,17 +285,17 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
-    public void Override_AllowsAdmin()
+    public void Override_AllowsLineTechWithoutBypassReason()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
         var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "admin1", "admin1", "Tool wear", "Adjusted process", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "linetech1", "linetech1", "Tool wear", "Adjusted process", null, DateTimeOffset.UtcNow));
 
         Assert.True(result.Succeeded);
         Assert.Equal(AlertStatus.Overridden, alert.Status);
-        Assert.Equal(RoleNames.Admin, result.Value!.OverrideRole);
+        Assert.Equal(RoleNames.LineTech, result.Value!.OverrideRole);
     }
 
     [Fact]

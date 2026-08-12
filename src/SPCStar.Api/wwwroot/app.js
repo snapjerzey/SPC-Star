@@ -331,7 +331,7 @@ async function loadContext(event) {
   if (!set) {
     state.selectedPlans = [];
     state.contexts = [];
-    renderEmptyContext(`Part ${partNum} is not set up. Ask Admin or GOD to add the inspection plan before inspecting.`);
+    renderEmptyContext(`Part ${partNum} is not set up. Ask QA or GOD to add the inspection plan before inspecting.`);
     return;
   }
 

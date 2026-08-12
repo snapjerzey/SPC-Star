@@ -26,7 +26,6 @@ public sealed class PermissionService(ISpcRepository repository)
         }
 
         if (roles.Contains(RoleNames.GOD)) return RoleNames.GOD;
-        if (roles.Contains(RoleNames.Admin)) return RoleNames.Admin;
         if (roles.Contains(RoleNames.QA)) return RoleNames.QA;
         if (roles.Contains(RoleNames.LineTech)) return RoleNames.LineTech;
         return null;

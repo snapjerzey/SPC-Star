@@ -18,14 +18,14 @@ public static class SeedData
             RoleNames.LineTech,
             PermissionNames.CanEnterInspections,
             PermissionNames.CanOverrideDriftLock);
-        var qa = UpsertRole(repository, RoleNames.QA, PermissionNames.CanOverrideDriftLock, PermissionNames.CanExportQAData);
-        var admin = UpsertRole(
+        var qa = UpsertRole(
             repository,
-            RoleNames.Admin,
+            RoleNames.QA,
             PermissionNames.CanEnterInspections,
+            PermissionNames.CanOverrideDriftLock,
             PermissionNames.CanManageInspectionPlans,
             PermissionNames.CanImportSetupData,
-            PermissionNames.CanOverrideDriftLock,
+            PermissionNames.CanExportQAData,
             PermissionNames.CanManageUsers);
         var god = UpsertRole(
             repository,
@@ -38,10 +38,10 @@ public static class SeedData
             PermissionNames.CanManageUsers,
             PermissionNames.CanUseGodMode);
 
+        MigrateAdminRoleToQa(repository, qa);
         AddDefaultUser(repository, "operator1", "operator1", operatorRole);
         AddDefaultUser(repository, "linetech1", "linetech1", lineTech);
         AddDefaultUser(repository, "qa1", "qa1", qa);
-        AddDefaultUser(repository, "admin1", "admin1", admin);
         AddDefaultUser(repository, "god1", "god1", god);
     }
 
@@ -106,6 +106,32 @@ public static class SeedData
         }
 
         return role;
+    }
+
+    private static void MigrateAdminRoleToQa(ISpcRepository repository, Role qa)
+    {
+        var adminRoles = repository.Roles
+            .Where(role => role.Name.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        foreach (var user in repository.Users)
+        {
+            if (!user.Roles.Any(role => role.Name.Equals("Admin", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            user.Roles.RemoveAll(role => role.Name.Equals("Admin", StringComparison.OrdinalIgnoreCase));
+            if (!user.Roles.Any(role => role.Name.Equals(RoleNames.QA, StringComparison.OrdinalIgnoreCase)))
+            {
+                user.Roles.Add(qa);
+            }
+        }
+
+        foreach (var adminRole in adminRoles)
+        {
+            repository.Roles.Remove(adminRole);
+        }
     }
 
     private static void AddDefaultUser(ISpcRepository repository, string userName, string password, Role role, params string[] productGroups)

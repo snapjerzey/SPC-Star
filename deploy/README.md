@@ -52,7 +52,11 @@ If SPC-Star is stopped or unavailable, the script falls back to a direct file co
 
 GOD users can also create a manual backup inside SPC-Star from `Setup > Archive > Database Backup`. Manual backups use the same `C:\SPCStar\backups` folder through `SPCSTAR_BACKUP_PATH`.
 
-For restore, stop the `SPC-Star Server` scheduled task, copy the current suspect database to `C:\SPCStar\quarantine` using the naming format `MMDDYY Quarantine HHMM.db`, restore the selected known-good backup to `C:\SPCStar\data\spcstar.db`, then restart the scheduled task and verify `/health`.
+For in-app restore testing, use `Setup > Archive > Database Test / Restore`. `Clear History Data` clears jobs, measurements, notes, locks, overrides, materials, tags, and other historical records while keeping users, machines, parts, inspection plans, rules, specs, and control limits. `Restore Latest Backup` restores the newest `.db` file from `C:\SPCStar\backups`.
+
+Before clearing history data or restoring, SPC-Star copies the current database into `C:\SPCStar\quarantine` using the naming format `MMDDYY Quarantine HHMM.db`. The server start script sets this folder through `SPCSTAR_QUARANTINE_PATH`.
+
+If SPC-Star cannot run and IT must restore manually, stop the `SPC-Star Server` scheduled task, copy the current suspect database to `C:\SPCStar\quarantine`, restore the selected known-good backup to `C:\SPCStar\data\spcstar.db`, then restart the scheduled task and verify `/health`.
 
 ## Archiving Old Records
 

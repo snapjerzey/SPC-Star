@@ -829,6 +829,32 @@
         <section class="panel">
           <div class="panel-heading horizontal">
             <div>
+              <h2>Database Test / Restore</h2>
+              <p>Use this for restore testing only. SPC-Star saves the current database to quarantine before clearing history data or restoring.</p>
+            </div>
+          </div>
+          <div class="archive-confirm-grid">
+            <label>
+              Archon user
+              <input id="databaseActionUserName" autocomplete="off" autocapitalize="none" spellcheck="false">
+            </label>
+            <label>
+              Archon password
+              <input id="databaseActionPassword" type="password" autocomplete="off">
+            </label>
+            <label>
+              Confirmation
+              <input id="databaseActionConfirmationText" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CLEAR HISTORY DATA or RESTORE">
+            </label>
+            <button id="clearDatabaseButton" type="button" class="danger-button">Clear History Data</button>
+            <button id="restoreLatestBackupButton" type="button" class="secondary">Restore Latest Backup</button>
+          </div>
+          <p id="databaseActionMessage" class="message"></p>
+          <div id="databaseActionResultPanel" class="archive-result-panel hidden"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-heading horizontal">
+            <div>
               <h2>Archive</h2>
               <p>Create a long-term archive file for records before a cutoff date, then remove those records from the live database.</p>
             </div>
@@ -1472,6 +1498,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260812-manual-backup"></script>
+  <script src="/app.js?v=20260812-database-restore"></script>
 </body>
 </html>

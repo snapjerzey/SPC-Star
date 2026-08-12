@@ -58,6 +58,16 @@ public sealed class SqliteBackedSpcRepository : InMemorySpcRepository, IReposito
         }
     }
 
+    public void RestoreFrom(string backupPath)
+    {
+        lock (sync)
+        {
+            var restored = new SqliteBackedSpcRepository(backupPath);
+            RepositorySnapshot.FromRepository(restored).CopyTo(this);
+            SaveChangesCore();
+        }
+    }
+
     private void Load()
     {
         using var connection = OpenConnection();

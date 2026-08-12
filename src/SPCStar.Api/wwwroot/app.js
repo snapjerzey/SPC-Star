@@ -4058,6 +4058,82 @@ async function createManualBackup() {
   }
 }
 
+function databaseActionCredentials() {
+  return {
+    userName: $("databaseActionUserName").value.trim(),
+    password: $("databaseActionPassword").value,
+    confirmationText: $("databaseActionConfirmationText").value.trim()
+  };
+}
+
+function showDatabaseActionResult(title, rows) {
+  $("databaseActionResultPanel").classList.remove("hidden");
+  $("databaseActionResultPanel").innerHTML = `
+    <h3>${escapeHtml(title)}</h3>
+    ${rows.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join("")}
+  `;
+}
+
+async function clearHistoryDataForRestoreTest() {
+  const button = $("clearDatabaseButton");
+  button.disabled = true;
+  $("databaseActionMessage").textContent = "Clearing history data...";
+  $("databaseActionMessage").className = "message";
+  $("databaseActionResultPanel").classList.add("hidden");
+  try {
+    const result = await api("/setup/database/clear-history", {
+      method: "POST",
+      body: JSON.stringify(databaseActionCredentials())
+    });
+    $("databaseActionPassword").value = "";
+    $("databaseActionConfirmationText").value = "";
+    $("databaseActionMessage").textContent = "History data cleared. Users, machines, parts, inspections, rules, and setup data were kept.";
+    $("databaseActionMessage").className = "message ok";
+    showDatabaseActionResult("History Data Cleared", [
+      ["Quarantine file", result.quarantineFileName],
+      ["Quarantine path", result.quarantinePath]
+    ]);
+    await loadSetupAdmin();
+    await loadSnapshot();
+  } catch (error) {
+    $("databaseActionMessage").textContent = readableError(error);
+    $("databaseActionMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function restoreLatestBackup() {
+  const button = $("restoreLatestBackupButton");
+  button.disabled = true;
+  $("databaseActionMessage").textContent = "Restoring latest backup...";
+  $("databaseActionMessage").className = "message";
+  $("databaseActionResultPanel").classList.add("hidden");
+  try {
+    const result = await api("/setup/database/restore-latest", {
+      method: "POST",
+      body: JSON.stringify(databaseActionCredentials())
+    });
+    $("databaseActionPassword").value = "";
+    $("databaseActionConfirmationText").value = "";
+    $("databaseActionMessage").textContent = "Latest backup restored.";
+    $("databaseActionMessage").className = "message ok";
+    showDatabaseActionResult("Database Restored", [
+      ["Restored backup", result.restoredBackupFileName],
+      ["Backup path", result.restoredBackupPath],
+      ["Quarantine file", result.quarantineFileName],
+      ["Quarantine path", result.quarantinePath]
+    ]);
+    await loadSetupAdmin();
+    await loadSnapshot();
+  } catch (error) {
+    $("databaseActionMessage").textContent = readableError(error);
+    $("databaseActionMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function previewArchive(event) {
   event.preventDefault();
   $("archiveMessage").textContent = "";
@@ -4249,6 +4325,8 @@ $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
 $("exportUserTemplateButton").addEventListener("click", exportUserTemplate);
 $("createManualBackupButton").addEventListener("click", createManualBackup);
+$("clearDatabaseButton").addEventListener("click", clearHistoryDataForRestoreTest);
+$("restoreLatestBackupButton").addEventListener("click", restoreLatestBackup);
 $("archivePreviewForm").addEventListener("submit", previewArchive);
 $("createArchiveButton").addEventListener("click", createArchive);
 $("newUserButton").addEventListener("click", newUser);

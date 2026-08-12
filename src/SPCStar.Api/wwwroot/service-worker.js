@@ -1,4 +1,4 @@
-const CACHE_NAME = "spc-star-shell-v97";
+const CACHE_NAME = "spc-star-shell-v98";
 const SHELL_ASSETS = [
   "/",
   "/index.html",

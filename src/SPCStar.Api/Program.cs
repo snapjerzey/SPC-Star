@@ -23,6 +23,9 @@ var archivePath = Environment.GetEnvironmentVariable("SPCSTAR_ARCHIVE_PATH")
 var backupPath = Environment.GetEnvironmentVariable("SPCSTAR_BACKUP_PATH")
     ?? builder.Configuration["SPCStar:BackupPath"]
     ?? Path.Combine(projectRoot, ".appdata", "backups");
+var quarantinePath = Environment.GetEnvironmentVariable("SPCSTAR_QUARANTINE_PATH")
+    ?? builder.Configuration["SPCStar:QuarantinePath"]
+    ?? Path.Combine(projectRoot, ".appdata", "quarantine");
 var repository = CreateRepository(builder, projectRoot, jsonStoragePath);
 builder.Services.AddSingleton<ISpcRepository>((ISpcRepository)repository);
 builder.Services.AddSingleton<IRepositoryPersistence>(repository);
@@ -49,10 +52,12 @@ builder.Services.AddSingleton<AuthSessionService>();
 builder.Services.AddSingleton<WorkContextService>();
 builder.Services.AddSingleton<JobReviewService>();
 builder.Services.AddSingleton(provider => new BackupService(
+    provider.GetRequiredService<ISpcRepository>(),
     provider.GetRequiredService<IRepositoryPersistence>(),
     provider.GetRequiredService<CredentialService>(),
     provider.GetRequiredService<PermissionService>(),
-    backupPath));
+    backupPath,
+    quarantinePath));
 builder.Services.AddSingleton(provider => new ArchiveService(
     provider.GetRequiredService<ISpcRepository>(),
     provider.GetRequiredService<CredentialService>(),
@@ -132,6 +137,22 @@ app.MapGet("/setup/backups/files/{fileName}", (string fileName, BackupService se
     }
 
     return Results.File(backupPath, "application/octet-stream", Path.GetFileName(backupPath));
+});
+
+app.MapPost("/setup/database/clear-history", (ClearHistoryDataRequest request, BackupService service) =>
+{
+    var result = service.ClearHistoryData(request);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { cleared = false, errors = result.Errors });
+});
+
+app.MapPost("/setup/database/restore-latest", (RestoreLatestBackupRequest request, BackupService service) =>
+{
+    var result = service.RestoreLatestBackup(request);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { restored = false, errors = result.Errors });
 });
 
 app.MapPost("/auth/login", (LoginRequest request, AuthSessionService service) =>

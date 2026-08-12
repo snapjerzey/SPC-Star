@@ -61,6 +61,7 @@ Useful environment variables:
 - `SPCSTAR_DATA_PATH`: choose a different JSON file path when using JSON storage.
 - `SPCSTAR_ARCHIVE_PATH`: choose where archive files are written.
 - `SPCSTAR_BACKUP_PATH`: choose where manual backup files are written.
+- `SPCSTAR_QUARANTINE_PATH`: choose where suspect pre-clear/pre-restore database copies are written.
 
 If NuGet is unavailable, run the dependency-free smoke tests:
 
@@ -154,6 +155,8 @@ Initial endpoints include:
 - `POST /history/top-issues`
 - `POST /setup/backups/manual`
 - `GET /setup/backups/files/{fileName}`
+- `POST /setup/database/clear-history`
+- `POST /setup/database/restore-latest`
 - `POST /setup/archive/preview`
 - `POST /setup/archive`
 - `GET /setup/archive/files/{fileName}`
@@ -233,12 +236,23 @@ Server backup script:
 
 Restore approach:
 
-1. Stop the `SPC-Star Server` scheduled task.
-2. Save the current database into `C:\SPCStar\quarantine` using the naming format `MMDDYY Quarantine HHMM.db`.
-3. Copy the selected known-good backup into `C:\SPCStar\data\spcstar.db`.
-4. Start the `SPC-Star Server` scheduled task.
-5. Confirm `http://localhost:5000/health`.
-6. Log in and verify users, parts, and history are present.
+1. Open `Setup > Archive`.
+2. Use `Database Test / Restore`.
+3. Enter Archon credentials.
+4. Type `RESTORE`.
+5. Click `Restore Latest Backup`.
+
+SPC-Star restores the newest `.db` file from the backup folder and first saves the current database into quarantine using `MMDDYY Quarantine HHMM.db`.
+
+Restore testing:
+
+1. Create a manual backup first.
+2. In `Database Test / Restore`, type `CLEAR HISTORY DATA`.
+3. Click `Clear History Data`.
+4. Verify users, machines, parts, inspections, rules, and setup data remain, while jobs/history/measurements/locks/notes/material changes are cleared.
+5. Type `RESTORE`.
+6. Click `Restore Latest Backup`.
+7. Verify the cleared history data is restored from the newest backup.
 
 ## Archive Process
 

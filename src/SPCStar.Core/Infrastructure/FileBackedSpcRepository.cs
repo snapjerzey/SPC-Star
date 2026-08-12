@@ -53,6 +53,19 @@ public sealed class FileBackedSpcRepository : InMemorySpcRepository, IRepository
         File.Copy(StoragePath, backupPath, overwrite: true);
     }
 
+    public void RestoreFrom(string backupPath)
+    {
+        if (!File.Exists(backupPath))
+        {
+            throw new FileNotFoundException("Backup file was not found.", backupPath);
+        }
+
+        var json = File.ReadAllText(backupPath);
+        var snapshot = JsonSerializer.Deserialize<RepositorySnapshot>(json, JsonOptions);
+        snapshot?.CopyTo(this);
+        SaveChanges();
+    }
+
     private void Load()
     {
         if (!File.Exists(StoragePath))

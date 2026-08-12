@@ -59,6 +59,30 @@ internal sealed record RepositorySnapshot(
 
     public void CopyTo(ISpcRepository repository)
     {
+        repository.Users.Clear();
+        repository.Roles.Clear();
+        repository.Parts.Clear();
+        repository.Processes.Clear();
+        repository.Operations.Clear();
+        repository.Characteristics.Clear();
+        repository.SpecLimits.Clear();
+        repository.InspectionPlans.Clear();
+        repository.Jobs.Clear();
+        repository.Resources.Clear();
+        repository.Devices.Clear();
+        repository.Measurements.Clear();
+        repository.MeasurementEditAudits.Clear();
+        repository.JobNotes.Clear();
+        repository.JobPhaseCompletions.Clear();
+        repository.JobTags.Clear();
+        repository.PartJobDataFields.Clear();
+        repository.PartMaterialFields.Clear();
+        repository.ControlLimits.Clear();
+        repository.Alerts.Clear();
+        repository.RuleViolations.Clear();
+        repository.AlertOverrides.Clear();
+        repository.MaterialChanges.Clear();
+
         repository.Settings.GlobalAlertRuleSet = Settings?.GlobalAlertRuleSet ?? "WesternElectric";
         repository.Settings.CustomDriftRule = Settings?.CustomDriftRule ?? new CustomDriftRuleSettings();
         repository.Settings.CapabilityThresholds = Settings?.CapabilityThresholds ?? new CapabilityThresholdSettings();

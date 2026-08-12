@@ -18,6 +18,17 @@ public sealed class WesternElectricRuleServiceTests
     }
 
     [Fact]
+    public void Detect_DoesNotTreatPointEqualToControlLimitAsBeyondControlLimit()
+    {
+        var service = new WesternElectricRuleService();
+        var points = Points([10m, 13m]);
+
+        var result = service.Detect(points, centerLine: 10m, lcl: 7m, ucl: 13m);
+
+        Assert.DoesNotContain(result, violation => violation.RuleTriggered == RuleTriggered.OnePointBeyondControlLimit);
+    }
+
+    [Fact]
     public void Detect_FindsTwoOfThreeNearControlLimit()
     {
         var service = new WesternElectricRuleService();

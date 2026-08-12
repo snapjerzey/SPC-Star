@@ -375,7 +375,8 @@ public sealed class InspectionMeasurementService(
                 item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
                 item.OperationSeq == measurement.OperationSeq &&
                 item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
-                item.CharacteristicName.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase))
+                item.CharacteristicName.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(NormalizeInspectionPhase(measurement.InspectionPhase), StringComparison.OrdinalIgnoreCase))
             .OrderBy(item => item.Timestamp)
             .Select(item => new WesternElectricPoint(item.Id, item.Value, item.Timestamp))
             .ToArray();
@@ -400,6 +401,7 @@ public sealed class InspectionMeasurementService(
                 OperatorUserId = measurement.OperatorUserId,
                 OperatorShift = measurement.OperatorShift,
                 RuleTriggered = violation.RuleTriggered,
+                Detail = DriftViolationDetail(violation, points, limits),
                 LockedAt = violation.DetectedAt
             };
 
@@ -413,6 +415,17 @@ public sealed class InspectionMeasurementService(
             ruleViolation.MeasurementIds.AddRange(violation.MeasurementIds);
             repository.RuleViolations.Add(ruleViolation);
         }
+    }
+
+    private static string DriftViolationDetail(WesternElectricViolation violation, IReadOnlyList<WesternElectricPoint> points, ControlLimitSet limits)
+    {
+        var values = points
+            .Where(point => violation.MeasurementIds.Contains(point.MeasurementId))
+            .OrderBy(point => point.Timestamp)
+            .Select(point => point.Value.ToString("0.#####"))
+            .ToArray();
+        var valueText = values.Length == 0 ? "No values listed" : string.Join(", ", values);
+        return $"{RuleText(violation.RuleTriggered)} was detected using prior measurements for this same job, machine, operation, phase, and inspection item. Values: {valueText}. Control limits: LCL {limits.Lcl:0.#####}, center {limits.CenterLine:0.#####}, UCL {limits.Ucl:0.#####}.";
     }
 
     private IReadOnlyList<WesternElectricViolation> DetectRuleViolations(

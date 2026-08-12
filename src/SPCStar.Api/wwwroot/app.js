@@ -871,7 +871,8 @@ async function submitMeasurementInput(input, options = {}) {
     await loadJobNotes(jobNum);
     if (state.contexts[planIndex]?.activeLock) {
       state.activeLock = state.contexts[planIndex].activeLock;
-      await loadContext();
+      renderLock(state.activeLock);
+      showEntryMessage(`${sampleLabel(input)} saved. Lock detected.`, "error");
       return "locked";
     }
     if (inspectionEntryComplete()) {
@@ -884,7 +885,6 @@ async function submitMeasurementInput(input, options = {}) {
     return "submitted";
   } catch (error) {
     showEntryMessage("Measurement rejected. " + readableError(error), "error");
-    await loadContext();
     throw error;
   } finally {
     input.dataset.submitting = "false";

@@ -105,6 +105,23 @@ public sealed class InspectionAndOverrideTests
         Assert.Contains(repository.Alerts, alert => alert.RuleTriggered == RuleTriggered.NelsonTrend);
     }
 
+    [Fact]
+    public void EnterMeasurement_AddsDetailToWesternElectricDriftAlert()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        service.EnterMeasurement(Entry(12.2m));
+        service.EnterMeasurement(Entry(10m, 1));
+        service.EnterMeasurement(Entry(12.4m, 2));
+
+        var alert = repository.Alerts.Single(alert => alert.RuleTriggered == RuleTriggered.TwoOfThreeNearControlLimit);
+        Assert.Contains("prior measurements", alert.Detail);
+        Assert.Contains("Control limits", alert.Detail);
+        Assert.Contains("12.2", alert.Detail);
+        Assert.Contains("12.4", alert.Detail);
+    }
+
     [Theory]
     [InlineData("Cusum", RuleTriggered.CusumShift, new[] { "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30" })]
     [InlineData("Ewma", RuleTriggered.EwmaShift, new[] { "5.80", "5.80", "5.80" })]

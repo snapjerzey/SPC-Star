@@ -33,7 +33,7 @@ public sealed class InspectionMeasurementService(
         var duplicate = FindDuplicate(entry.DeviceId, entry.ClientRecordId);
         if (duplicate is not null)
         {
-            return ServiceResult<InspectionMeasurement>.Ok(duplicate);
+            return UpdateDuplicateMeasurement(duplicate, entry);
         }
 
         if (!InspectionTargetExists(entry))
@@ -79,6 +79,40 @@ public sealed class InspectionMeasurementService(
         };
 
         repository.Measurements.Add(measurement);
+        CreateAlertsForViolations(measurement, entry);
+        TryRecordPhaseCompletion(measurement);
+        return ServiceResult<InspectionMeasurement>.Ok(measurement);
+    }
+
+    private ServiceResult<InspectionMeasurement> UpdateDuplicateMeasurement(InspectionMeasurement measurement, InspectionMeasurementEntry entry)
+    {
+        if (!MatchesMeasurementSlot(measurement, entry))
+        {
+            return ServiceResult<InspectionMeasurement>.Fail("Client measurement record is already assigned to a different inspection sample.");
+        }
+
+        if (measurement.Value == entry.Value)
+        {
+            return ServiceResult<InspectionMeasurement>.Ok(measurement);
+        }
+
+        if (HasActiveAlertForMeasurement(measurement.Id))
+        {
+            return ServiceResult<InspectionMeasurement>.Fail("This sample has an active lock. Clear the lock before changing the measurement.");
+        }
+
+        var activeLock = FindActiveLock(entry);
+        if (activeLock is not null)
+        {
+            return ServiceResult<InspectionMeasurement>.Fail(ActiveLockMessage(activeLock));
+        }
+
+        measurement.Value = entry.Value;
+        measurement.Timestamp = entry.Timestamp;
+        measurement.OperatorUserId = entry.OperatorUserId.Trim();
+        measurement.OperatorShift = OperatorShift(entry.OperatorUserId);
+        measurement.SubmittedAt = entry.SubmittedAt ?? entry.Timestamp;
+        measurement.SyncedAt = DateTimeOffset.UtcNow;
         CreateAlertsForViolations(measurement, entry);
         TryRecordPhaseCompletion(measurement);
         return ServiceResult<InspectionMeasurement>.Ok(measurement);
@@ -213,6 +247,29 @@ public sealed class InspectionMeasurementService(
         return repository.Measurements.FirstOrDefault(item =>
             item.DeviceId?.Equals(deviceId.Trim(), StringComparison.OrdinalIgnoreCase) == true &&
             item.ClientRecordId?.Equals(clientRecordId.Trim(), StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    private static bool MatchesMeasurementSlot(InspectionMeasurement measurement, InspectionMeasurementEntry entry)
+    {
+        return measurement.JobNum.Equals(entry.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            measurement.PartNum.Equals(entry.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            measurement.ProcessCode.Equals(entry.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            measurement.OperationSeq == entry.OperationSeq &&
+            measurement.ResourceId.Equals(entry.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            measurement.CharacteristicName.Equals(entry.CharacteristicName.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            NormalizeInspectionPhase(measurement.InspectionPhase).Equals(NormalizeInspectionPhase(entry.InspectionPhase), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool HasActiveAlertForMeasurement(Guid measurementId)
+    {
+        return repository.RuleViolations
+            .Where(violation => violation.MeasurementIds.Contains(measurementId))
+            .Join(
+                repository.Alerts.Where(alert => alert.Status == AlertStatus.Active),
+                violation => violation.AlertId,
+                alert => alert.Id,
+                (_, _) => true)
+            .Any();
     }
 
     private ProcessAlert? FindActiveLock(InspectionMeasurementEntry entry)

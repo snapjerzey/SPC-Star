@@ -614,6 +614,9 @@ function renderVariables() {
     }
     measurementList.appendChild(card);
   });
+  document.querySelectorAll(".measurement-input").forEach((input) => {
+    input.dataset.clientRecordId = newClientRecordId();
+  });
   wireMeasurementDeviceInputs();
 }
 
@@ -773,6 +776,13 @@ async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) 
     return "empty";
   }
 
+  if (input.dataset.submitted === "true" && input.value === input.dataset.lastSubmittedValue) {
+    if (moveNext) {
+      focusNextMeasurementInput(input);
+    }
+    return "unchanged";
+  }
+
   try {
     const result = await submitMeasurementInput(input, { reloadOnSuccess: false });
     if (moveNext && result !== "locked" && !state.activeLock) {
@@ -791,7 +801,7 @@ function wireMeasurementDeviceInputs() {
     input.addEventListener("focus", () => input.closest("label")?.classList.add("device-input-active"));
     input.addEventListener("blur", async () => {
       input.closest("label")?.classList.remove("device-input-active");
-      if (input.dataset.tabSubmitting === "true" || input.disabled || input.dataset.submitted === "true") {
+      if (input.dataset.tabSubmitting === "true" || input.disabled || input.value === input.dataset.lastSubmittedValue) {
         return;
       }
       await submitSingleMeasurementAndAdvance(input, false);
@@ -819,7 +829,7 @@ function wireMeasurementDeviceInputs() {
 }
 
 async function submitMeasurementInput(input, options = {}) {
-  if (input.disabled || input.dataset.submitting === "true" || input.dataset.submitted === "true") return;
+  if (input.disabled || input.dataset.submitting === "true") return;
   if (!inputHasValue(input)) return;
   const { jobNum, resourceId } = selectedValues();
   const plan = state.selectedPlans[Number(input.dataset.planIndex)];
@@ -845,11 +855,12 @@ async function submitMeasurementInput(input, options = {}) {
         timestamp: new Date().toISOString(),
         operatorUserId: state.user.userName,
         deviceId: "browser-dev",
-        clientRecordId: newClientRecordId(),
+        clientRecordId: input.dataset.clientRecordId || newClientRecordId(),
         submittedAt: new Date().toISOString()
       })
     });
-    showEntryMessage(`${sampleLabel(input)} submitted.`, "ok");
+    markAcceptedMeasurementInput(input, value);
+    showEntryMessage(`${sampleLabel(input)} saved.`, "ok");
     const planIndex = Number(input.dataset.planIndex);
     state.contexts[planIndex] = await loadVariableContext(jobNum, resourceId, plan);
     renderMeanSummary();
@@ -859,7 +870,10 @@ async function submitMeasurementInput(input, options = {}) {
       await loadContext();
       return "locked";
     }
-    resetAcceptedMeasurementInput(input);
+    if (inspectionEntryComplete()) {
+      await resetCompletedInspectionEntry();
+      return "submitted";
+    }
     if (options.reloadOnSuccess === true) {
       await loadContext();
     }
@@ -873,13 +887,25 @@ async function submitMeasurementInput(input, options = {}) {
   }
 }
 
-function resetAcceptedMeasurementInput(input) {
-  delete input.dataset.submitted;
-  input.value = "";
-  input.disabled = false;
+function markAcceptedMeasurementInput(input, value) {
+  input.dataset.submitted = "true";
+  input.dataset.lastSubmittedValue = input.value;
+  input.dataset.lastSubmittedNumericValue = String(value);
   const label = input.closest("label");
   label?.classList.add("measurement-submitted");
   window.setTimeout(() => label?.classList.remove("measurement-submitted"), 900);
+}
+
+function inspectionEntryComplete() {
+  const inputs = [...document.querySelectorAll(".measurement-input:not(:disabled)")];
+  return inputs.length > 0 && inputs.every((input) =>
+    input.dataset.submitted === "true" &&
+    input.value === input.dataset.lastSubmittedValue);
+}
+
+async function resetCompletedInspectionEntry() {
+  await loadContext();
+  showEntryMessage("Inspection complete. Fields cleared for the next inspection.", "ok");
 }
 
 function sampleLabel(input) {

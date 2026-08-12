@@ -161,6 +161,55 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_UpdatesExistingMeasurement_WhenSameSampleSlotChanges()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        SetRuleSet(repository, "Diameter", "None");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        var entry = Entry(10m) with
+        {
+            DeviceId = "tablet-press1",
+            ClientRecordId = "measurement-001",
+            SubmittedAt = DateTimeOffset.Parse("2026-01-01T00:05:00Z")
+        };
+
+        var first = service.EnterMeasurement(entry);
+        var update = service.EnterMeasurement(entry with
+        {
+            Value = 10.25m,
+            Timestamp = DateTimeOffset.Parse("2026-01-01T00:06:00Z"),
+            SubmittedAt = DateTimeOffset.Parse("2026-01-01T00:06:00Z")
+        });
+
+        Assert.True(first.Succeeded);
+        Assert.True(update.Succeeded, string.Join(" | ", update.Errors));
+        Assert.Single(repository.Measurements);
+        Assert.Equal(first.Value!.Id, update.Value!.Id);
+        Assert.Equal(10.25m, repository.Measurements.Single().Value);
+        Assert.Equal(DateTimeOffset.Parse("2026-01-01T00:06:00Z"), repository.Measurements.Single().Timestamp);
+    }
+
+    [Fact]
+    public void EnterMeasurement_RejectsClientRecordIdReusedForDifferentInspectionSlot()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        var entry = Entry(10m) with
+        {
+            DeviceId = "tablet-press1",
+            ClientRecordId = "measurement-001"
+        };
+
+        var first = service.EnterMeasurement(entry);
+        var reused = service.EnterMeasurement(entry with { CharacteristicName = "Length" });
+
+        Assert.True(first.Succeeded);
+        Assert.False(reused.Succeeded);
+        Assert.Contains(reused.Errors, error => error.Contains("different inspection sample", StringComparison.OrdinalIgnoreCase));
+        Assert.Single(repository.Measurements);
+    }
+
+    [Fact]
     public void EnterMeasurement_CreatesJobForOperatorEnteredJobNumber()
     {
         var repository = RepositoryWithSecurityAndLimits();

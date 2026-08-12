@@ -13,6 +13,7 @@ const state = {
   selectedUserName: "",
   selectedResourceId: "",
   currentShift: "1st Half Days",
+  setupSection: "Inspection",
   historyView: "Ledger",
   historyFilters: {
     partNum: "",
@@ -1788,11 +1789,26 @@ function defaultSetupSection() {
   return ["Inspection", "Machines", "Users", "Rules", "History", "Archive"].find(setupSectionAccess) || "History";
 }
 
+function setSetupSectionVisibility(sectionName) {
+  const sections = ["Inspection", "Machines", "Users", "Rules", "History", "Archive"];
+  sections.forEach((section) => {
+    $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
+    $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
+  });
+}
+
 function configureSetupAccess() {
   ["Inspection", "Machines", "Users", "Rules", "History", "Archive"].forEach((section) => {
-    $(`setup${section}SectionTab`).classList.toggle("hidden", !setupSectionAccess(section));
-    $(`setup${section}Section`).classList.toggle("hidden", !setupSectionAccess(section));
+    const hasAccess = setupSectionAccess(section);
+    $(`setup${section}SectionTab`).classList.toggle("hidden", !hasAccess);
+    if (!hasAccess) {
+      $(`setup${section}Section`).classList.add("hidden");
+    }
   });
+  if (!setupSectionAccess(state.setupSection)) {
+    state.setupSection = defaultSetupSection();
+  }
+  setSetupSectionVisibility(state.setupSection);
   document.querySelectorAll(".import-only").forEach((element) => {
     element.classList.toggle("hidden", !canImportSetupData());
   });
@@ -1802,7 +1818,7 @@ function showPanel(panelName) {
   const showSetup = panelName === "setup";
   if (showSetup) {
     configureSetupAccess();
-    showSetupSection(defaultSetupSection());
+    showSetupSection(state.setupSection || defaultSetupSection());
   }
   $("workPanel").classList.toggle("hidden", showSetup);
   $("setupPanel").classList.toggle("hidden", !showSetup);
@@ -1814,17 +1830,14 @@ function showSetupSection(sectionName) {
   if (!setupSectionAccess(sectionName)) {
     sectionName = defaultSetupSection();
   }
+  state.setupSection = sectionName;
 
   if (sectionName === "History") {
     seedHistoryFiltersFromWorkContext();
     applyHistoryFilters();
   }
 
-  const sections = ["Inspection", "Machines", "Users", "Rules", "History", "Archive"];
-  sections.forEach((section) => {
-    $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
-    $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
-  });
+  setSetupSectionVisibility(sectionName);
 }
 
 function seedHistoryFiltersFromWorkContext() {

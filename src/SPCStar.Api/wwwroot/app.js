@@ -4026,6 +4026,38 @@ function renderArchiveCounts(counts) {
     .join("");
 }
 
+async function createManualBackup() {
+  const button = $("createManualBackupButton");
+  button.disabled = true;
+  $("manualBackupMessage").textContent = "Creating backup...";
+  $("manualBackupMessage").className = "message";
+  $("manualBackupResultPanel").classList.add("hidden");
+  try {
+    const result = await api("/setup/backups/manual", {
+      method: "POST",
+      body: JSON.stringify({
+        userName: $("manualBackupUserName").value.trim(),
+        password: $("manualBackupPassword").value
+      })
+    });
+    $("manualBackupPassword").value = "";
+    $("manualBackupMessage").textContent = "Backup created.";
+    $("manualBackupMessage").className = "message ok";
+    $("manualBackupResultPanel").classList.remove("hidden");
+    $("manualBackupResultPanel").innerHTML = `
+      <h3>Backup File</h3>
+      <p><strong>${escapeHtml(result.backupFileName)}</strong></p>
+      <p>${escapeHtml(result.backupPath)}</p>
+      <a class="secondary archive-download-link" href="${result.downloadPath}" download>Download backup file</a>
+    `;
+  } catch (error) {
+    $("manualBackupMessage").textContent = readableError(error);
+    $("manualBackupMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function previewArchive(event) {
   event.preventDefault();
   $("archiveMessage").textContent = "";
@@ -4216,6 +4248,7 @@ $("exportMachineTemplateButton").addEventListener("click", exportMachineTemplate
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
 $("exportUserTemplateButton").addEventListener("click", exportUserTemplate);
+$("createManualBackupButton").addEventListener("click", createManualBackup);
 $("archivePreviewForm").addEventListener("submit", previewArchive);
 $("createArchiveButton").addEventListener("click", createArchive);
 $("newUserButton").addEventListener("click", newUser);

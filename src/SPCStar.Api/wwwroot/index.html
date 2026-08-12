@@ -808,6 +808,27 @@
         <section class="panel">
           <div class="panel-heading horizontal">
             <div>
+              <h2>Database Backup</h2>
+              <p>Create a known-good restore point before updates, imports, archive work, or server maintenance.</p>
+            </div>
+          </div>
+          <div class="archive-confirm-grid">
+            <label>
+              Archon user
+              <input id="manualBackupUserName" autocomplete="off" autocapitalize="none" spellcheck="false">
+            </label>
+            <label>
+              Archon password
+              <input id="manualBackupPassword" type="password" autocomplete="off">
+            </label>
+            <button id="createManualBackupButton" type="button" class="secondary">Create Backup</button>
+          </div>
+          <p id="manualBackupMessage" class="message"></p>
+          <div id="manualBackupResultPanel" class="archive-result-panel hidden"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-heading horizontal">
+            <div>
               <h2>Archive</h2>
               <p>Create a long-term archive file for records before a cutoff date, then remove those records from the live database.</p>
             </div>
@@ -1451,6 +1472,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260812-archive-tab"></script>
+  <script src="/app.js?v=20260812-manual-backup"></script>
 </body>
 </html>

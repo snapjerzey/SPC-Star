@@ -20,6 +20,9 @@ var jsonStoragePath = Environment.GetEnvironmentVariable("SPCSTAR_DATA_PATH")
 var archivePath = Environment.GetEnvironmentVariable("SPCSTAR_ARCHIVE_PATH")
     ?? builder.Configuration["SPCStar:ArchivePath"]
     ?? Path.Combine(projectRoot, ".appdata", "archives");
+var backupPath = Environment.GetEnvironmentVariable("SPCSTAR_BACKUP_PATH")
+    ?? builder.Configuration["SPCStar:BackupPath"]
+    ?? Path.Combine(projectRoot, ".appdata", "backups");
 var repository = CreateRepository(builder, projectRoot, jsonStoragePath);
 builder.Services.AddSingleton<ISpcRepository>((ISpcRepository)repository);
 builder.Services.AddSingleton<IRepositoryPersistence>(repository);
@@ -45,6 +48,11 @@ builder.Services.AddSingleton<OfflineSyncService>();
 builder.Services.AddSingleton<AuthSessionService>();
 builder.Services.AddSingleton<WorkContextService>();
 builder.Services.AddSingleton<JobReviewService>();
+builder.Services.AddSingleton(provider => new BackupService(
+    provider.GetRequiredService<IRepositoryPersistence>(),
+    provider.GetRequiredService<CredentialService>(),
+    provider.GetRequiredService<PermissionService>(),
+    backupPath));
 builder.Services.AddSingleton(provider => new ArchiveService(
     provider.GetRequiredService<ISpcRepository>(),
     provider.GetRequiredService<CredentialService>(),
@@ -105,6 +113,25 @@ app.MapGet("/setup/archive/files/{fileName}", (string fileName, ArchiveService s
     }
 
     return Results.File(archivePath, "application/json", Path.GetFileName(archivePath));
+});
+
+app.MapPost("/setup/backups/manual", (CreateManualBackupRequest request, BackupService service) =>
+{
+    var result = service.CreateManualBackup(request);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { backedUp = false, errors = result.Errors });
+});
+
+app.MapGet("/setup/backups/files/{fileName}", (string fileName, BackupService service) =>
+{
+    var backupPath = service.BackupPathFor(fileName);
+    if (!System.IO.File.Exists(backupPath))
+    {
+        return Results.NotFound();
+    }
+
+    return Results.File(backupPath, "application/octet-stream", Path.GetFileName(backupPath));
 });
 
 app.MapPost("/auth/login", (LoginRequest request, AuthSessionService service) =>

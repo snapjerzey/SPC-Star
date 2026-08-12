@@ -60,6 +60,7 @@ Useful environment variables:
 - `SPCSTAR_STORAGE_PROVIDER=json`: temporarily run against the older JSON file.
 - `SPCSTAR_DATA_PATH`: choose a different JSON file path when using JSON storage.
 - `SPCSTAR_ARCHIVE_PATH`: choose where archive files are written.
+- `SPCSTAR_BACKUP_PATH`: choose where manual backup files are written.
 
 If NuGet is unavailable, run the dependency-free smoke tests:
 
@@ -151,6 +152,8 @@ Initial endpoints include:
 - `POST /exports/drift-alerts.csv`
 - `POST /exports/material-changes.csv`
 - `POST /history/top-issues`
+- `POST /setup/backups/manual`
+- `GET /setup/backups/files/{fileName}`
 - `POST /setup/archive/preview`
 - `POST /setup/archive`
 - `GET /setup/archive/files/{fileName}`
@@ -200,6 +203,42 @@ The API seeds one protected system manager account when the database is empty:
 - Role `GOD`
 
 There are no seeded operator, line tech, QA, or admin demo users in the production seed.
+
+## Backup And Restore
+
+SPC-Star supports database backups from the server script and from the browser UI.
+
+Backup locations:
+
+- Local development manual backups: `.appdata/backups`
+- Server manual/script backups: `C:\SPCStar\backups`
+- Suspect pre-restore database copies should be stored separately in `C:\SPCStar\quarantine`
+
+Backup file naming uses the format `MMDDYY Backup HHMM.db`, for example `081226 Backup 1430.db`. Backups do not overwrite the existing backup file. If two backups are created in the same minute, SPC-Star appends seconds to keep the file unique.
+
+Manual backup workflow:
+
+1. Open `Setup > Archive`.
+2. Use the `Database Backup` section.
+3. Enter Archon credentials.
+4. Click `Create Backup`.
+
+The manual backup button creates a full SQLite database backup and provides the backup path and a download link.
+
+Server backup script:
+
+```powershell
+.\deploy\backup-data.ps1
+```
+
+Restore approach:
+
+1. Stop the `SPC-Star Server` scheduled task.
+2. Save the current database into `C:\SPCStar\quarantine` using the naming format `MMDDYY Quarantine HHMM.db`.
+3. Copy the selected known-good backup into `C:\SPCStar\data\spcstar.db`.
+4. Start the `SPC-Star Server` scheduled task.
+5. Confirm `http://localhost:5000/health`.
+6. Log in and verify users, parts, and history are present.
 
 ## Archive Process
 

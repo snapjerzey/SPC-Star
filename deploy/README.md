@@ -44,11 +44,15 @@ This stops the scheduled task, creates a database backup, publishes the newest a
 .\deploy\backup-data.ps1
 ```
 
-Backups are stored in `C:\SPCStar\backups`.
+Backups are stored in `C:\SPCStar\backups` using the naming format `MMDDYY Backup HHMM.db`, for example `081226 Backup 1430.db`. Backups do not overwrite existing backup files.
 
 When SPC-Star is running, the backup script asks the local SPC-Star server to create an online SQLite backup. Operators can stay logged in and continue submitting inspections while the backup is created. The backup captures a consistent snapshot of all data saved before the backup finishes; newer submissions continue into the live database and will be included in the next backup.
 
 If SPC-Star is stopped or unavailable, the script falls back to a direct file copy for offline recovery use.
+
+GOD users can also create a manual backup inside SPC-Star from `Setup > Archive > Database Backup`. Manual backups use the same `C:\SPCStar\backups` folder through `SPCSTAR_BACKUP_PATH`.
+
+For restore, stop the `SPC-Star Server` scheduled task, copy the current suspect database to `C:\SPCStar\quarantine` using the naming format `MMDDYY Quarantine HHMM.db`, restore the selected known-good backup to `C:\SPCStar\data\spcstar.db`, then restart the scheduled task and verify `/health`.
 
 ## Archiving Old Records
 

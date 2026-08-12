@@ -297,8 +297,7 @@ Archive is blocked if active locks exist before the selected cutoff date. Those 
 
 - Continue validating loaded inspection plans against source sheets before production-floor pilot use.
 - Prepare pilot rollout checklist: server install, backups, user permissions, operator sign-in/password reset, product group access, and test jobs.
-- Authentication provider integration.
-- Production database backup/restore drill and user/session hardening.
+- Production database backup/restore drill and internal user/session hardening.
 - Fully relational EF Core/SQL Server storage if the pilot requires a separate database engine.
 - Full offline queue UI with conflict handling.
 - Custom drift-rule editor for admin-defined thresholds and warning behavior.

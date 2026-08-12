@@ -42,11 +42,11 @@ This is intentionally still behind the repository/service boundary. Business rul
 
 Inspection entry is organized around top-level job data, part-specific job tags, material lot entries, and ordered inspection items. Inspection items can be measured variables or accept/reject attributes. The supported operator inspection phases are Startup, Setup, In Process, and Spool; coil/material changes are captured through material/job data rather than as a standalone operator phase.
 
-The setup/admin UI includes Parts & Inspections, Machines, Users, Rules, Import, and History. Users can be assigned shifts for reporting. History combines the previous review/report/job-data functions into Ledger, Charts, Top Issues, and Export views with shared job/part filters.
+The setup/admin UI includes Parts & Inspections, Machines, Users, Rules, History, and Archive. Import/export actions live inside the Parts & Inspections, Machines, and Users sections. Users can be assigned shifts for reporting. History combines the previous review/report/job-data functions into Ledger, Charts, Top Issues, and Export views with shared job/part filters.
 
 The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. It also supports a Web Serial text-gauge profile for USB devices that expose serial readings instead of acting like a keyboard. WebHID/custom binary profiles should be added once the actual gauge models and report formats are known.
 
 ## Next Architecture Step
 
-Keep SQLite as the pilot database while validating production workflows. The next hardening work is backup/restore practice, authentication/session hardening, offline queue conflict handling, cross-job note/material/machine/shift trend refinement, MES/OEE correlation exports, and saved QA report views. If the pilot requires a separate database engine, add an EF Core/SQL Server provider behind the existing repository boundary.
+Keep SQLite as the pilot database while validating production workflows. The next hardening work is backup/restore practice, internal user/session hardening, offline queue conflict handling, cross-job note/material/machine/shift trend refinement, MES/OEE correlation exports, and saved QA report views. If the pilot requires a separate database engine, add an EF Core/SQL Server provider behind the existing repository boundary.
 

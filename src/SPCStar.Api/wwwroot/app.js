@@ -208,7 +208,7 @@ async function login(event) {
   $("logoutButton").classList.remove("hidden");
   $("loginPanel").classList.add("hidden");
   $("workPanel").classList.remove("hidden");
-  if (canManageSetup()) {
+  if (canAccessSetup()) {
     $("navTabs").classList.remove("hidden");
     await loadSetupAdmin();
   }
@@ -254,13 +254,23 @@ async function loadSnapshot() {
   fillDatalist($("productGroupOptions"), productGroups(), (group) => group);
   $("partNum").value = "";
   refreshOperationChoices({ preserve: false });
-  if (canManageSetup()) {
-    renderGlobalRuleSetting();
+  if (canAccessSetup()) {
+    configureSetupAccess();
     renderPartReviewControls();
     renderReportControls();
-    renderSetupEditChoices();
-    renderUserProductGroupPicker();
     renderPartReview();
+    if (canManageRules()) {
+      renderGlobalRuleSetting();
+    }
+    if (canManageInspectionSetup()) {
+      renderSetupEditChoices();
+    }
+    if (canManageUsers()) {
+      renderUserProductGroupPicker();
+    }
+    if (canManageMachines()) {
+      renderMachines();
+    }
   }
   clearWorkContext();
 }
@@ -1667,15 +1677,65 @@ function canCurrentUserOverride() {
   return state.user?.permissions?.includes("CanOverrideDriftLock") === true;
 }
 
+function hasPermission(permission) {
+  return state.user?.permissions?.includes(permission) === true;
+}
+
 function canManageSetup() {
-  return state.user?.permissions?.some((permission) =>
-    permission === "CanManageInspectionPlans" ||
-    permission === "CanImportSetupData" ||
-    permission === "CanManageUsers") === true;
+  return canManageInspectionSetup() || canManageMachines() || canManageUsers() || canManageRules();
+}
+
+function canManageInspectionSetup() {
+  return hasPermission("CanManageInspectionPlans") || hasPermission("CanImportSetupData");
+}
+
+function canManageMachines() {
+  return hasPermission("CanManageInspectionPlans") || hasPermission("CanImportSetupData");
+}
+
+function canManageUsers() {
+  return hasPermission("CanManageUsers");
+}
+
+function canManageRules() {
+  return hasPermission("CanManageInspectionPlans");
+}
+
+function canViewHistory() {
+  return hasPermission("CanExportQAData") || canManageSetup();
+}
+
+function canAccessSetup() {
+  return canManageSetup() || canViewHistory();
+}
+
+function setupSectionAccess(sectionName) {
+  return {
+    Inspection: canManageInspectionSetup(),
+    Machines: canManageMachines(),
+    Users: canManageUsers(),
+    Rules: canManageRules(),
+    History: canViewHistory()
+  }[sectionName] === true;
+}
+
+function defaultSetupSection() {
+  return ["Inspection", "Machines", "Users", "Rules", "History"].find(setupSectionAccess) || "History";
+}
+
+function configureSetupAccess() {
+  ["Inspection", "Machines", "Users", "Rules", "History"].forEach((section) => {
+    $(`setup${section}SectionTab`).classList.toggle("hidden", !setupSectionAccess(section));
+    $(`setup${section}Section`).classList.toggle("hidden", !setupSectionAccess(section));
+  });
 }
 
 function showPanel(panelName) {
   const showSetup = panelName === "setup";
+  if (showSetup) {
+    configureSetupAccess();
+    showSetupSection(defaultSetupSection());
+  }
   $("workPanel").classList.toggle("hidden", showSetup);
   $("setupPanel").classList.toggle("hidden", !showSetup);
   $("inspectionTab").classList.toggle("active", !showSetup);
@@ -1683,6 +1743,10 @@ function showPanel(panelName) {
 }
 
 function showSetupSection(sectionName) {
+  if (!setupSectionAccess(sectionName)) {
+    sectionName = defaultSetupSection();
+  }
+
   if (sectionName === "History") {
     seedHistoryFiltersFromWorkContext();
     applyHistoryFilters();
@@ -1802,12 +1866,14 @@ function clearWorkContext() {
 }
 
 async function loadSetupAdmin() {
-  state.roles = await api("/setup/roles");
-  state.users = await api("/setup/users");
-  fillSelect($("setupRole"), state.roles, (role) => role, (role) => role);
-  renderMachines();
-  renderUserProductGroupPicker();
-  renderUsers();
+  configureSetupAccess();
+  if (canManageUsers()) {
+    state.roles = await api("/setup/roles");
+    state.users = await api("/setup/users");
+    fillSelect($("setupRole"), state.roles, (role) => role, (role) => role);
+    renderUserProductGroupPicker();
+    renderUsers();
+  }
 }
 
 function renderPartReviewControls() {

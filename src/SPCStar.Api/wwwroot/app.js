@@ -19,6 +19,7 @@ const state = {
     partNum: "",
     jobNum: ""
   },
+  inspectionDrafts: new Map(),
   device: {
     serialPort: null,
     serialReader: null,
@@ -619,9 +620,67 @@ function renderVariables() {
     measurementList.appendChild(card);
   });
   document.querySelectorAll(".measurement-input").forEach((input) => {
-    input.dataset.clientRecordId = newClientRecordId();
+    restoreMeasurementDraft(input);
   });
   wireMeasurementDeviceInputs();
+}
+
+function draftKeyForInput(input) {
+  const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  if (!plan) {
+    return "";
+  }
+
+  const { jobNum, resourceId } = selectedValues();
+  return [
+    jobNum,
+    resourceId,
+    plan.partNum,
+    plan.processCode,
+    plan.operationSeq,
+    plan.inspectionPhase || $("inspectionPhase").value,
+    plan.characteristicName,
+    input.dataset.sampleIndex
+  ].join("|").toLowerCase();
+}
+
+function restoreMeasurementDraft(input) {
+  const key = draftKeyForInput(input);
+  const draft = key ? state.inspectionDrafts.get(key) : null;
+  input.dataset.clientRecordId = draft?.clientRecordId || newClientRecordId();
+  if (!draft) {
+    return;
+  }
+
+  input.value = draft.value || "";
+  input.dataset.submitted = draft.submitted ? "true" : "false";
+  input.dataset.lastSubmittedValue = draft.lastSubmittedValue || "";
+  input.dataset.lastSubmittedNumericValue = draft.lastSubmittedNumericValue || "";
+}
+
+function updateMeasurementDraft(input, updates = {}) {
+  const key = draftKeyForInput(input);
+  if (!key) {
+    return;
+  }
+
+  const existing = state.inspectionDrafts.get(key) || {};
+  state.inspectionDrafts.set(key, {
+    ...existing,
+    clientRecordId: input.dataset.clientRecordId || existing.clientRecordId || newClientRecordId(),
+    value: input.value,
+    submitted: input.dataset.submitted === "true",
+    lastSubmittedValue: input.dataset.lastSubmittedValue || "",
+    lastSubmittedNumericValue: input.dataset.lastSubmittedNumericValue || "",
+    ...updates
+  });
+}
+
+function clearMeasurementDraftsForCurrentInspection() {
+  const keys = [...document.querySelectorAll(".measurement-input:not(:disabled)")]
+    .map((input) => draftKeyForInput(input))
+    .filter(Boolean);
+  keys.forEach((key) => state.inspectionDrafts.delete(key));
 }
 
 function sectionHeading(text) {
@@ -803,6 +862,12 @@ async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) 
 function wireMeasurementDeviceInputs() {
   document.querySelectorAll(".measurement-input").forEach((input) => {
     input.addEventListener("focus", () => input.closest("label")?.classList.add("device-input-active"));
+    input.addEventListener("input", () => {
+      if (input.value !== input.dataset.lastSubmittedValue) {
+        input.dataset.submitted = "false";
+      }
+      updateMeasurementDraft(input);
+    });
     input.addEventListener("blur", async () => {
       input.closest("label")?.classList.remove("device-input-active");
       if (input.dataset.tabSubmitting === "true" || input.disabled || input.value === input.dataset.lastSubmittedValue) {
@@ -827,7 +892,10 @@ function wireMeasurementDeviceInputs() {
       input.dataset.tabSubmitting = "false";
     });
     input.addEventListener("paste", () => {
-      window.setTimeout(() => normalizeMeasurementInput(input), 0);
+      window.setTimeout(() => {
+        normalizeMeasurementInput(input);
+        updateMeasurementDraft(input);
+      }, 0);
     });
   });
 }
@@ -895,6 +963,12 @@ function markAcceptedMeasurementInput(input, value) {
   input.dataset.submitted = "true";
   input.dataset.lastSubmittedValue = input.value;
   input.dataset.lastSubmittedNumericValue = String(value);
+  updateMeasurementDraft(input, {
+    value: input.value,
+    submitted: true,
+    lastSubmittedValue: input.value,
+    lastSubmittedNumericValue: String(value)
+  });
   const label = input.closest("label");
   label?.classList.add("measurement-submitted");
   window.setTimeout(() => label?.classList.remove("measurement-submitted"), 900);
@@ -908,6 +982,7 @@ function inspectionEntryComplete() {
 }
 
 async function resetCompletedInspectionEntry() {
+  clearMeasurementDraftsForCurrentInspection();
   await loadContext();
   showEntryMessage("Inspection complete. Fields cleared for the next inspection.", "ok");
 }
@@ -922,6 +997,7 @@ function normalizeMeasurementInput(input) {
   const parsed = parseDeviceMeasurement(input.value);
   if (parsed !== null) {
     input.value = parsed;
+    updateMeasurementDraft(input);
   }
 }
 
@@ -1979,6 +2055,7 @@ function logout() {
   state.jobNotes = [];
   state.trendCharacteristic = "";
   state.activeLock = null;
+  state.inspectionDrafts = new Map();
   state.users = [];
   state.roles = [];
   state.currentShift = $("loginShift").value;

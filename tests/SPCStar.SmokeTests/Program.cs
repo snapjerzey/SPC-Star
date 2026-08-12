@@ -142,6 +142,14 @@ static void MeasurementRecordsSetupPhaseCompletion()
     AssertTrue(repository.JobPhaseCompletions.Count == 1);
     AssertEqual("Setup", repository.JobPhaseCompletions.Single().InspectionPhase);
     AssertEqual("operator1", repository.JobPhaseCompletions.Single().CompletedByUserId);
+    AssertEqual(1, repository.JobPhaseCompletions.Single().CompletionNumber);
+    AssertEqual(3, repository.JobPhaseCompletions.Single().MeasurementIds.Count);
+
+    AssertTrue(service.EnterMeasurement(Entry(5m, 3) with { InspectionPhase = "Setup" }).Succeeded);
+    AssertTrue(service.EnterMeasurement(Entry(42m, 4) with { CharacteristicName = "Length", InspectionPhase = "Setup" }).Succeeded);
+    AssertTrue(service.EnterMeasurement(Entry(18m, 5) with { CharacteristicName = "Weight", InspectionPhase = "Setup" }).Succeeded);
+    AssertTrue(repository.JobPhaseCompletions.Count == 2);
+    AssertEqual(2, repository.JobPhaseCompletions.OrderBy(item => item.CompletionNumber).Last().CompletionNumber);
 }
 
 static void OverrideRejectsOperator()

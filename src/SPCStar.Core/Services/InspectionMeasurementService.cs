@@ -87,40 +87,55 @@ public sealed class InspectionMeasurementService(
     private void TryRecordPhaseCompletion(InspectionMeasurement measurement)
     {
         var phase = NormalizeInspectionPhase(measurement.InspectionPhase);
-        if (!IsCompletablePhase(phase))
-        {
-            return;
-        }
-
-        if (repository.JobPhaseCompletions.Any(item =>
-            item.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
-            item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
-            item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
-            item.OperationSeq == measurement.OperationSeq &&
-            item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
-            item.InspectionPhase.Equals(phase, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-
         var plans = PlansForMeasurementPhase(measurement, phase);
-        if (plans.Count == 0 || !plans.All(plan => SubmittedSampleCount(measurement, phase, plan) >= plan.Plan.SampleSize))
+        if (plans.Count == 0)
         {
             return;
         }
 
-        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        var completedRuns = plans
+            .Select(plan => SubmittedMeasurements(measurement, phase, plan).Count / plan.Plan.SampleSize)
+            .DefaultIfEmpty(0)
+            .Min();
+        var recordedRuns = repository.JobPhaseCompletions
+            .Where(item =>
+                item.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == measurement.OperationSeq &&
+                item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+                item.InspectionPhase.Equals(phase, StringComparison.OrdinalIgnoreCase))
+            .Select(item => Math.Max(item.CompletionNumber, 1))
+            .DefaultIfEmpty(0)
+            .Max();
+
+        for (var run = recordedRuns + 1; run <= completedRuns; run++)
         {
-            JobNum = measurement.JobNum,
-            PartNum = measurement.PartNum,
-            ProcessCode = measurement.ProcessCode,
-            OperationSeq = measurement.OperationSeq,
-            ResourceId = measurement.ResourceId,
-            InspectionPhase = phase,
-            CompletedByUserId = measurement.OperatorUserId,
-            OperatorShift = measurement.OperatorShift,
-            CompletedAt = measurement.Timestamp
-        });
+            var completion = new JobPhaseCompletion
+            {
+                JobNum = measurement.JobNum,
+                PartNum = measurement.PartNum,
+                ProcessCode = measurement.ProcessCode,
+                OperationSeq = measurement.OperationSeq,
+                ResourceId = measurement.ResourceId,
+                InspectionPhase = phase,
+                CompletionNumber = run,
+                CompletedByUserId = measurement.OperatorUserId,
+                OperatorShift = measurement.OperatorShift,
+                CompletedAt = measurement.Timestamp
+            };
+
+            foreach (var plan in plans)
+            {
+                var runMeasurements = SubmittedMeasurements(measurement, phase, plan)
+                    .Skip((run - 1) * plan.Plan.SampleSize)
+                    .Take(plan.Plan.SampleSize)
+                    .Select(item => item.Id);
+                completion.MeasurementIds.AddRange(runMeasurements);
+            }
+
+            repository.JobPhaseCompletions.Add(completion);
+        }
     }
 
     private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansForMeasurementPhase(InspectionMeasurement measurement, string phase)
@@ -150,25 +165,22 @@ public sealed class InspectionMeasurementService(
             .ToArray();
     }
 
-    private int SubmittedSampleCount(
+    private IReadOnlyList<InspectionMeasurement> SubmittedMeasurements(
         InspectionMeasurement measurement,
         string phase,
         (InspectionPlan Plan, Characteristic Characteristic) plan)
     {
-        return repository.Measurements.Count(item =>
+        return repository.Measurements
+            .Where(item =>
             item.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
             item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
             item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
             item.OperationSeq == measurement.OperationSeq &&
             item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
             item.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase) &&
-            NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsCompletablePhase(string phase)
-    {
-        return phase.Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Setup", StringComparison.OrdinalIgnoreCase);
+            NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.Timestamp)
+            .ToArray();
     }
 
     private ServiceResult UpsertJob(InspectionMeasurementEntry entry)

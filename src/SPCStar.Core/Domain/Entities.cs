@@ -132,9 +132,11 @@ public sealed class JobPhaseCompletion
     public int OperationSeq { get; set; }
     public required string ResourceId { get; set; }
     public required string InspectionPhase { get; set; }
+    public int CompletionNumber { get; set; } = 1;
     public required string CompletedByUserId { get; set; }
     public string OperatorShift { get; set; } = "";
     public DateTimeOffset CompletedAt { get; set; }
+    public List<Guid> MeasurementIds { get; } = [];
 }
 
 public sealed class JobTag

@@ -1589,7 +1589,7 @@ function historyEntryTitle(entry) {
   }
 
   if (entry.entryType === "PhaseComplete") {
-    return `${entry.inspectionPhase || "Inspection phase"} completed`;
+    return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed`;
   }
 
   return entry.operatorUserId;
@@ -1620,7 +1620,7 @@ function phaseCompletionHistoryText(entry) {
   const operation = entry.processCode
     ? ` Operation: ${entry.processCode}${entry.operationSeq ? ` ${entry.operationSeq}` : ""}.`
     : "";
-  return `${entry.inspectionPhase || "Inspection phase"} completed by ${historyEntryUser(entry)}.${operation}`;
+  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed by ${historyEntryUser(entry)}.${operation}`;
 }
 
 function lockHistoryText(entry) {
@@ -2050,6 +2050,7 @@ async function saveReviewMeasurement(id, item) {
 
 function renderReviewMeasurements(measurements, history) {
   const container = $("jobReviewMeasurements");
+  const measurementById = new Map((measurements || []).map((measurement) => [String(measurement.id).toLowerCase(), measurement]));
   const rows = [
     ...groupReviewMeasurements(measurements).map((group) => ({ kind: "MeasurementGroup", timestamp: group.latest.timestamp, group })),
     ...history.map((entry) => ({ kind: "History", timestamp: entry.timestamp, entry }))
@@ -2068,7 +2069,7 @@ function renderReviewMeasurements(measurements, history) {
     </div>`;
   rows.forEach((row) => {
     if (row.kind === "History") {
-      renderReviewHistoryEvent(container, row.entry);
+      renderReviewHistoryEvent(container, row.entry, measurementById);
       return;
     }
 
@@ -2174,9 +2175,11 @@ function renderReviewMeasurementDetail(container, groupId, measurement) {
   container.appendChild(item);
 }
 
-function renderReviewHistoryEvent(container, entry) {
+function renderReviewHistoryEvent(container, entry, measurementById = new Map()) {
   const item = document.createElement("div");
   item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""} ${entry.entryType === "PhaseComplete" ? "phase-complete-history-row" : ""}`;
+  const completionMeasurements = inspectionCompletionMeasurements(entry, measurementById);
+  const completionGroupId = `review-inspection-completion-${entry.id}`;
   const details = entry.entryType === "Lock"
     ? lockHistoryText(entry)
     : entry.entryType === "Material"
@@ -2194,6 +2197,38 @@ function renderReviewHistoryEvent(container, entry) {
     <span>${escapeHtml(entry.resourceId || "-")}</span>
     <span>-</span>
     <span>${escapeHtml(historyEntryUser(entry))}</span>
+    <span>${completionMeasurements.length ? `<button type="button" class="secondary compact-button">Details</button>` : ""}</span>`;
+  item.querySelector("button")?.addEventListener("click", () => toggleReviewMeasurementGroup(container, completionGroupId));
+  container.appendChild(item);
+  completionMeasurements.forEach((measurement) => renderInspectionCompletionMeasurementDetail(container, completionGroupId, measurement));
+}
+
+function inspectionCompletionMeasurements(entry, measurementById) {
+  if (entry.entryType !== "PhaseComplete" || !Array.isArray(entry.measurementIds)) {
+    return [];
+  }
+
+  return entry.measurementIds
+    .map((id) => measurementById.get(String(id).toLowerCase()))
+    .filter(Boolean)
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+}
+
+function renderInspectionCompletionMeasurementDetail(container, groupId, measurement) {
+  const item = document.createElement("div");
+  item.dataset.reviewGroup = groupId;
+  item.className = `data-row review-inspection-completion-detail-row hidden ${measurement.isOutOfSpec ? "measurement-out-spec" : measurement.isOutOfControl ? "measurement-out-control" : ""}`;
+  const value = measurement.characteristicType === "Attribute"
+    ? Number(measurement.value) === 1 ? "Accept" : "Reject"
+    : formatNumber(measurement.value);
+  item.innerHTML = `
+    <span>${formatDateTime(measurement.timestamp)}</span>
+    <span>${escapeHtml(measurement.inspectionPhase)}</span>
+    <span>${escapeHtml(measurement.characteristicName)}<small>${escapeHtml(measurement.characteristicType === "Attribute" ? "Accept/Reject" : "Measured")}</small></span>
+    <span>${escapeHtml(value)}${measurement.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : measurement.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
+    <span>${escapeHtml(measurement.resourceId)}</span>
+    <span>${escapeHtml(measurement.processCode)} ${measurement.operationSeq}</span>
+    <span>${escapeHtml(measurement.operatorUserId)}${measurement.operatorShift ? ` (${escapeHtml(measurement.operatorShift)})` : ""}</span>
     <span></span>`;
   container.appendChild(item);
 }

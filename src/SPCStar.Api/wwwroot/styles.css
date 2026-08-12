@@ -1250,13 +1250,20 @@ textarea {
   border-left: 4px solid #d0d5dd;
   padding-left: 14px;
 }
+.review-measurement-table .review-inspection-completion-detail-row {
+  background: #f6fef9;
+  border-left: 4px solid #abefc6;
+  padding-left: 14px;
+}
 .review-measurement-table .review-measurement-group-row.measurement-out-spec,
-.review-measurement-table .review-measurement-detail-row.measurement-out-spec {
+.review-measurement-table .review-measurement-detail-row.measurement-out-spec,
+.review-measurement-table .review-inspection-completion-detail-row.measurement-out-spec {
   background: #fff1f0;
   border-left-color: #d92d20;
 }
 .review-measurement-table .review-measurement-group-row.measurement-out-control,
-.review-measurement-table .review-measurement-detail-row.measurement-out-control {
+.review-measurement-table .review-measurement-detail-row.measurement-out-control,
+.review-measurement-table .review-inspection-completion-detail-row.measurement-out-control {
   background: #fffaeb;
   border-left-color: #f79009;
 }

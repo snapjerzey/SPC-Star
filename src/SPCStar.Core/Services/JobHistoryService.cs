@@ -33,7 +33,9 @@ public sealed record JobHistoryEntryDto(
     string? NewInspectionPhase = null,
     string? InspectionPhase = null,
     string? ProcessCode = null,
-    int? OperationSeq = null);
+    int? OperationSeq = null,
+    int? CompletionNumber = null,
+    IReadOnlyList<Guid>? MeasurementIds = null);
 
 public sealed class JobHistoryService(ISpcRepository repository)
 {
@@ -117,7 +119,9 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 completion.CompletedAt,
                 InspectionPhase: completion.InspectionPhase,
                 ProcessCode: completion.ProcessCode,
-                OperationSeq: completion.OperationSeq));
+                OperationSeq: completion.OperationSeq,
+                CompletionNumber: Math.Max(completion.CompletionNumber, 1),
+                MeasurementIds: [.. completion.MeasurementIds]));
 
         var edits = repository.MeasurementEditAudits
             .Where(edit => edit.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))

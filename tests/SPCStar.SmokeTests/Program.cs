@@ -165,12 +165,19 @@ static void JobHistoryBackfillsCompletedInspections()
     repository.Measurements.Add(EntryMeasurement("Diameter", 5m, 0, "In Process"));
     repository.Measurements.Add(EntryMeasurement("Length", 42m, 1, "In Process"));
     repository.Measurements.Add(EntryMeasurement("Weight", 18m, 2, "In Process"));
+    repository.Measurements.Add(EntryMeasurement("Diameter", 5m, 0, "In Process", Now(0).AddDays(1)));
+    repository.Measurements.Add(EntryMeasurement("Length", 42m, 1, "In Process", Now(1).AddDays(1)));
+    repository.Measurements.Add(EntryMeasurement("Weight", 18m, 2, "In Process", Now(2).AddDays(1)));
 
     var history = new JobHistoryService(repository).GetForJob("J100");
-    var completion = history.Single(item => item.EntryType == "PhaseComplete");
+    var completions = history.Where(item => item.EntryType == "PhaseComplete").OrderBy(item => item.Timestamp).ToArray();
+    AssertEqual(2, completions.Length);
+    var completion = completions[0];
     AssertEqual("In Process", completion.InspectionPhase);
     AssertEqual(1, completion.CompletionNumber);
     AssertEqual(3, completion.MeasurementIds?.Count ?? 0);
+    AssertEqual(1, completions[1].CompletionNumber);
+    AssertEqual(3, completions[1].MeasurementIds?.Count ?? 0);
 }
 
 static void OverrideRejectsOperator()
@@ -492,7 +499,7 @@ static InspectionMeasurement Measurement(decimal value, int minutes)
     };
 }
 
-static InspectionMeasurement EntryMeasurement(string characteristicName, decimal value, int minutes, string inspectionPhase)
+static InspectionMeasurement EntryMeasurement(string characteristicName, decimal value, int minutes, string inspectionPhase, DateTimeOffset? timestamp = null)
 {
     return new InspectionMeasurement
     {
@@ -504,7 +511,7 @@ static InspectionMeasurement EntryMeasurement(string characteristicName, decimal
         CharacteristicName = characteristicName,
         InspectionPhase = inspectionPhase,
         Value = value,
-        Timestamp = Now(minutes),
+        Timestamp = timestamp ?? Now(minutes),
         OperatorUserId = "operator1",
         OperatorShift = "1st Half Days"
     };

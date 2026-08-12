@@ -176,9 +176,10 @@ public sealed class InspectionMeasurementService(
             item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
             item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
             item.OperationSeq == measurement.OperationSeq &&
-            item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
-            item.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase) &&
-            NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+                item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+                item.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase) &&
+                item.Timestamp.Date == measurement.Timestamp.Date)
             .OrderBy(item => item.Timestamp)
             .ToArray();
     }

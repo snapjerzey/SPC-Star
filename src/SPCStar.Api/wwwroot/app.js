@@ -2092,6 +2092,7 @@ function groupReviewMeasurements(measurements) {
       measurement.processCode,
       measurement.operationSeq,
       measurement.resourceId,
+      reviewMeasurementDateKey(measurement.timestamp),
       normalizeInspectionPhase(measurement.inspectionPhase),
       measurement.characteristicName,
       measurement.characteristicType
@@ -2132,6 +2133,15 @@ function reviewMeasurementGroupSummary(items) {
     outOfControl ? `${outOfControl} out of control` : ""
   ].filter(Boolean).join(" · ");
   return `${items.length} entries · Mean ${formatNumber(mean)} · Range ${formatNumber(min)} - ${formatNumber(max)}${flags ? ` · ${flags}` : ""}`;
+}
+
+function reviewMeasurementDateKey(timestamp) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toISOString().slice(0, 10);
 }
 
 function renderReviewMeasurementGroup(container, group) {

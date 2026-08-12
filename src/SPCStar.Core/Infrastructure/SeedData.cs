@@ -85,7 +85,6 @@ public static class SeedData
         repository.Operations.Add(operation);
         repository.Characteristics.AddRange([diameter, length, weight]);
         repository.Jobs.Add(new Job { JobNum = "J100", PartNum = part.PartNum });
-        repository.Resources.Add(new ResourceMachine { ResourceId = "PRESS1", Description = "Demo press" });
         AddVariablePlan(repository, part, process, operation, diameter, 5m, 4.5m, 5.5m, 4m, 6m);
         AddVariablePlan(repository, part, process, operation, length, 42m, 41.5m, 42.5m, 41m, 43m);
         AddVariablePlan(repository, part, process, operation, weight, 18m, 17.2m, 18.8m, 16.8m, 19.2m);

@@ -159,6 +159,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
                         completion.OperationSeq,
                         completion.ResourceId,
                         completion.InspectionPhase,
+                        completion.CompletedAt.Date,
                         Math.Max(completion.CompletionNumber, 1));
 
                 return new JobHistoryEntryDto(
@@ -179,11 +180,11 @@ public sealed class JobHistoryService(ISpcRepository repository)
             .ToList();
 
         var existingKeys = persisted
-            .Select(entry => CompletionKey(entry.JobNum, entry.PartNum, entry.ProcessCode ?? "", entry.OperationSeq ?? 0, entry.ResourceId, entry.InspectionPhase ?? "", entry.CompletionNumber ?? 1))
+            .Select(entry => CompletionKey(entry.JobNum, entry.PartNum, entry.ProcessCode ?? "", entry.OperationSeq ?? 0, entry.ResourceId, entry.InspectionPhase ?? "", entry.Timestamp.Date, entry.CompletionNumber ?? 1))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var calculated = CalculatedPhaseCompletions(jobNum)
-            .Where(entry => !existingKeys.Contains(CompletionKey(entry.JobNum, entry.PartNum, entry.ProcessCode ?? "", entry.OperationSeq ?? 0, entry.ResourceId, entry.InspectionPhase ?? "", entry.CompletionNumber ?? 1)));
+            .Where(entry => !existingKeys.Contains(CompletionKey(entry.JobNum, entry.PartNum, entry.ProcessCode ?? "", entry.OperationSeq ?? 0, entry.ResourceId, entry.InspectionPhase ?? "", entry.Timestamp.Date, entry.CompletionNumber ?? 1)));
 
         persisted.AddRange(calculated);
         return persisted;
@@ -200,9 +201,10 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 measurement.ProcessCode,
                 measurement.OperationSeq,
                 measurement.ResourceId,
-                InspectionPhase = NormalizeInspectionPhase(measurement.InspectionPhase)
+                InspectionPhase = NormalizeInspectionPhase(measurement.InspectionPhase),
+                InspectionDate = measurement.Timestamp.Date
             })
-            .SelectMany(group => CalculatedPhaseCompletionsForGroup(group.Key.JobNum, group.Key.PartNum, group.Key.ProcessCode, group.Key.OperationSeq, group.Key.ResourceId, group.Key.InspectionPhase))
+            .SelectMany(group => CalculatedPhaseCompletionsForGroup(group.Key.JobNum, group.Key.PartNum, group.Key.ProcessCode, group.Key.OperationSeq, group.Key.ResourceId, group.Key.InspectionPhase, group.Key.InspectionDate))
             .ToArray();
     }
 
@@ -212,7 +214,8 @@ public sealed class JobHistoryService(ISpcRepository repository)
         string processCode,
         int operationSeq,
         string resourceId,
-        string inspectionPhase)
+        string inspectionPhase,
+        DateTime inspectionDate)
     {
         var plans = PlansForPhase(partNum, processCode, operationSeq, inspectionPhase);
         if (plans.Count == 0)
@@ -221,7 +224,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
         }
 
         var completedRuns = plans
-            .Select(plan => MeasurementsForPlan(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, plan.Characteristic.Name).Count / plan.Plan.SampleSize)
+            .Select(plan => MeasurementsForPlan(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, plan.Characteristic.Name, inspectionDate).Count / plan.Plan.SampleSize)
             .DefaultIfEmpty(0)
             .Min();
 
@@ -229,7 +232,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
         for (var run = 1; run <= completedRuns; run++)
         {
             var runMeasurements = plans
-                .SelectMany(plan => MeasurementsForPlan(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, plan.Characteristic.Name)
+                .SelectMany(plan => MeasurementsForPlan(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, plan.Characteristic.Name, inspectionDate)
                     .Skip((run - 1) * plan.Plan.SampleSize)
                     .Take(plan.Plan.SampleSize))
                 .OrderBy(measurement => measurement.Timestamp)
@@ -241,7 +244,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
 
             var finalMeasurement = runMeasurements.OrderByDescending(measurement => measurement.Timestamp).First();
             rows.Add(new JobHistoryEntryDto(
-                DeterministicGuid(CompletionKey(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, run)),
+                DeterministicGuid(CompletionKey(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, inspectionDate, run)),
                 "PhaseComplete",
                 jobNum,
                 partNum,
@@ -266,10 +269,11 @@ public sealed class JobHistoryService(ISpcRepository repository)
         int operationSeq,
         string resourceId,
         string inspectionPhase,
+        DateTime inspectionDate,
         int completionNumber)
     {
         return PlansForPhase(partNum, processCode, operationSeq, inspectionPhase)
-            .SelectMany(plan => MeasurementsForPlan(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, plan.Characteristic.Name)
+            .SelectMany(plan => MeasurementsForPlan(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, plan.Characteristic.Name, inspectionDate)
                 .Skip((completionNumber - 1) * plan.Plan.SampleSize)
                 .Take(plan.Plan.SampleSize)
                 .Select(measurement => measurement.Id))
@@ -315,7 +319,8 @@ public sealed class JobHistoryService(ISpcRepository repository)
         int operationSeq,
         string resourceId,
         string inspectionPhase,
-        string characteristicName)
+        string characteristicName,
+        DateTime inspectionDate)
     {
         return repository.Measurements
             .Where(measurement =>
@@ -325,14 +330,15 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 measurement.OperationSeq == operationSeq &&
                 measurement.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase) &&
                 measurement.CharacteristicName.Equals(characteristicName, StringComparison.OrdinalIgnoreCase) &&
-                NormalizeInspectionPhase(measurement.InspectionPhase).Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase))
+                NormalizeInspectionPhase(measurement.InspectionPhase).Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
+                measurement.Timestamp.Date == inspectionDate.Date)
             .OrderBy(measurement => measurement.Timestamp)
             .ToArray();
     }
 
-    private static string CompletionKey(string jobNum, string partNum, string processCode, int operationSeq, string resourceId, string inspectionPhase, int completionNumber)
+    private static string CompletionKey(string jobNum, string partNum, string processCode, int operationSeq, string resourceId, string inspectionPhase, DateTime inspectionDate, int completionNumber)
     {
-        return string.Join("|", jobNum, partNum, processCode, operationSeq, resourceId, NormalizeInspectionPhase(inspectionPhase), completionNumber);
+        return string.Join("|", jobNum, partNum, processCode, operationSeq, resourceId, NormalizeInspectionPhase(inspectionPhase), inspectionDate.ToString("yyyy-MM-dd"), completionNumber);
     }
 
     private static string NormalizeInspectionPhase(string value)

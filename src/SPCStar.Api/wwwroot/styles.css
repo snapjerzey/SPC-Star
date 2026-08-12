@@ -166,7 +166,7 @@ hr {
 .compact { max-width: 560px; }
 
 .login-screen {
-  width: min(900px, 100%);
+  width: min(1120px, 100%);
   margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -176,9 +176,9 @@ hr {
 }
 
 .login-welcome {
-  min-height: 455px;
+  height: 560px;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: minmax(0, 1fr) auto;
   align-content: stretch;
   justify-items: stretch;
   gap: 18px;
@@ -192,6 +192,7 @@ hr {
 
 .login-welcome-copy {
   display: grid;
+  align-content: center;
   justify-items: center;
   text-align: center;
 }
@@ -288,7 +289,7 @@ hr {
 
 .login-card {
   width: 100%;
-  min-height: 455px;
+  height: 560px;
   display: grid;
   align-content: start;
   gap: 14px;
@@ -1601,7 +1602,7 @@ textarea {
     gap: 12px;
   }
   .login-welcome {
-    min-height: auto;
+    height: auto;
     grid-template-columns: 1fr;
     align-items: center;
     padding: 16px;
@@ -1629,6 +1630,9 @@ textarea {
   .login-welcome p {
     margin-bottom: 0;
     font-size: 13px;
+  }
+  .login-card {
+    height: auto;
   }
   .status-row { justify-content: flex-start; }
   .job-data-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }

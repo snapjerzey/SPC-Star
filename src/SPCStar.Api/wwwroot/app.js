@@ -20,6 +20,7 @@ const state = {
     jobNum: ""
   },
   inspectionDrafts: new Map(),
+  preserveInspectionEntriesUntil: 0,
   device: {
     serialPort: null,
     serialReader: null,
@@ -683,6 +684,45 @@ function clearMeasurementDraftsForCurrentInspection() {
   keys.forEach((key) => state.inspectionDrafts.delete(key));
 }
 
+function snapshotMeasurementInputs() {
+  return [...document.querySelectorAll(".measurement-input:not(:disabled)")].map((input) => ({
+    key: draftKeyForInput(input),
+    value: input.value,
+    clientRecordId: input.dataset.clientRecordId || "",
+    submitted: input.dataset.submitted === "true",
+    lastSubmittedValue: input.dataset.lastSubmittedValue || "",
+    lastSubmittedNumericValue: input.dataset.lastSubmittedNumericValue || ""
+  })).filter((item) => item.key);
+}
+
+function restoreMeasurementInputSnapshot(snapshot) {
+  if (!snapshot.length) {
+    return;
+  }
+
+  const inputs = [...document.querySelectorAll(".measurement-input:not(:disabled)")];
+  snapshot.forEach((item) => {
+    state.inspectionDrafts.set(item.key, {
+      clientRecordId: item.clientRecordId || newClientRecordId(),
+      value: item.value,
+      submitted: item.submitted,
+      lastSubmittedValue: item.lastSubmittedValue,
+      lastSubmittedNumericValue: item.lastSubmittedNumericValue
+    });
+
+    const input = inputs.find((candidate) => draftKeyForInput(candidate) === item.key);
+    if (!input) {
+      return;
+    }
+
+    input.value = item.value;
+    input.dataset.clientRecordId = item.clientRecordId || input.dataset.clientRecordId || newClientRecordId();
+    input.dataset.submitted = item.submitted ? "true" : "false";
+    input.dataset.lastSubmittedValue = item.lastSubmittedValue;
+    input.dataset.lastSubmittedNumericValue = item.lastSubmittedNumericValue;
+  });
+}
+
 function sectionHeading(text) {
   const heading = document.createElement("h3");
   heading.className = "inspection-section-heading";
@@ -982,6 +1022,11 @@ function inspectionEntryComplete() {
 }
 
 async function resetCompletedInspectionEntry() {
+  if (state.activeLock || Date.now() < state.preserveInspectionEntriesUntil) {
+    showEntryMessage("Lock cleared. Entries preserved for review.", "ok");
+    return;
+  }
+
   clearMeasurementDraftsForCurrentInspection();
   await loadContext();
   showEntryMessage("Inspection complete. Fields cleared for the next inspection.", "ok");
@@ -1809,6 +1854,8 @@ async function clearLock(event) {
     return;
   }
 
+  const preservedInputs = snapshotMeasurementInputs();
+  state.preserveInspectionEntriesUntil = Date.now() + 10000;
   try {
     const isGodOverride = overrideUserHasGodRole();
     await api(`/alerts/${state.activeLock.alertId}/override`, {
@@ -1833,6 +1880,9 @@ async function clearLock(event) {
     state.activeLock = null;
     renderLock(null);
     await refreshContextDataWithoutClearingEntries();
+    restoreMeasurementInputSnapshot(preservedInputs);
+    window.setTimeout(() => restoreMeasurementInputSnapshot(preservedInputs), 0);
+    window.setTimeout(() => restoreMeasurementInputSnapshot(preservedInputs), 300);
   } catch (error) {
     $("overrideMessage").textContent = readableError(error);
     $("overrideMessage").className = "message error";

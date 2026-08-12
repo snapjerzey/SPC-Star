@@ -193,7 +193,7 @@ The default server URL is:
 http://SERVER-NAME:5000/
 ```
 
-The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar.db`, keep archive files at `C:\SPCStar\data\archives`, keep backups in `C:\SPCStar\backups`, and create a Windows Scheduled Task named `SPC-Star Server`.
+The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar.db`, keep archive files at `C:\SPCStar\data\archives`, keep backups in `C:\SPCStar\backups`, and create Windows Scheduled Tasks named `SPC-Star Server` and `SPC-Star Daily Backup`.
 
 See `deploy/README.md` for the deployment workflow.
 
@@ -233,6 +233,8 @@ Server backup script:
 ```powershell
 .\deploy\backup-data.ps1
 ```
+
+Server installs also create a daily scheduled backup task named `SPC-Star Daily Backup`. The default backup time is `2:00 AM`; pass `-BackupTime "HH:mm"` to `install-server.ps1` or `update-server.ps1` to choose a different time.
 
 Restore approach:
 

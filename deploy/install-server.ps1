@@ -1,7 +1,9 @@
 param(
     [string]$InstallRoot = "C:\SPCStar",
     [int]$Port = 5000,
-    [string]$TaskName = "SPC-Star Server"
+    [string]$TaskName = "SPC-Star Server",
+    [string]$BackupTaskName = "SPC-Star Daily Backup",
+    [string]$BackupTime = "02:00"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,6 +15,7 @@ $dataRoot = Join-Path $InstallRoot "data"
 $backupRoot = Join-Path $InstallRoot "backups"
 $logRoot = Join-Path $InstallRoot "logs"
 $startScript = Join-Path $InstallRoot "start-spcstar.ps1"
+$backupScript = Join-Path $InstallRoot "backup-spcstar.ps1"
 
 Write-Host "Installing SPC-Star server files..."
 New-Item -ItemType Directory -Force -Path $appRoot, $dataRoot, $backupRoot, $logRoot | Out-Null
@@ -20,6 +23,7 @@ New-Item -ItemType Directory -Force -Path $appRoot, $dataRoot, $backupRoot, $log
 dotnet publish $projectPath -c Release -o $appRoot --self-contained false
 
 Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\start-spcstar.ps1") -Destination $startScript -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\backup-data.ps1") -Destination $backupScript -Force
 
 Write-Host "Creating firewall rule for TCP port $Port..."
 $ruleName = "SPC-Star TCP $Port"
@@ -32,6 +36,12 @@ $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfil
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
+
+Write-Host "Creating scheduled task '$BackupTaskName' for daily SPC-Star database backups at $BackupTime..."
+$backupAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$backupScript`" -InstallRoot `"$InstallRoot`" -Port $Port"
+$backupTrigger = New-ScheduledTaskTrigger -Daily -At $BackupTime
+$backupSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+Register-ScheduledTask -TaskName $BackupTaskName -Action $backupAction -Trigger $backupTrigger -Settings $backupSettings -RunLevel Highest -Force | Out-Null
 
 Start-ScheduledTask -TaskName $TaskName
 

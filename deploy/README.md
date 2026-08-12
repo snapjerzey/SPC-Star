@@ -20,6 +20,17 @@ Run from the project folder on the server:
 .\deploy\install-server.ps1
 ```
 
+The install creates two Windows Scheduled Tasks:
+
+- `SPC-Star Server`: starts SPC-Star automatically when the server starts.
+- `SPC-Star Daily Backup`: creates a daily SPC-Star database backup at `2:00 AM` by default.
+
+To choose a different daily backup time:
+
+```powershell
+.\deploy\install-server.ps1 -BackupTime "23:30"
+```
+
 Default local network URL:
 
 ```text
@@ -37,6 +48,7 @@ After pulling the latest SPC-Star code onto the server:
 ```
 
 This stops the scheduled task, creates a database backup, publishes the newest app files, and restarts the scheduled task.
+It also installs or refreshes the `SPC-Star Daily Backup` scheduled task.
 
 ## Backup Only
 
@@ -45,6 +57,8 @@ This stops the scheduled task, creates a database backup, publishes the newest a
 ```
 
 Backups are stored in `C:\SPCStar\backups` using the naming format `MMDDYY Backup HHMM.db`, for example `081226 Backup 1430.db`. Backups do not overwrite existing backup files.
+
+The daily scheduled backup task runs this same backup script automatically. This gives SPC-Star its own local database backups in addition to the server's normal daily backup process.
 
 When SPC-Star is running, the backup script asks the local SPC-Star server to create an online SQLite backup. Operators can stay logged in and continue submitting inspections while the backup is created. The backup captures a consistent snapshot of all data saved before the backup finishes; newer submissions continue into the live database and will be included in the next backup.
 

@@ -22,9 +22,9 @@ public sealed class AuthSessionServiceTests
         Assert.Contains("CanEnterInspections", result.Value.Permissions);
         Assert.Contains("CanOverrideDriftLock", result.Value.Permissions);
         Assert.Contains("CanManageInspectionPlans", result.Value.Permissions);
-        Assert.Contains("CanImportSetupData", result.Value.Permissions);
         Assert.Contains("CanExportQAData", result.Value.Permissions);
         Assert.Contains("CanManageUsers", result.Value.Permissions);
+        Assert.DoesNotContain("CanImportSetupData", result.Value.Permissions);
         Assert.DoesNotContain("CanUseGodMode", result.Value.Permissions);
         Assert.Empty(result.Value.ProductGroups);
         Assert.Equal("dev-session:qa1", result.Value.SessionToken);

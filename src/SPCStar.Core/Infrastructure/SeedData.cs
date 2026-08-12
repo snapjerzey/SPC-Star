@@ -24,9 +24,9 @@ public static class SeedData
             PermissionNames.CanEnterInspections,
             PermissionNames.CanOverrideDriftLock,
             PermissionNames.CanManageInspectionPlans,
-            PermissionNames.CanImportSetupData,
             PermissionNames.CanExportQAData,
             PermissionNames.CanManageUsers);
+        qa.Permissions.Remove(PermissionNames.CanImportSetupData);
         var god = UpsertRole(
             repository,
             RoleNames.GOD,

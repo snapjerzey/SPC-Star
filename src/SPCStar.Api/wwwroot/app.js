@@ -1686,11 +1686,11 @@ function canManageSetup() {
 }
 
 function canManageInspectionSetup() {
-  return hasPermission("CanManageInspectionPlans") || hasPermission("CanImportSetupData");
+  return hasPermission("CanManageInspectionPlans");
 }
 
 function canManageMachines() {
-  return hasPermission("CanManageInspectionPlans") || hasPermission("CanImportSetupData");
+  return hasPermission("CanManageInspectionPlans");
 }
 
 function canManageUsers() {
@@ -1699,6 +1699,10 @@ function canManageUsers() {
 
 function canManageRules() {
   return hasPermission("CanManageInspectionPlans");
+}
+
+function canImportSetupData() {
+  return hasPermission("CanImportSetupData");
 }
 
 function canViewHistory() {
@@ -1727,6 +1731,9 @@ function configureSetupAccess() {
   ["Inspection", "Machines", "Users", "Rules", "History"].forEach((section) => {
     $(`setup${section}SectionTab`).classList.toggle("hidden", !setupSectionAccess(section));
     $(`setup${section}Section`).classList.toggle("hidden", !setupSectionAccess(section));
+  });
+  document.querySelectorAll(".import-only").forEach((element) => {
+    element.classList.toggle("hidden", !canImportSetupData());
   });
 }
 
@@ -3065,6 +3072,12 @@ async function saveUser(event) {
 
 async function importUsersXlsx(event) {
   event.preventDefault();
+  if (!canImportSetupData()) {
+    $("userImportMessage").textContent = "Import is restricted to GOD access.";
+    $("userImportMessage").className = "message error";
+    return;
+  }
+
   const file = $("userImportFile").files[0];
   if (!file) {
     $("userImportMessage").textContent = "Select a user permissions workbook to import.";
@@ -3782,6 +3795,12 @@ function validateVariablePhases(variables) {
 
 async function importPartsXlsx(event) {
   event.preventDefault();
+  if (!canImportSetupData()) {
+    $("partsImportMessage").textContent = "Import is restricted to GOD access.";
+    $("partsImportMessage").className = "message error";
+    return;
+  }
+
   const file = $("partsImportFile").files[0];
   if (!file) {
     $("partsImportMessage").textContent = "Select a parts and inspections workbook to import.";
@@ -3808,6 +3827,12 @@ async function importPartsXlsx(event) {
 
 async function importMachinesXlsx(event) {
   event.preventDefault();
+  if (!canImportSetupData()) {
+    $("machineImportMessage").textContent = "Import is restricted to GOD access.";
+    $("machineImportMessage").className = "message error";
+    return;
+  }
+
   const file = $("machineImportFile").files[0];
   if (!file) {
     $("machineImportMessage").textContent = "Select a machine workbook to import.";

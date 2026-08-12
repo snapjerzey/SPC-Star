@@ -196,23 +196,45 @@ function selectedValues() {
 
 async function login(event) {
   event.preventDefault();
-  const userName = $("userName").value.trim();
-  const password = $("password").value;
-  state.currentShift = $("loginShift").value;
-  state.user = await api("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ userName, password })
-  });
-  setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")}) / ${state.currentShift}`, "ok");
-  document.body.classList.remove("login-active");
-  $("logoutButton").classList.remove("hidden");
-  $("loginPanel").classList.add("hidden");
-  $("workPanel").classList.remove("hidden");
-  if (canAccessSetup()) {
-    $("navTabs").classList.remove("hidden");
-    await loadSetupAdmin();
+  const signInButton = $("loginForm").querySelector("button[type='submit']");
+  try {
+    signInButton.disabled = true;
+    $("loginMessage").textContent = "Signing in...";
+    $("loginMessage").className = "message";
+    const userName = $("userName").value.trim();
+    const password = $("password").value;
+    state.currentShift = $("loginShift").value;
+    state.user = await api("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ userName, password })
+    });
+    $("loginMessage").textContent = "Loading inspection data...";
+    setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")}) / ${state.currentShift}`, "ok");
+    document.body.classList.remove("login-active");
+    $("logoutButton").classList.remove("hidden");
+    $("loginPanel").classList.add("hidden");
+    $("workPanel").classList.remove("hidden");
+    if (canAccessSetup()) {
+      $("loginMessage").textContent = "Loading setup data...";
+      $("navTabs").classList.remove("hidden");
+      await loadSetupAdmin();
+    }
+    await loadSnapshot();
+    $("loginMessage").textContent = "";
+  } catch (error) {
+    $("loginMessage").textContent = readableError(error);
+    $("loginMessage").className = "message error";
+    document.body.classList.add("login-active");
+    $("loginPanel").classList.remove("hidden");
+    $("workPanel").classList.add("hidden");
+  } finally {
+    signInButton.disabled = false;
   }
-  await loadSnapshot();
+}
+
+function clearLoginFields() {
+  $("userName").value = "";
+  $("password").value = "";
 }
 
 function toggleChangePassword() {
@@ -4183,6 +4205,7 @@ $("jobSummaryForm").addEventListener("submit", loadJobSummary);
 $("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
 $("reportForm").addEventListener("submit", runReport);
 setStatus($("syncStatus"), navigator.onLine ? "Online" : "Offline", navigator.onLine ? "ok" : "warn");
+clearLoginFields();
 clearInspectionSetupForm();
 
 if ("serviceWorker" in navigator) {

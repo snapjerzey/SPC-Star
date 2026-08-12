@@ -41,18 +41,18 @@
         </div>
       </div>
 
-      <form id="loginForm" class="panel login-card">
+      <form id="loginForm" class="panel login-card" autocomplete="off">
         <div class="panel-heading">
           <h2>Sign In</h2>
           <p>Inspection Console</p>
         </div>
         <label>
           User
-          <input id="userName" autocomplete="username" value="Archon">
+          <input id="userName" autocomplete="off" autocapitalize="none" spellcheck="false">
         </label>
         <label>
           Password
-          <input id="password" type="password" autocomplete="current-password" value="archon">
+          <input id="password" type="password" autocomplete="off">
         </label>
         <label>
           Shift
@@ -65,6 +65,7 @@
           </select>
         </label>
         <button type="submit">Sign in</button>
+        <p id="loginMessage" class="message"></p>
         <button id="showChangePasswordButton" type="button" class="secondary">Change password</button>
         <div id="changePasswordPanel" class="change-password-panel hidden">
           <label>
@@ -1409,6 +1410,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260812-archon-user-cleanup"></script>
+  <script src="/app.js?v=20260812-login-field-reset"></script>
 </body>
 </html>

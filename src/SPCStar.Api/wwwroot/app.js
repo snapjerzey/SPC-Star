@@ -810,6 +810,7 @@ async function submitMeasurementInput(input, options = {}) {
     const planIndex = Number(input.dataset.planIndex);
     state.contexts[planIndex] = await loadVariableContext(jobNum, resourceId, plan);
     renderMeanSummary();
+    await loadJobNotes(jobNum);
     if (state.contexts[planIndex]?.activeLock) {
       state.activeLock = state.contexts[planIndex].activeLock;
       await loadContext();
@@ -2051,8 +2052,15 @@ async function saveReviewMeasurement(id, item) {
 function renderReviewMeasurements(measurements, history) {
   const container = $("jobReviewMeasurements");
   const measurementById = new Map((measurements || []).map((measurement) => [String(measurement.id).toLowerCase(), measurement]));
+  const completedMeasurementIds = new Set(
+    (history || [])
+      .filter((entry) => entry.entryType === "PhaseComplete" && Array.isArray(entry.measurementIds))
+      .flatMap((entry) => entry.measurementIds.map((id) => String(id).toLowerCase()))
+  );
+  const uncompletedMeasurements = (measurements || [])
+    .filter((measurement) => !completedMeasurementIds.has(String(measurement.id).toLowerCase()));
   const rows = [
-    ...groupReviewMeasurements(measurements).map((group) => ({ kind: "MeasurementGroup", timestamp: group.latest.timestamp, group })),
+    ...groupReviewMeasurements(uncompletedMeasurements).map((group) => ({ kind: "MeasurementGroup", timestamp: group.latest.timestamp, group })),
     ...history.map((entry) => ({ kind: "History", timestamp: entry.timestamp, entry }))
   ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 

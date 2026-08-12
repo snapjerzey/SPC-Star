@@ -11,6 +11,7 @@ var tests = new (string Name, Action Run)[]
     ("measurement rejects unknown inspection target", MeasurementRejectsUnknownInspectionTarget),
     ("measurement creates lock alert", MeasurementCreatesLockAlert),
     ("measurement records setup phase completion", MeasurementRecordsSetupPhaseCompletion),
+    ("job history backfills completed inspections", JobHistoryBackfillsCompletedInspections),
     ("override rejects operator", OverrideRejectsOperator),
     ("override allows QA", OverrideAllowsQa),
     ("override rejects bad credentials", OverrideRejectsBadCredentials),
@@ -150,6 +151,26 @@ static void MeasurementRecordsSetupPhaseCompletion()
     AssertTrue(service.EnterMeasurement(Entry(18m, 5) with { CharacteristicName = "Weight", InspectionPhase = "Setup" }).Succeeded);
     AssertTrue(repository.JobPhaseCompletions.Count == 2);
     AssertEqual(2, repository.JobPhaseCompletions.OrderBy(item => item.CompletionNumber).Last().CompletionNumber);
+}
+
+static void JobHistoryBackfillsCompletedInspections()
+{
+    var repository = RepositoryWithSecurityAndLimits();
+    foreach (var plan in repository.InspectionPlans)
+    {
+        plan.InspectionPhase = "In Process";
+        plan.SampleSize = 1;
+    }
+
+    repository.Measurements.Add(EntryMeasurement("Diameter", 5m, 0, "In Process"));
+    repository.Measurements.Add(EntryMeasurement("Length", 42m, 1, "In Process"));
+    repository.Measurements.Add(EntryMeasurement("Weight", 18m, 2, "In Process"));
+
+    var history = new JobHistoryService(repository).GetForJob("J100");
+    var completion = history.Single(item => item.EntryType == "PhaseComplete");
+    AssertEqual("In Process", completion.InspectionPhase);
+    AssertEqual(1, completion.CompletionNumber);
+    AssertEqual(3, completion.MeasurementIds?.Count ?? 0);
 }
 
 static void OverrideRejectsOperator()
@@ -468,6 +489,24 @@ static InspectionMeasurement Measurement(decimal value, int minutes)
         Value = value,
         Timestamp = Now(minutes),
         OperatorUserId = "operator1"
+    };
+}
+
+static InspectionMeasurement EntryMeasurement(string characteristicName, decimal value, int minutes, string inspectionPhase)
+{
+    return new InspectionMeasurement
+    {
+        JobNum = "J100",
+        PartNum = "P100",
+        ProcessCode = "MOLD",
+        OperationSeq = 10,
+        ResourceId = "PRESS1",
+        CharacteristicName = characteristicName,
+        InspectionPhase = inspectionPhase,
+        Value = value,
+        Timestamp = Now(minutes),
+        OperatorUserId = "operator1",
+        OperatorShift = "1st Half Days"
     };
 }
 

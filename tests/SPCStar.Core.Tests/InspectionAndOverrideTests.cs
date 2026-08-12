@@ -109,17 +109,25 @@ public sealed class InspectionAndOverrideTests
     public void EnterMeasurement_AddsDetailToWesternElectricDriftAlert()
     {
         var repository = RepositoryWithSecurityAndLimits();
+        var limit = repository.ControlLimits.First(item =>
+            item.PartNum == "P100" &&
+            item.ProcessCode == "MOLD" &&
+            item.OperationSeq == 10 &&
+            item.CharacteristicName == "Diameter");
+        limit.CenterLine = 5m;
+        limit.Lcl = 4.7m;
+        limit.Ucl = 5.3m;
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
-        service.EnterMeasurement(Entry(12.2m));
-        service.EnterMeasurement(Entry(10m, 1));
-        service.EnterMeasurement(Entry(12.4m, 2));
+        service.EnterMeasurement(Entry(5.2m));
+        service.EnterMeasurement(Entry(5m, 1));
+        service.EnterMeasurement(Entry(5.24m, 2));
 
         var alert = repository.Alerts.Single(alert => alert.RuleTriggered == RuleTriggered.TwoOfThreeNearControlLimit);
         Assert.Contains("prior measurements", alert.Detail);
         Assert.Contains("Control limits", alert.Detail);
-        Assert.Contains("12.2", alert.Detail);
-        Assert.Contains("12.4", alert.Detail);
+        Assert.Contains("5.2", alert.Detail);
+        Assert.Contains("5.24", alert.Detail);
     }
 
     [Theory]

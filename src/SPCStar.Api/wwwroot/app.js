@@ -1754,11 +1754,28 @@ async function clearLock(event) {
     $("bypassReason").value = "";
     $("overrideMessage").textContent = "Lock cleared.";
     $("overrideMessage").className = "message ok";
-    await loadContext();
+    state.activeLock = null;
+    renderLock(null);
+    await refreshContextDataWithoutClearingEntries();
   } catch (error) {
     $("overrideMessage").textContent = readableError(error);
     $("overrideMessage").className = "message error";
   }
+}
+
+async function refreshContextDataWithoutClearingEntries() {
+  const { jobNum, resourceId } = selectedValues();
+  if (!jobNum || !resourceId || !state.selectedPlans.length) {
+    return;
+  }
+
+  state.contexts = await Promise.all(state.selectedPlans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
+  state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
+  renderLock(state.activeLock);
+  renderMeanSummary();
+  renderTrendChoices();
+  await loadTrend();
+  await loadJobNotes(jobNum);
 }
 
 function canCurrentUserOverride() {

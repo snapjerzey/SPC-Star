@@ -4058,11 +4058,19 @@ async function createManualBackup() {
   }
 }
 
-function databaseActionCredentials() {
+function clearHistoryCredentials() {
   return {
-    userName: $("databaseActionUserName").value.trim(),
-    password: $("databaseActionPassword").value,
-    confirmationText: $("databaseActionConfirmationText").value.trim()
+    userName: $("clearHistoryUserName").value.trim(),
+    password: $("clearHistoryPassword").value,
+    confirmationText: $("clearHistoryConfirmationText").value.trim()
+  };
+}
+
+function restoreBackupCredentials() {
+  return {
+    userName: $("restoreBackupUserName").value.trim(),
+    password: $("restoreBackupPassword").value,
+    confirmationText: $("restoreBackupConfirmationText").value.trim()
   };
 }
 
@@ -4077,18 +4085,20 @@ function showDatabaseActionResult(title, rows) {
 async function clearHistoryDataForRestoreTest() {
   const button = $("clearDatabaseButton");
   button.disabled = true;
-  $("databaseActionMessage").textContent = "Clearing history data...";
-  $("databaseActionMessage").className = "message";
+  $("clearHistoryMessage").textContent = "Clearing history data...";
+  $("clearHistoryMessage").className = "message";
   $("databaseActionResultPanel").classList.add("hidden");
   try {
     const result = await api("/setup/database/clear-history", {
       method: "POST",
-      body: JSON.stringify(databaseActionCredentials())
+      body: JSON.stringify(clearHistoryCredentials())
     });
-    $("databaseActionPassword").value = "";
-    $("databaseActionConfirmationText").value = "";
-    $("databaseActionMessage").textContent = "History data cleared. Users, machines, parts, inspections, rules, and setup data were kept.";
-    $("databaseActionMessage").className = "message ok";
+    $("clearHistoryPassword").value = "";
+    $("clearHistoryConfirmationText").value = "";
+    $("clearHistoryMessage").textContent = "History data cleared. Users, machines, parts, inspections, rules, and setup data were kept.";
+    $("clearHistoryMessage").className = "message ok";
+    $("restoreBackupMessage").textContent = "";
+    $("restoreBackupMessage").className = "message";
     showDatabaseActionResult("History Data Cleared", [
       ["Quarantine file", result.quarantineFileName],
       ["Quarantine path", result.quarantinePath]
@@ -4096,8 +4106,8 @@ async function clearHistoryDataForRestoreTest() {
     await loadSetupAdmin();
     await loadSnapshot();
   } catch (error) {
-    $("databaseActionMessage").textContent = readableError(error);
-    $("databaseActionMessage").className = "message error";
+    $("clearHistoryMessage").textContent = readableError(error);
+    $("clearHistoryMessage").className = "message error";
   } finally {
     button.disabled = false;
   }
@@ -4106,18 +4116,20 @@ async function clearHistoryDataForRestoreTest() {
 async function restoreLatestBackup() {
   const button = $("restoreLatestBackupButton");
   button.disabled = true;
-  $("databaseActionMessage").textContent = "Restoring latest backup...";
-  $("databaseActionMessage").className = "message";
+  $("restoreBackupMessage").textContent = "Restoring latest backup...";
+  $("restoreBackupMessage").className = "message";
   $("databaseActionResultPanel").classList.add("hidden");
   try {
     const result = await api("/setup/database/restore-latest", {
       method: "POST",
-      body: JSON.stringify(databaseActionCredentials())
+      body: JSON.stringify(restoreBackupCredentials())
     });
-    $("databaseActionPassword").value = "";
-    $("databaseActionConfirmationText").value = "";
-    $("databaseActionMessage").textContent = "Latest backup restored.";
-    $("databaseActionMessage").className = "message ok";
+    $("restoreBackupPassword").value = "";
+    $("restoreBackupConfirmationText").value = "";
+    $("restoreBackupMessage").textContent = "Latest backup restored.";
+    $("restoreBackupMessage").className = "message ok";
+    $("clearHistoryMessage").textContent = "";
+    $("clearHistoryMessage").className = "message";
     showDatabaseActionResult("Database Restored", [
       ["Restored backup", result.restoredBackupFileName],
       ["Backup path", result.restoredBackupPath],
@@ -4127,8 +4139,8 @@ async function restoreLatestBackup() {
     await loadSetupAdmin();
     await loadSnapshot();
   } catch (error) {
-    $("databaseActionMessage").textContent = readableError(error);
-    $("databaseActionMessage").className = "message error";
+    $("restoreBackupMessage").textContent = readableError(error);
+    $("restoreBackupMessage").className = "message error";
   } finally {
     button.disabled = false;
   }

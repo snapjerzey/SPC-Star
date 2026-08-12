@@ -59,6 +59,7 @@ Useful environment variables:
 - `SPCSTAR_DATABASE_PATH`: choose a different SQLite database file.
 - `SPCSTAR_STORAGE_PROVIDER=json`: temporarily run against the older JSON file.
 - `SPCSTAR_DATA_PATH`: choose a different JSON file path when using JSON storage.
+- `SPCSTAR_ARCHIVE_PATH`: choose where archive files are written.
 
 If NuGet is unavailable, run the dependency-free smoke tests:
 
@@ -186,7 +187,7 @@ The default server URL is:
 http://SERVER-NAME:5000/
 ```
 
-The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar.db`, keep backups in `C:\SPCStar\backups`, and create a Windows Scheduled Task named `SPC-Star Server`.
+The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar.db`, keep archive files at `C:\SPCStar\data\archives`, keep backups in `C:\SPCStar\backups`, and create a Windows Scheduled Task named `SPC-Star Server`.
 
 See `deploy/README.md` for the deployment workflow.
 
@@ -213,7 +214,7 @@ Archive workflow:
 5. Type `ARCHIVE` to confirm.
 6. Click `Create Archive`.
 
-The archive process writes a JSON file first, then removes matching records from the live database only after the file is created successfully. Archive files are stored in `.appdata/archives` for local development and under the server app data/archive location for deployed environments. The UI also provides a download link after the archive is created.
+The archive process writes a JSON file first, then removes matching records from the live database only after the file is created successfully. Archive files are stored in `.appdata/archives` for local development. Server installs write archive files to `C:\SPCStar\data\archives` through `SPCSTAR_ARCHIVE_PATH`. The UI also provides a download link after the archive is created.
 
 Archived historical record types:
 

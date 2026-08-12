@@ -17,6 +17,9 @@ var projectRoot = FindProjectRoot(builder.Environment.ContentRootPath);
 var jsonStoragePath = Environment.GetEnvironmentVariable("SPCSTAR_DATA_PATH")
     ?? builder.Configuration["SPCStar:DataPath"]
     ?? Path.Combine(projectRoot, ".appdata", "spcstar-data.json");
+var archivePath = Environment.GetEnvironmentVariable("SPCSTAR_ARCHIVE_PATH")
+    ?? builder.Configuration["SPCStar:ArchivePath"]
+    ?? Path.Combine(projectRoot, ".appdata", "archives");
 var repository = CreateRepository(builder, projectRoot, jsonStoragePath);
 builder.Services.AddSingleton<ISpcRepository>((ISpcRepository)repository);
 builder.Services.AddSingleton<IRepositoryPersistence>(repository);
@@ -46,7 +49,7 @@ builder.Services.AddSingleton(provider => new ArchiveService(
     provider.GetRequiredService<ISpcRepository>(),
     provider.GetRequiredService<CredentialService>(),
     provider.GetRequiredService<PermissionService>(),
-    Path.Combine(projectRoot, ".appdata", "archives")));
+    archivePath));
 
 var app = builder.Build();
 

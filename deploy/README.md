@@ -6,6 +6,7 @@ Recommended server layout:
 
 - `C:\SPCStar\app` - published SPC-Star application files
 - `C:\SPCStar\data` - SPC-Star database/storage file
+- `C:\SPCStar\data\archives` - archived historical record files
 - `C:\SPCStar\backups` - local backup copies
 - `C:\SPCStar\logs` - server log output
 
@@ -55,7 +56,7 @@ Use `Setup > Archive` inside SPC-Star when old historical records need to be rem
 
 Only GOD access can create an archive. The workflow previews record counts for a selected cutoff date, requires GOD credentials, requires typing `ARCHIVE`, writes a JSON archive file, and only then removes matching history records from the live database. Archive does not delete parts, inspection plans, users, machines, rules, specifications, or control limits.
 
-Archive files should be copied into the company's normal local retention location after creation.
+Archive files are written to `C:\SPCStar\data\archives` by the server start script through `SPCSTAR_ARCHIVE_PATH`. They should also be copied into the company's normal local retention location after creation.
 
 ## Notes
 

@@ -5,9 +5,9 @@ namespace SPCStar.Core.Services;
 
 public sealed record UserSetupDto(string UserName, string Shift, IReadOnlyList<string> Roles, IReadOnlyList<string> Permissions, IReadOnlyList<string> ProductGroups);
 
-public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string>? ProductGroups = null, string? Shift = null);
+public sealed record UpsertUserRequest(string UserName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string>? ProductGroups = null, string? Shift = null, string? ActingUserName = null, string? ActingSessionToken = null);
 
-public sealed record ResetUserPasswordRequest(string UserName, string TemporaryPassword);
+public sealed record ResetUserPasswordRequest(string UserName, string TemporaryPassword, string? ActingUserName = null, string? ActingSessionToken = null);
 
 public sealed record UserImportResult(int Imported);
 
@@ -305,13 +305,18 @@ public sealed class SetupManagementService(ISpcRepository repository)
             return ServiceResult<UserSetupDto>.Fail("User was not found.");
         }
 
+        if (UserHasGodRole(user) && !IsGodUser(request.ActingUserName))
+        {
+            return ServiceResult<UserSetupDto>.Fail("Only a GOD user can reset the password for another GOD user.");
+        }
+
         var (hash, salt) = PasswordHasher.HashPassword(request.TemporaryPassword);
         user.PasswordHash = hash;
         user.PasswordSalt = salt;
         return ServiceResult<UserSetupDto>.Ok(GetUsers().First(item => item.UserName.Equals(user.UserName, StringComparison.OrdinalIgnoreCase)));
     }
 
-    public ServiceResult<UserImportResult> ImportUsersCsv(string csv)
+    public ServiceResult<UserImportResult> ImportUsersCsv(string csv, string? actingUserName = null)
     {
         var rows = CsvSupport.ReadRows(csv)
             .Where(row => row.Values.Any(value => !string.IsNullOrWhiteSpace(value)))
@@ -337,6 +342,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 continue;
             }
 
+            request = request with { ActingUserName = actingUserName };
             errors.AddRange(ValidateUser(request).Select(error => $"Row {rowNumber}: {error}"));
             if (request.ProductGroups is null || request.ProductGroups.Count == 0)
             {
@@ -361,7 +367,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
         foreach (var request in requests)
         {
-            UpsertUser(request);
+            UpsertUser(request with { ActingUserName = actingUserName });
         }
 
         return ServiceResult<UserImportResult>.Ok(new UserImportResult(requests.Count));
@@ -465,7 +471,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return CsvSupport.WriteRows(headers, rows);
     }
 
-    public ServiceResult DeleteUser(string userName)
+    public ServiceResult DeleteUser(string userName, string? actingUserName = null)
     {
         if (string.IsNullOrWhiteSpace(userName))
         {
@@ -481,6 +487,11 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var hasGodRole = user.Roles.Any(role => role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase));
         if (hasGodRole)
         {
+            if (!IsGodUser(actingUserName))
+            {
+                return ServiceResult.Fail("Only a GOD user can delete another GOD user.");
+            }
+
             var remainingGodUsers = repository.Users.Count(item =>
                 item.Id != user.Id &&
                 item.Roles.Any(role => role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)));
@@ -944,7 +955,30 @@ public sealed class SetupManagementService(ISpcRepository repository)
             }
         }
 
+        var existingUser = string.IsNullOrWhiteSpace(request.UserName)
+            ? null
+            : repository.Users.FirstOrDefault(user => user.UserName.Equals(request.UserName.Trim(), StringComparison.OrdinalIgnoreCase));
+        var touchesGodAccess = request.Roles.Any(role => role.Trim().Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)) ||
+            (existingUser is not null && UserHasGodRole(existingUser));
+        if (touchesGodAccess && !IsGodUser(request.ActingUserName))
+        {
+            errors.Add("Only a GOD user can create, edit, or assign GOD access.");
+        }
+
         return errors;
+    }
+
+    private bool IsGodUser(string? userName)
+    {
+        return !string.IsNullOrWhiteSpace(userName) &&
+            repository.Users.Any(user =>
+                user.UserName.Equals(userName.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                UserHasGodRole(user));
+    }
+
+    private static bool UserHasGodRole(User user)
+    {
+        return user.Roles.Any(role => role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase));
     }
 
     private static List<string> ValidateResource(UpsertResourceMachineRequest request)

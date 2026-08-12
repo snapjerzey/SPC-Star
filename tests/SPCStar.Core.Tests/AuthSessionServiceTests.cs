@@ -8,7 +8,7 @@ namespace SPCStar.Core.Tests;
 public sealed class AuthSessionServiceTests
 {
     [Fact]
-    public void Login_ReturnsRolesPermissionsAndDevToken()
+    public void Login_ReturnsRolesPermissionsAndSessionToken()
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
@@ -28,7 +28,9 @@ public sealed class AuthSessionServiceTests
         Assert.DoesNotContain("CanImportSetupData", result.Value.Permissions);
         Assert.DoesNotContain("CanUseGodMode", result.Value.Permissions);
         Assert.Contains("General", result.Value.ProductGroups);
-        Assert.Equal("dev-session:qa1", result.Value.SessionToken);
+        Assert.False(string.IsNullOrWhiteSpace(result.Value.SessionToken));
+        Assert.True(service.ValidateSession("qa1", result.Value.SessionToken));
+        Assert.False(service.ValidateSession("god1", result.Value.SessionToken));
     }
 
     [Fact]

@@ -40,7 +40,7 @@ public sealed class SetupManagementServiceTests
             "Ttech,Tech Tim,TempPass123!,LineTech,2nd Shift,,X",
             "JTGill,Gill JT,test,GOD,3rd Shift,X,X",
             string.Empty
-        ]));
+        ]), "god1");
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal(3, result.Value!.Imported);
@@ -141,6 +141,55 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertUser_RejectsGodRoleWhenActingUserIsNotGod()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpsertUser(new UpsertUserRequest("qa2", "secret", [RoleNames.GOD], ["General"], "1st Shift", "qa1"));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Only a GOD user", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(repository.Users, user => user.UserName == "qa2");
+    }
+
+    [Fact]
+    public void UpsertUser_AllowsGodRoleWhenActingUserIsGod()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpsertUser(new UpsertUserRequest("architect2", "secret", [RoleNames.GOD], ["General"], "1st Shift", "god1"));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Contains(repository.Users.Single(user => user.UserName == "architect2").Roles, role => role.Name == RoleNames.GOD);
+    }
+
+    [Fact]
+    public void ImportUsersCsv_RejectsGodRoleWhenActingUserIsNotGod()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
+        repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
+        var service = new SetupManagementService(repository);
+
+        var result = service.ImportUsersCsv(string.Join(Environment.NewLine, [
+            "UserName,TemporaryPassword,Role,Shift,Schneider",
+            "JTGill,test,GOD,1st Shift,X",
+            string.Empty
+        ]), "qa1");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Only a GOD user", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(repository.Users, user => user.UserName == "JTGill");
+    }
+
+    [Fact]
     public void DeleteUser_RemovesUser()
     {
         var repository = new InMemorySpcRepository();
@@ -162,10 +211,25 @@ public sealed class SetupManagementServiceTests
         SeedData.SeedSecurity(repository);
         var service = new SetupManagementService(repository);
 
-        var result = service.DeleteUser("Archon");
+        var result = service.DeleteUser("Archon", "Archon");
 
         Assert.False(result.Succeeded);
         Assert.Contains(result.Errors, error => error.Contains("GOD user", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DeleteUser_RejectsGodUserWhenActingUserIsNotGod()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
+        var service = new SetupManagementService(repository);
+
+        var result = service.DeleteUser("god1", "qa1");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Only a GOD user", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(repository.Users, user => user.UserName == "god1");
     }
 
     [Fact]
@@ -183,6 +247,20 @@ public sealed class SetupManagementServiceTests
         Assert.True(credentialService.ValidateCredential("operator1", "temp"));
         Assert.False(credentialService.ValidateCredential("operator1", "operator1"));
         Assert.Contains(repository.Users.Single(user => user.UserName == "operator1").Roles, role => role.Name == RoleNames.Operator);
+    }
+
+    [Fact]
+    public void ResetUserPassword_RejectsGodUserWhenActingUserIsNotGod()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedSecurity(repository);
+        TestSeedData.SeedUsers(repository);
+        var service = new SetupManagementService(repository);
+
+        var result = service.ResetUserPassword(new ResetUserPasswordRequest("god1", "temp", "qa1"));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Only a GOD user", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

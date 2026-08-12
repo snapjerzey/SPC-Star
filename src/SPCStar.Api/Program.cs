@@ -281,8 +281,14 @@ app.MapPost("/setup/settings", (UpdateSettingsRequest request, SetupManagementSe
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/users", (UpsertUserRequest request, AuthSessionService authService, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
+    var sessionError = RejectInvalidUserManagementSession(request.ActingUserName, request.ActingSessionToken, authService);
+    if (sessionError is not null)
+    {
+        return sessionError;
+    }
+
     var result = service.UpsertUser(request);
     if (result.Succeeded)
     {
@@ -294,8 +300,14 @@ app.MapPost("/setup/users", (UpsertUserRequest request, SetupManagementService s
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapPost("/setup/users/reset-password", (ResetUserPasswordRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/users/reset-password", (ResetUserPasswordRequest request, AuthSessionService authService, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
+    var sessionError = RejectInvalidUserManagementSession(request.ActingUserName, request.ActingSessionToken, authService);
+    if (sessionError is not null)
+    {
+        return sessionError;
+    }
+
     var result = service.ResetUserPassword(request);
     if (result.Succeeded)
     {
@@ -347,8 +359,14 @@ app.MapPost("/setup/resources/import-xlsx", async (IFormFile file, SetupManageme
     }
 }).DisableAntiforgery();
 
-app.MapPost("/setup/users/import-xlsx", async (IFormFile file, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/users/import-xlsx", async (IFormFile file, string? actingUserName, string? actingSessionToken, AuthSessionService authService, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
+    var sessionError = RejectInvalidUserManagementSession(actingUserName, actingSessionToken, authService);
+    if (sessionError is not null)
+    {
+        return sessionError;
+    }
+
     if (file.Length == 0)
     {
         return Results.BadRequest(new { imported = false, errors = new[] { "Select an Excel workbook to import." } });
@@ -358,7 +376,7 @@ app.MapPost("/setup/users/import-xlsx", async (IFormFile file, SetupManagementSe
     {
         await using var stream = file.OpenReadStream();
         var csv = XlsxImportSupport.ReadImportSheetAsCsv(stream, "SPC-Star User Import");
-        var result = service.ImportUsersCsv(csv);
+        var result = service.ImportUsersCsv(csv, actingUserName);
         if (result.Succeeded)
         {
             persistence.SaveChanges();
@@ -374,9 +392,15 @@ app.MapPost("/setup/users/import-xlsx", async (IFormFile file, SetupManagementSe
     }
 }).DisableAntiforgery();
 
-app.MapDelete("/setup/users/{userName}", (string userName, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapDelete("/setup/users/{userName}", (string userName, string? actingUserName, string? actingSessionToken, AuthSessionService authService, SetupManagementService service, IRepositoryPersistence persistence) =>
 {
-    var result = service.DeleteUser(userName);
+    var sessionError = RejectInvalidUserManagementSession(actingUserName, actingSessionToken, authService);
+    if (sessionError is not null)
+    {
+        return sessionError;
+    }
+
+    var result = service.DeleteUser(userName, actingUserName);
     if (result.Succeeded)
     {
         persistence.SaveChanges();
@@ -761,6 +785,13 @@ static IRepositoryPersistence CreateRepository(WebApplicationBuilder builder, st
     }
 
     return sqliteRepository;
+}
+
+static IResult? RejectInvalidUserManagementSession(string? actingUserName, string? actingSessionToken, AuthSessionService authService)
+{
+    return authService.ValidateSession(actingUserName, actingSessionToken)
+        ? null
+        : Results.BadRequest(new { errors = new[] { "Current sign-in session is not valid. Sign out and sign back in before changing user access." } });
 }
 
 app.Run();

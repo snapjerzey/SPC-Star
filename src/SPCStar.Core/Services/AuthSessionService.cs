@@ -1,4 +1,6 @@
 using SPCStar.Core.Infrastructure;
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
 
 namespace SPCStar.Core.Services;
 
@@ -18,6 +20,8 @@ public sealed class AuthSessionService(
     ISpcRepository repository,
     CredentialService credentialService)
 {
+    private readonly ConcurrentDictionary<string, string> sessionsByToken = new(StringComparer.Ordinal);
+
     public ServiceResult<UserSessionDto> Login(LoginRequest request)
     {
         if (!credentialService.ValidateCredential(request.UserName, request.Password))
@@ -27,6 +31,14 @@ public sealed class AuthSessionService(
 
         var user = repository.Users.First(item => item.UserName.Equals(request.UserName, StringComparison.OrdinalIgnoreCase));
         return ServiceResult<UserSessionDto>.Ok(BuildSession(user.UserName));
+    }
+
+    public bool ValidateSession(string? userName, string? sessionToken)
+    {
+        return !string.IsNullOrWhiteSpace(userName) &&
+            !string.IsNullOrWhiteSpace(sessionToken) &&
+            sessionsByToken.TryGetValue(sessionToken, out var tokenUserName) &&
+            tokenUserName.Equals(userName.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
     public ServiceResult<UserSessionDto> CurrentUser(string userName)
@@ -96,6 +108,8 @@ public sealed class AuthSessionService(
             .OrderBy(permission => permission)
             .ToArray();
 
-        return new UserSessionDto(user.UserName, user.Shift, roles, permissions, user.ProductGroups.OrderBy(group => group).ToArray(), $"dev-session:{user.UserName}");
+        var sessionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        sessionsByToken[sessionToken] = user.UserName;
+        return new UserSessionDto(user.UserName, user.Shift, roles, permissions, user.ProductGroups.OrderBy(group => group).ToArray(), sessionToken);
     }
 }

@@ -1762,6 +1762,16 @@ function canImportSetupData() {
   return hasPermission("CanImportSetupData");
 }
 
+function assignableRoles() {
+  return canArchiveData()
+    ? state.roles
+    : state.roles.filter((role) => role.toLowerCase() !== "god");
+}
+
+function actingSessionQuery() {
+  return `actingUserName=${encodeURIComponent(state.user?.userName || "")}&actingSessionToken=${encodeURIComponent(state.user?.sessionToken || "")}`;
+}
+
 function canArchiveData() {
   return hasPermission("CanUseGodMode");
 }
@@ -1951,7 +1961,7 @@ async function loadSetupAdmin() {
   if (canManageUsers()) {
     state.roles = await api("/setup/roles");
     state.users = await api("/setup/users");
-    fillSelect($("setupRole"), state.roles, (role) => role, (role) => role);
+    fillSelect($("setupRole"), assignableRoles(), (role) => role, (role) => role);
     renderUserProductGroupPicker();
     renderUsers();
   }
@@ -3050,7 +3060,7 @@ function newUser() {
   renderUserDetail({
     userName: "",
     shift: "",
-    roles: [state.roles[0] || ""],
+    roles: [assignableRoles()[0] || ""],
     productGroups: []
   }, true);
 }
@@ -3071,7 +3081,15 @@ function renderUserDetail(user, isNew = false) {
   $("setupUserName").disabled = Boolean(hasUser && !isNew);
   $("setupPassword").value = "";
   $("setupPasswordLabel").classList.toggle("hidden", hasUser && !isNew);
-  $("setupRole").value = user?.roles?.[0] || state.roles[0] || "";
+  const role = user?.roles?.[0] || assignableRoles()[0] || "";
+  if (role && ![...$("setupRole").options].some((option) => option.value === role)) {
+    const option = document.createElement("option");
+    option.value = role;
+    option.textContent = role;
+    option.disabled = true;
+    $("setupRole").appendChild(option);
+  }
+  $("setupRole").value = role;
   setShiftSelection(user?.shift || "");
   setUserProductGroupSelection(user?.productGroups || []);
   $("resetSelectedUserPasswordButton").classList.toggle("hidden", !hasUser || isNew);
@@ -3137,7 +3155,7 @@ async function deleteUser(userName) {
   }
 
   try {
-    await api(`/setup/users/${encodeURIComponent(userName)}`, { method: "DELETE" });
+    await api(`/setup/users/${encodeURIComponent(userName)}?${actingSessionQuery()}`, { method: "DELETE" });
     $("userSetupMessage").textContent = `${userName} deleted.`;
     $("userSetupMessage").className = "message ok";
     state.selectedUserName = "";
@@ -3163,7 +3181,7 @@ async function resetUserPassword(userName) {
   try {
     await api("/setup/users/reset-password", {
       method: "POST",
-      body: JSON.stringify({ userName, temporaryPassword })
+      body: JSON.stringify({ userName, temporaryPassword, actingUserName: state.user?.userName || "", actingSessionToken: state.user?.sessionToken || "" })
     });
     $("userSetupMessage").textContent = `${userName} password reset.`;
     $("userSetupMessage").className = "message ok";
@@ -3185,7 +3203,9 @@ async function saveUser(event) {
         password: $("setupPassword").value,
         shift: $("setupShift").value,
         roles: [$("setupRole").value],
-        productGroups: selectedUserProductGroups()
+        productGroups: selectedUserProductGroups(),
+        actingUserName: state.user?.userName || "",
+        actingSessionToken: state.user?.sessionToken || ""
       })
     });
     $("setupPassword").value = "";
@@ -3217,7 +3237,7 @@ async function importUsersXlsx(event) {
   try {
     const formData = new FormData();
     formData.append("file", file);
-    const result = await api("/setup/users/import-xlsx", {
+    const result = await api(`/setup/users/import-xlsx?${actingSessionQuery()}`, {
       method: "POST",
       body: formData
     });

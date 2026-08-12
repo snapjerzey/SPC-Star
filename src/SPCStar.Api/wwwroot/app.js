@@ -2091,6 +2091,7 @@ function groupReviewMeasurements(measurements) {
     const key = [
       measurement.processCode,
       measurement.operationSeq,
+      measurement.resourceId,
       normalizeInspectionPhase(measurement.inspectionPhase),
       measurement.characteristicName,
       measurement.characteristicType

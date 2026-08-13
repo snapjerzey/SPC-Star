@@ -235,6 +235,59 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_RemovesPhaseMatrixPlans_WhenTemplateNoLongerRequiresThosePhases()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "Part Number", "Part Description", "Product Group", "Inspection Phase", "Operation",
+            "Job Data Field", "Material Name", "Material Part Number", "Material Description",
+            "Variable Name", "Attribute Name", "Required", "Sort Order", "Unit",
+            "Target", "Lower Spec", "Upper Spec", "Lower Control", "Upper Control",
+            "Startup Required", "Startup Sample Size", "Startup Frequency Type", "Startup Frequency", "Startup Frequency Unit", "Startup Drift Rule",
+            "Coil Change Required", "Coil Change Sample Size", "Coil Change Frequency Type", "Coil Change Frequency", "Coil Change Frequency Unit", "Coil Change Drift Rule",
+            "In Process Required", "In Process Sample Size", "In Process Frequency Type", "In Process Frequency", "In Process Frequency Unit", "In Process Drift Rule"
+        };
+        string Row(string startupRequired, string coilChangeRequired, string inProcessRequired)
+        {
+            var startupSampleSize = string.IsNullOrWhiteSpace(startupRequired) ? "" : "1";
+            var coilChangeSampleSize = string.IsNullOrWhiteSpace(coilChangeRequired) ? "" : "1";
+            var inProcessSampleSize = string.IsNullOrWhiteSpace(inProcessRequired) ? "" : "1";
+            var inProcessFrequencyType = string.IsNullOrWhiteSpace(inProcessRequired) ? "" : "Quantity";
+            var inProcessFrequency = string.IsNullOrWhiteSpace(inProcessRequired) ? "" : "1500";
+            var inProcessFrequencyUnit = string.IsNullOrWhiteSpace(inProcessRequired) ? "" : "Pieces";
+            var inProcessDriftRule = string.IsNullOrWhiteSpace(inProcessRequired) ? "" : "GlobalDefault";
+            return string.Join(",", [
+            "70309", "Low Amp Compensator", "Schneider", "", "General Production",
+            "", "", "", "",
+            "Material Thickness", "", "TRUE", "0", "in",
+            "0.018", "0.0175", "0.0185", "0.0175", "0.0185",
+            startupRequired, startupSampleSize, "", "", "", "",
+            coilChangeRequired, coilChangeSampleSize, "", "", "", "",
+            inProcessRequired, inProcessSampleSize, inProcessFrequencyType, inProcessFrequency, inProcessFrequencyUnit, inProcessDriftRule
+            ]);
+        }
+
+        var firstImport = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row("TRUE", "TRUE", ""),
+            string.Empty
+        ]));
+        var updateImport = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row("", "", "TRUE"),
+            string.Empty
+        ]));
+
+        Assert.True(firstImport.Succeeded, string.Join(" | ", firstImport.Errors));
+        Assert.True(updateImport.Succeeded, string.Join(" | ", updateImport.Errors));
+        var plans = repository.InspectionPlans.ToArray();
+        var plan = Assert.Single(plans);
+        Assert.Equal("In Process", plan.InspectionPhase);
+    }
+
+    [Fact]
     public void ImportCsv_AcceptsHumanReadableTemplateHeaders()
     {
         var repository = new InMemorySpcRepository();

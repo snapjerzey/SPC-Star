@@ -23,13 +23,15 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     public ServiceResult ImportCsv(string csv)
     {
-        var rows = NormalizeRows(CsvSupport.ReadRows(csv));
+        var normalizedRows = CsvSupport.ReadRows(csv).Select(NormalizeRow).ToArray();
+        var rows = normalizedRows.SelectMany(ExpandPhaseMatrixRow).ToArray();
         var errors = ValidateRows(rows);
         if (errors.Count > 0)
         {
             return ServiceResult.Fail(errors);
         }
 
+        CleanupRemovedPhaseMatrixAssignments(normalizedRows);
         foreach (var row in rows)
         {
             Upsert(row);
@@ -39,6 +41,59 @@ public sealed class SetupImportService(ISpcRepository repository)
     }
 
     public IReadOnlyList<string> ValidateCsv(string csv) => ValidateRows(NormalizeRows(CsvSupport.ReadRows(csv)));
+
+    private void CleanupRemovedPhaseMatrixAssignments(IReadOnlyList<Dictionary<string, string>> rows)
+    {
+        foreach (var row in rows)
+        {
+            var rowType = RowType(row);
+            if (rowType is not ("Variable" or "Attribute") || !HasPhaseMatrix(row))
+            {
+                continue;
+            }
+
+            var requiredPhases = PhaseMatrixDefinitions()
+                .Where(phase => PhaseIsRequired(row, phase))
+                .Select(phase => phase.CanonicalName)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (requiredPhases.Count == 0)
+            {
+                continue;
+            }
+
+            var part = repository.Parts.FirstOrDefault(part =>
+                part.PartNum.Equals(row["PartNum"], StringComparison.OrdinalIgnoreCase));
+            var process = repository.Processes.FirstOrDefault(process =>
+                process.ProcessCode.Equals(row["Operation"], StringComparison.OrdinalIgnoreCase));
+            if (part is null || process is null)
+            {
+                continue;
+            }
+
+            const int operationSeq = 10;
+            var operation = repository.Operations.FirstOrDefault(operation =>
+                operation.PartId == part.Id &&
+                operation.ProcessId == process.Id &&
+                operation.OperationSeq == operationSeq);
+            if (operation is null)
+            {
+                continue;
+            }
+
+            var characteristic = repository.Characteristics.FirstOrDefault(characteristic =>
+                characteristic.OperationId == operation.Id &&
+                characteristic.Name.Equals(row["CharacteristicName"], StringComparison.OrdinalIgnoreCase));
+            if (characteristic is null)
+            {
+                continue;
+            }
+
+            repository.InspectionPlans.RemoveAll(plan =>
+                plan.CharacteristicId == characteristic.Id &&
+                PhaseMatrixDefinitions().Any(phase => phase.CanonicalName.Equals(plan.InspectionPhase, StringComparison.OrdinalIgnoreCase)) &&
+                !requiredPhases.Contains(plan.InspectionPhase));
+        }
+    }
 
     private static IReadOnlyList<Dictionary<string, string>> NormalizeRows(IReadOnlyList<Dictionary<string, string>> rows)
     {

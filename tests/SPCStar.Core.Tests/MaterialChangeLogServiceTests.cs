@@ -1,3 +1,4 @@
+using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
 using SPCStar.Core.Services;
 using Xunit;
@@ -102,5 +103,56 @@ public sealed class MaterialChangeLogServiceTests
         Assert.Equal(first.Value!.Id, retry.Value!.Id);
         Assert.Equal("tablet-press1", retry.Value.DeviceId);
         Assert.Equal("material-001", retry.Value.ClientRecordId);
+    }
+
+    [Fact]
+    public void Record_RejectsLotNumbersLongerThanTwentyCharacters()
+    {
+        var service = new MaterialChangeLogService(new InMemorySpcRepository());
+
+        var result = service.Record(new MaterialChangeLogEntry(
+            "J100",
+            "P100",
+            "RESIN-A",
+            "",
+            "123456789012345678901",
+            null,
+            "PRESS1",
+            "operator1",
+            DateTimeOffset.UtcNow,
+            "Material change"));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("cannot exceed 20", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void UpdateLot_ChangesLotAndAddsTraceabilityNote()
+    {
+        var repository = new InMemorySpcRepository();
+        var god = new Role { Name = RoleNames.GOD };
+        god.Permissions.Add(PermissionNames.CanUseGodMode);
+        repository.Roles.Add(god);
+        repository.Users.Add(new User { UserName = "Archon", PasswordHash = "hash", PasswordSalt = "salt", Roles = { god } });
+        var service = new MaterialChangeLogService(repository, new PermissionService(repository));
+        var recorded = service.Record(new MaterialChangeLogEntry(
+            "J100",
+            "P100",
+            "RESIN-A",
+            "",
+            "LOT2",
+            null,
+            "PRESS1",
+            "operator1",
+            DateTimeOffset.UtcNow,
+            "Material change"));
+
+        var result = service.UpdateLot(recorded.Value!.Id, new UpdateMaterialLotRequest("LOT3", "Archon"));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("LOT3", repository.MaterialChanges.Single().NewLotNum);
+        var note = Assert.Single(repository.JobNotes);
+        Assert.Equal("Archon", note.OperatorUserId);
+        Assert.Contains("from LOT2 to LOT3", note.NoteText);
     }
 }

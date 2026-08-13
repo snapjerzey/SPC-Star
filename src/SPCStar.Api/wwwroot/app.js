@@ -32,6 +32,8 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const INSPECTION_PHASES = ["Startup", "Setup", "In Process", "Coil Change", "Spool"];
+const MAX_LOT_NUMBER_LENGTH = 20;
+const MAX_MEASUREMENT_DECIMAL_PLACES = 5;
 
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -499,7 +501,7 @@ function renderConfiguredMaterialFields(set) {
       </label>
       <label>
         New lot number
-        <input class="material-lot-input" data-material-index="${index}" autocomplete="off" inputmode="text" ${field.isRequired ? "required" : ""}>
+        <input class="material-lot-input" data-material-index="${index}" autocomplete="off" inputmode="text" maxlength="${MAX_LOT_NUMBER_LENGTH}" ${field.isRequired ? "required" : ""}>
       </label>
       <label>
         Reason
@@ -541,14 +543,18 @@ function overrideUserHasGodRole() {
     return false;
   }
 
-  if (state.user?.userName?.toLowerCase() === userName.toLowerCase() &&
-    (state.user.roles || []).some((role) => role.toLowerCase() === "god")) {
+  if (state.user?.userName?.toLowerCase() === userName.toLowerCase() && userHasGodAccess(state.user)) {
     return true;
   }
 
   return (state.users || []).some((user) =>
     user.userName.toLowerCase() === userName.toLowerCase() &&
-    (user.roles || []).some((role) => role.toLowerCase() === "god"));
+    userHasGodAccess(user));
+}
+
+function userHasGodAccess(user) {
+  return (user?.roles || []).some((role) => role.toLowerCase() === "god") ||
+    (user?.permissions || []).some((permission) => permission === "CanUseGodMode");
 }
 
 function updateGodReasonVisibility() {
@@ -945,6 +951,11 @@ async function submitMeasurementInput(input, options = {}) {
   if (!inputHasValue(input)) return;
   const { jobNum, resourceId } = selectedValues();
   const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  if (input.dataset.entryType !== "Attribute" && !measurementHasAllowedPrecision(input.value)) {
+    showEntryMessage(`${sampleLabel(input)} cannot exceed ${MAX_MEASUREMENT_DECIMAL_PLACES} decimal places.`, "error");
+    throw new Error(`${sampleLabel(input)} cannot exceed ${MAX_MEASUREMENT_DECIMAL_PLACES} decimal places.`);
+  }
+
   const value = Number(input.value);
   if (!Number.isFinite(value)) {
     showEntryMessage(`${sampleLabel(input)} must be numeric.`, "error");
@@ -1012,6 +1023,16 @@ function markAcceptedMeasurementInput(input, value) {
   const label = input.closest("label");
   label?.classList.add("measurement-submitted");
   window.setTimeout(() => label?.classList.remove("measurement-submitted"), 900);
+}
+
+function measurementHasAllowedPrecision(value) {
+  const normalized = String(value || "").trim().replace(",", ".");
+  const match = normalized.match(/^-?\d+(?:\.(\d+))?$/);
+  if (!match) {
+    return true;
+  }
+
+  return (match[1] || "").length <= MAX_MEASUREMENT_DECIMAL_PLACES;
 }
 
 function inspectionEntryComplete() {
@@ -1640,6 +1661,12 @@ async function saveMaterialChange(event) {
     return;
   }
 
+  if (entries.some((entry) => entry.newLotNum.length > MAX_LOT_NUMBER_LENGTH)) {
+    $("materialMessage").textContent = `Lot number cannot exceed ${MAX_LOT_NUMBER_LENGTH} characters.`;
+    $("materialMessage").className = "message error";
+    return;
+  }
+
   try {
     for (const entry of entries) {
       await api("/material-changes", {
@@ -1765,6 +1792,14 @@ function renderHistoryList(list, entries) {
     }
     meta.append(user, details);
     item.append(meta, text);
+    if (entry.entryType === "Material" && canEditMaterialLots()) {
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "secondary compact-history-button";
+      editButton.textContent = "Edit Lot";
+      editButton.addEventListener("click", () => editMaterialLot(entry));
+      item.appendChild(editButton);
+    }
     list.appendChild(item);
   });
 }
@@ -1851,6 +1886,44 @@ function materialHistoryText(entry) {
   return parts.join(" ");
 }
 
+function canEditMaterialLots() {
+  return hasPermission("CanManageInspectionPlans") || hasPermission("CanUseGodMode");
+}
+
+async function editMaterialLot(entry) {
+  const currentLot = entry.newLotNum || "";
+  const newLot = window.prompt(`Correct lot number for ${entry.materialPartNum || "material"}:`, currentLot);
+  if (newLot === null) {
+    return;
+  }
+
+  const trimmedLot = newLot.trim();
+  if (!trimmedLot) {
+    showEntryMessage("Corrected lot number is required.", "error");
+    return;
+  }
+
+  if (trimmedLot.length > MAX_LOT_NUMBER_LENGTH) {
+    showEntryMessage(`Lot number cannot exceed ${MAX_LOT_NUMBER_LENGTH} characters.`, "error");
+    return;
+  }
+
+  try {
+    await api(`/material-changes/${entry.id}/lot`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        newLotNum: trimmedLot,
+        editedByUserId: state.user.userName,
+        editedAt: new Date().toISOString()
+      })
+    });
+    showEntryMessage("Material lot corrected.", "ok");
+    await loadJobNotes(selectedValues().jobNum);
+  } catch (error) {
+    showEntryMessage("Material lot was not updated. " + readableError(error), "error");
+  }
+}
+
 async function clearLock(event) {
   event.preventDefault();
   if (!state.activeLock) {
@@ -1905,6 +1978,39 @@ async function refreshContextDataWithoutClearingEntries() {
   renderTrendChoices();
   await loadTrend();
   await loadJobNotes(jobNum);
+}
+
+async function refreshLockStatus() {
+  $("overrideMessage").textContent = "Refreshing lock status...";
+  $("overrideMessage").className = "message";
+  const preservedInputs = snapshotMeasurementInputs();
+  state.preserveInspectionEntriesUntil = Date.now() + 10000;
+  try {
+    await refreshContextDataWithoutClearingEntries();
+    restoreMeasurementInputSnapshot(preservedInputs);
+    if (state.activeLock) {
+      $("overrideMessage").textContent = "Lock is still active. Use authorized credentials to clear or bypass it.";
+      $("overrideMessage").className = "message error";
+    } else {
+      $("overrideMessage").textContent = "No active lock found. Inspection entry is available again.";
+      $("overrideMessage").className = "message ok";
+    }
+  } catch (error) {
+    $("overrideMessage").textContent = "Lock status was not refreshed. " + readableError(error);
+    $("overrideMessage").className = "message error";
+  }
+}
+
+function resetLockForm() {
+  $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
+  $("overridePassword").value = "";
+  $("causeCategory").value = "Machine";
+  $("causeText").value = "";
+  $("solutionText").value = "";
+  $("bypassReason").value = "";
+  $("overrideMessage").textContent = "Unlock form reset.";
+  $("overrideMessage").className = "message";
+  updateGodReasonVisibility();
 }
 
 function canCurrentUserOverride() {
@@ -4513,6 +4619,8 @@ $("jobTagsForm").addEventListener("submit", saveJobTags);
 $("materialChangeForm").addEventListener("submit", saveMaterialChange);
 $("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
+$("refreshLockStatusButton").addEventListener("click", refreshLockStatus);
+$("resetLockFormButton").addEventListener("click", resetLockForm);
 $("connectSerialDeviceButton").addEventListener("click", connectSerialDevice);
 $("disconnectSerialDeviceButton").addEventListener("click", disconnectSerialDevice);
 $("overrideUserName").addEventListener("input", updateGodReasonVisibility);

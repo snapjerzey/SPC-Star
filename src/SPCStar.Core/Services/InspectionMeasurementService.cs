@@ -22,6 +22,8 @@ public sealed class InspectionMeasurementService(
     ISpcRepository repository,
     WesternElectricRuleService westernElectricRuleService)
 {
+    private const int MaxMeasurementDecimalPlaces = 5;
+
     public ServiceResult<InspectionMeasurement> EnterMeasurement(InspectionMeasurementEntry entry)
     {
         var errors = Validate(entry);
@@ -786,7 +788,17 @@ public sealed class InspectionMeasurementService(
             errors.Add("OperationSeq must be greater than zero.");
         }
 
+        if (DecimalPlaces(entry.Value) > MaxMeasurementDecimalPlaces)
+        {
+            errors.Add($"Measurement value cannot exceed {MaxMeasurementDecimalPlaces} decimal places.");
+        }
+
         return errors;
+    }
+
+    private static int DecimalPlaces(decimal value)
+    {
+        return (decimal.GetBits(value)[3] >> 16) & 0xFF;
     }
 
     private static void Required(string value, string field, List<string> errors)

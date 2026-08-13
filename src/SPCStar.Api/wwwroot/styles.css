@@ -381,6 +381,11 @@ hr {
   grid-column: 1 / -1;
   margin-bottom: 0;
 }
+.compact-history-button {
+  justify-self: start;
+  margin-top: 8px;
+  padding: 8px 12px;
+}
 .measurement-form { margin-top: 18px; }
 .device-panel {
   border: 1px solid #dbe6f2;

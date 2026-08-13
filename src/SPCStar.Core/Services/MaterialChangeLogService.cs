@@ -18,8 +18,15 @@ public sealed record MaterialChangeLogEntry(
     string? ClientRecordId = null,
     DateTimeOffset? SubmittedAt = null);
 
-public sealed class MaterialChangeLogService(ISpcRepository repository)
+public sealed record UpdateMaterialLotRequest(
+    string NewLotNum,
+    string EditedByUserId,
+    DateTimeOffset? EditedAt = null);
+
+public sealed class MaterialChangeLogService(ISpcRepository repository, PermissionService? permissionService = null)
 {
+    private const int MaxLotNumberLength = 20;
+
     public ServiceResult<MaterialChangeLog> Record(MaterialChangeLogEntry entry)
     {
         var errors = Validate(entry);
@@ -56,6 +63,51 @@ public sealed class MaterialChangeLogService(ISpcRepository repository)
         return ServiceResult<MaterialChangeLog>.Ok(log);
     }
 
+    public ServiceResult<MaterialChangeLog> UpdateLot(Guid materialChangeId, UpdateMaterialLotRequest request)
+    {
+        var log = repository.MaterialChanges.FirstOrDefault(item => item.Id == materialChangeId);
+        if (log is null)
+        {
+            return ServiceResult<MaterialChangeLog>.Fail("Material change entry was not found.");
+        }
+
+        var errors = new List<string>();
+        Required(request.NewLotNum, nameof(request.NewLotNum), errors);
+        Required(request.EditedByUserId, nameof(request.EditedByUserId), errors);
+        ValidateLotLength(request.NewLotNum, nameof(request.NewLotNum), errors);
+        if (errors.Count > 0)
+        {
+            return ServiceResult<MaterialChangeLog>.Fail(errors);
+        }
+
+        var editedBy = request.EditedByUserId.Trim();
+        if (!CanEditMaterialLot(editedBy))
+        {
+            return ServiceResult<MaterialChangeLog>.Fail("Only QA or Archon/GOD access can edit material lot history.");
+        }
+
+        var newLot = request.NewLotNum.Trim();
+        if (log.NewLotNum.Equals(newLot, StringComparison.OrdinalIgnoreCase))
+        {
+            return ServiceResult<MaterialChangeLog>.Ok(log);
+        }
+
+        var oldLot = log.NewLotNum;
+        var editedAt = request.EditedAt ?? DateTimeOffset.UtcNow;
+        log.NewLotNum = newLot;
+        repository.JobNotes.Add(new JobNote
+        {
+            JobNum = log.JobNum,
+            PartNum = log.PartNum,
+            ResourceId = log.ResourceId,
+            OperatorUserId = editedBy,
+            Timestamp = editedAt,
+            NoteText = $"Material lot corrected for {log.MaterialPartNum} from {oldLot} to {newLot}."
+        });
+
+        return ServiceResult<MaterialChangeLog>.Ok(log);
+    }
+
     private MaterialChangeLog? FindDuplicate(string? deviceId, string? clientRecordId)
     {
         if (string.IsNullOrWhiteSpace(deviceId) || string.IsNullOrWhiteSpace(clientRecordId))
@@ -78,6 +130,8 @@ public sealed class MaterialChangeLogService(ISpcRepository repository)
         Required(entry.ResourceId, nameof(entry.ResourceId), errors);
         Required(entry.OperatorUserId, nameof(entry.OperatorUserId), errors);
         Required(entry.Reason, nameof(entry.Reason), errors);
+        ValidateLotLength(entry.OldLotNum, nameof(entry.OldLotNum), errors);
+        ValidateLotLength(entry.NewLotNum, nameof(entry.NewLotNum), errors);
         if (entry.QuantityLoaded.HasValue && entry.QuantityLoaded.Value <= 0)
         {
             errors.Add("QuantityLoaded must be greater than zero when provided.");
@@ -91,6 +145,25 @@ public sealed class MaterialChangeLogService(ISpcRepository repository)
         if (string.IsNullOrWhiteSpace(value))
         {
             errors.Add($"{field} is required.");
+        }
+    }
+
+    private bool CanEditMaterialLot(string userName)
+    {
+        if (permissionService is null)
+        {
+            return true;
+        }
+
+        return permissionService.UserHasPermission(userName, PermissionNames.CanManageInspectionPlans) ||
+            permissionService.UserHasPermission(userName, PermissionNames.CanUseGodMode);
+    }
+
+    private static void ValidateLotLength(string? value, string field, List<string> errors)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && value.Trim().Length > MaxLotNumberLength)
+        {
+            errors.Add($"{field} cannot exceed {MaxLotNumberLength} characters.");
         }
     }
 

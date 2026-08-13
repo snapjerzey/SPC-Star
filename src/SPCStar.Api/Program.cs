@@ -491,6 +491,23 @@ app.MapPost("/material-changes", (MaterialChangeLogEntry request, MaterialChange
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapPatch("/material-changes/{materialChangeId:guid}/lot", (
+    Guid materialChangeId,
+    UpdateMaterialLotRequest request,
+    MaterialChangeLogService service,
+    IRepositoryPersistence persistence) =>
+{
+    var result = service.UpdateLot(materialChangeId, request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapGet("/jobs/{jobNum}/notes", (string jobNum, JobNoteService service) =>
 {
     return Results.Ok(service.GetForJob(jobNum));

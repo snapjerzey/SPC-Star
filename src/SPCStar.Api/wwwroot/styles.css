@@ -387,6 +387,11 @@ hr {
   padding: 8px 12px;
 }
 .measurement-form { margin-top: 18px; }
+.inspection-submit-button {
+  margin-top: 14px;
+  width: min(420px, 100%);
+  justify-self: start;
+}
 .device-panel {
   border: 1px solid #dbe6f2;
   border-radius: 6px;

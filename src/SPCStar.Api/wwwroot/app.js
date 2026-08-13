@@ -630,6 +630,7 @@ function renderVariables() {
     restoreMeasurementDraft(input);
   });
   wireMeasurementDeviceInputs();
+  updateInspectionSubmitState();
 }
 
 function draftKeyForInput(input) {
@@ -864,11 +865,20 @@ async function submitMeasurement(event) {
   const activeInput = document.activeElement?.classList?.contains("measurement-input")
     ? document.activeElement
     : null;
-  if (activeInput) {
-    await submitSingleMeasurementAndAdvance(activeInput, false);
+  if (activeInput && activeInput.value !== activeInput.dataset.lastSubmittedValue) {
+    const result = await submitSingleMeasurementAndAdvance(activeInput, false);
+    if (result === "locked" || result === "error" || result === "empty") {
+      return;
+    }
+  }
+
+  if (!inspectionEntryComplete()) {
+    showEntryMessage("Complete and save every sample before submitting the inspection.", "error");
+    updateInspectionSubmitState();
     return;
   }
-  showEntryMessage("Measurements submit automatically when you leave each field.", "ok");
+
+  await resetCompletedInspectionEntry();
 }
 
 function inputHasValue(input) {
@@ -919,6 +929,7 @@ function wireMeasurementDeviceInputs() {
         input.dataset.submitted = "false";
       }
       updateMeasurementDraft(input);
+      updateInspectionSubmitState();
     });
     input.addEventListener("blur", async () => {
       input.closest("label")?.classList.remove("device-input-active");
@@ -993,17 +1004,20 @@ async function submitMeasurementInput(input, options = {}) {
     const planIndex = Number(input.dataset.planIndex);
     state.contexts[planIndex] = await loadVariableContext(jobNum, resourceId, plan);
     renderMeanSummary();
-    await loadJobNotes(jobNum);
     if (state.contexts[planIndex]?.activeLock) {
+      await loadJobNotes(jobNum);
       state.activeLock = state.contexts[planIndex].activeLock;
       renderLock(state.activeLock);
       showEntryMessage(`${sampleLabel(input)} saved. Lock detected.`, "error");
       return "locked";
     }
     if (inspectionEntryComplete()) {
-      await resetCompletedInspectionEntry();
-      return "submitted";
+      updateInspectionSubmitState();
+      showEntryMessage("Inspection entries saved. Review them, then click Submit Inspection.", "ok");
+      return "complete";
     }
+    await loadJobNotes(jobNum);
+    updateInspectionSubmitState();
     if (options.reloadOnSuccess === true) {
       await loadContext();
     }
@@ -1029,6 +1043,7 @@ function markAcceptedMeasurementInput(input, value) {
   const label = input.closest("label");
   label?.classList.add("measurement-submitted");
   window.setTimeout(() => label?.classList.remove("measurement-submitted"), 900);
+  updateInspectionSubmitState();
 }
 
 function capMeasurementDecimalPlaces(value) {
@@ -1049,6 +1064,19 @@ function inspectionEntryComplete() {
     input.value === input.dataset.lastSubmittedValue);
 }
 
+function updateInspectionSubmitState() {
+  const button = $("completeInspectionButton");
+  if (!button) {
+    return;
+  }
+
+  const inputs = [...document.querySelectorAll(".measurement-input:not(:disabled)")];
+  const hasInputs = inputs.length > 0;
+  const isComplete = inspectionEntryComplete();
+  button.classList.toggle("hidden", !hasInputs);
+  button.disabled = !isComplete || Boolean(state.activeLock);
+}
+
 async function resetCompletedInspectionEntry() {
   if (state.activeLock || Date.now() < state.preserveInspectionEntriesUntil) {
     showEntryMessage("Lock cleared. Entries preserved for review.", "ok");
@@ -1057,7 +1085,8 @@ async function resetCompletedInspectionEntry() {
 
   clearMeasurementDraftsForCurrentInspection();
   await loadContext();
-  showEntryMessage("Inspection complete. Fields cleared for the next inspection.", "ok");
+  updateInspectionSubmitState();
+  showEntryMessage("Inspection submitted. Fields cleared for the next inspection.", "ok");
 }
 
 function sampleLabel(input) {

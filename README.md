@@ -98,6 +98,8 @@ Primary readable columns:
 
 - Job data rows use `Job Data Field`, `Required`, and `Sort Order`.
 - Material rows use `Material Name`, `Material Part Number`, `Material Description`, `Required`, and `Sort Order`.
+- Box, serial, spool, and other inspection-context fields should stay in `Job Data Field` so they display with the completed inspection in History > Ledger.
+- Bimetal lot, raw material lot, and other material lot traceability fields should be entered as Material rows, not Job Data rows. Use `Material Name`, `Material Part Number`, and `Material Description`; operators enter the actual lot number in the Materials section during inspection.
 - Variable rows use `Variable Name`, `Operation`, `Unit`, `Location`, `Inspection Method`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, and drift rule.
 - Attribute rows use `Attribute Name`, `Operation`, `Location`, `Inspection Method`, sample/frequency columns, and drift rule.
 - Universal inspection rows can use phase-specific columns such as `Startup Required`, `Startup Sample Size`, `Setup Required`, `Setup Sample Size`, `In Process Required`, `In Process Sample Size`, `CoilChange Required`, `CoilChange Sample Size`, `Spool Required`, and `Spool Sample Size`.

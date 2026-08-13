@@ -31,8 +31,9 @@ The current column-based setup template supports these rows:
 | `Job #` | built-in Job Data: Job Number | Job number is already a required field. |
 | part number field | built-in Job Data: Part Number | Part number is already required. |
 | selected inspection type | built-in Job Data: Inspection Phase | Phase drives which variables and attributes are shown. |
-| `Date`, `Shift`, `Insp`, `Initials`, `WI`, `Box #`, `Bag #`, `Tote #`, `Pallet`, `Recorded in WinSPC or INSP`, `Start of Shift Box #`, `End of Shift Box #` | `Job Data Field` | Add only if the part/inspection really requires operator entry. |
-| `BOA Lot #`, `Supplier Lot #`, `Supplier WO #`, `Wire shipment`, `Coil #` | `Job Data Field` only when required by the inspection plan | Do not infer job materials from the inspection sheet. Materials must come from a verified material/BOM source. |
+| `Date`, `Shift`, `Insp`, `Initials`, `WI`, `Box #`, `Bag #`, `Tote #`, `Pallet`, `Recorded in WinSPC or INSP`, `Start of Shift Box #`, `End of Shift Box #` | `Job Data Field` | Add only if the part/inspection really requires operator entry. Box/serial style fields remain job traceability and display under the completed inspection in History > Ledger. |
+| `Bimetal Lot #`, confirmed raw-material lot fields | `Material Name`, `Material Part Number`, `Material Description` | Material lot traceability belongs in the Materials section, not Job Data. Operators enter the actual lot number during inspection. |
+| `BOA Lot #`, `Supplier Lot #`, `Supplier WO #`, `Wire shipment`, `Coil #` | `Job Data Field` only when these are traceability tags, or Material rows only when they identify a verified job material | Do not infer job materials from the inspection sheet. Materials must come from a verified material/BOM source. |
 | material/packaging references on the inspection sheet | no import mapping by default | Do not add these to the Materials section unless they are confirmed raw materials for the job from a trusted material source. |
 | numeric dimensions with ranges or plus/minus tolerances | `Variable Name`, `Unit`, `Target`, `Lower Spec`, `Upper Spec` | Example `.050" +/- .001"` becomes target `.050`, lower `.049`, upper `.051`, unit `in`. |
 | force or torque actual readings | `Variable Name`, `Unit`, limits | Examples: `Shear Force 280 lbs min`, `Clamp Plate Screw Torque 5 in-lbs`. |

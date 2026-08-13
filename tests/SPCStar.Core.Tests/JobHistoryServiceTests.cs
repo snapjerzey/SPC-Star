@@ -130,7 +130,7 @@ public sealed class JobHistoryServiceTests
     }
 
     [Fact]
-    public void GetForJob_CarriesPersistentJobDataForwardToLaterCompletedInspections()
+    public void GetForJob_CarriesPersistentJobDataButNotBoxNumberForwardToLaterCompletedInspections()
     {
         var repository = new InMemorySpcRepository();
         repository.JobPhaseCompletions.Add(new JobPhaseCompletion
@@ -162,6 +162,26 @@ public sealed class JobHistoryServiceTests
             JobNum = "J100",
             PartNum = "",
             ResourceId = "",
+            TagName = "Vendor Coil #",
+            TagValue = "COIL-1",
+            OperatorUserId = "operator1",
+            UpdatedAt = DateTimeOffset.Parse("2026-05-12T08:09:30Z")
+        });
+        repository.JobTags.Add(new JobTag
+        {
+            JobNum = "J100",
+            PartNum = "",
+            ResourceId = "",
+            TagName = "Bimetal Lot #",
+            TagValue = "LOT-BI-1",
+            OperatorUserId = "operator1",
+            UpdatedAt = DateTimeOffset.Parse("2026-05-12T08:09:30Z")
+        });
+        repository.JobTags.Add(new JobTag
+        {
+            JobNum = "J100",
+            PartNum = "",
+            ResourceId = "",
             TagName = "Box #",
             TagValue = "45",
             OperatorUserId = "operator1",
@@ -172,8 +192,8 @@ public sealed class JobHistoryServiceTests
 
         var latestCompletion = history.First(entry => entry.EntryType == "PhaseComplete" && entry.CompletionNumber == 2);
         var jobData = Assert.Single(latestCompletion.JobDataEntries!);
-        Assert.Equal("Box #", jobData.TagName);
-        Assert.Equal("45", jobData.TagValue);
+        Assert.Equal("Vendor Coil #", jobData.TagName);
+        Assert.Equal("COIL-1", jobData.TagValue);
     }
 
     [Fact]

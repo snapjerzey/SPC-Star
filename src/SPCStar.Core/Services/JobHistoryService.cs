@@ -127,7 +127,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
         var phaseCompletionsWithJobData = phaseCompletions
             .Select(completion => completion with
             {
-                JobDataEntries = LatestJobTagsForCompletion(jobTags, completion)
+                JobDataEntries = JobTagsForCompletion(jobTags, completion, phaseCompletions)
                     .Select(JobTagDetail)
                     .ToArray()
             })
@@ -214,15 +214,17 @@ public sealed class JobHistoryService(ISpcRepository repository)
         return closest?.Id == completion.Id;
     }
 
-    private static IReadOnlyList<JobTag> LatestJobTagsForCompletion(IReadOnlyList<JobTag> jobTags, JobHistoryEntryDto completion)
+    private static IReadOnlyList<JobTag> JobTagsForCompletion(IReadOnlyList<JobTag> jobTags, JobHistoryEntryDto completion, IReadOnlyList<JobHistoryEntryDto> completions)
     {
         if (completion.EntryType != "PhaseComplete")
         {
             return [];
         }
 
-        return jobTags
+        var persistentTags = jobTags
             .Where(tag =>
+                !IsPerInspectionJobTag(tag.TagName) &&
+                !IsMaterialLotJobTag(tag.TagName) &&
                 tag.JobNum.Equals(completion.JobNum, StringComparison.OrdinalIgnoreCase) &&
                 BlankOrEqual(tag.PartNum, completion.PartNum) &&
                 BlankOrEqual(tag.ResourceId, completion.ResourceId) &&
@@ -232,8 +234,29 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 .OrderByDescending(tag => tag.UpdatedAt)
                 .ThenByDescending(tag => tag.Id)
                 .First())
+            .ToArray();
+        var perInspectionTags = jobTags
+            .Where(tag => IsPerInspectionJobTag(tag.TagName) && JobTagBelongsToCompletion(tag, completion, completions))
+            .ToArray();
+
+        return persistentTags
+            .Concat(perInspectionTags)
             .OrderBy(tag => tag.TagName)
             .ToArray();
+    }
+
+    private static bool IsPerInspectionJobTag(string tagName)
+    {
+        var normalized = tagName.Trim().ToLowerInvariant();
+        return normalized is "box" or "box #" or "box number";
+    }
+
+    private static bool IsMaterialLotJobTag(string tagName)
+    {
+        var normalized = tagName.Trim().ToLowerInvariant();
+        return normalized.Contains("bimetal lot") ||
+            normalized.Contains("material lot") ||
+            normalized.Contains("raw material lot");
     }
 
     private static bool BlankOrEqual(string? value, string? expected)

@@ -37,7 +37,9 @@ public sealed record JobHistoryEntryDto(
     string? ProcessCode = null,
     int? OperationSeq = null,
     int? CompletionNumber = null,
-    IReadOnlyList<Guid>? MeasurementIds = null);
+    IReadOnlyList<Guid>? MeasurementIds = null,
+    string? TagName = null,
+    string? TagValue = null);
 
 public sealed class JobHistoryService(ISpcRepository repository)
 {
@@ -108,6 +110,20 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 QuantityLoaded: change.QuantityLoaded,
                 Reason: change.Reason));
 
+        var jobTags = repository.JobTags
+            .Where(tag => tag.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Select(tag => new JobHistoryEntryDto(
+                tag.Id,
+                "JobData",
+                tag.JobNum,
+                tag.PartNum,
+                tag.ResourceId,
+                tag.OperatorUserId,
+                UserShift(tag.OperatorUserId),
+                tag.UpdatedAt,
+                TagName: tag.TagName,
+                TagValue: tag.TagValue));
+
         var phaseCompletions = BuildPhaseCompletions(normalizedJob);
 
         var edits = repository.MeasurementEditAudits
@@ -130,6 +146,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
         return notes
             .Concat(locks)
             .Concat(materialChanges)
+            .Concat(jobTags)
             .Concat(phaseCompletions)
             .Concat(edits)
             .OrderByDescending(entry => entry.Timestamp)

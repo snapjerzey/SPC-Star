@@ -64,17 +64,30 @@ public sealed class JobHistoryServiceTests
             Reason = "Lot Change",
             SubmittedAt = DateTimeOffset.Parse("2026-05-12T08:11:00Z")
         });
+        repository.JobTags.Add(new JobTag
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            TagName = "Bimetal Lot",
+            TagValue = "LOT-BI-1",
+            OperatorUserId = "operator1",
+            UpdatedAt = DateTimeOffset.Parse("2026-05-12T08:18:00Z")
+        });
 
         var history = new JobHistoryService(repository).GetForJob("J100");
 
-        Assert.Equal(3, history.Count);
+        Assert.Equal(4, history.Count);
         Assert.Equal("Note", history[0].EntryType);
-        Assert.Equal("Lock", history[1].EntryType);
-        Assert.Equal("Material", history[2].EntryType);
-        Assert.Equal(DateTimeOffset.Parse("2026-05-12T08:15:00Z"), history[1].Timestamp);
-        Assert.Equal("linetech1", history[1].OverrideUserId);
-        Assert.Equal("Tooling", history[1].CauseCategory);
-        Assert.Equal("Changed tool insert", history[1].SolutionText);
-        Assert.Equal("LOT-2", history[2].NewLotNum);
+        Assert.Equal("JobData", history[1].EntryType);
+        Assert.Equal("Lock", history[2].EntryType);
+        Assert.Equal("Material", history[3].EntryType);
+        Assert.Equal("Bimetal Lot", history[1].TagName);
+        Assert.Equal("LOT-BI-1", history[1].TagValue);
+        Assert.Equal(DateTimeOffset.Parse("2026-05-12T08:15:00Z"), history[2].Timestamp);
+        Assert.Equal("linetech1", history[2].OverrideUserId);
+        Assert.Equal("Tooling", history[2].CauseCategory);
+        Assert.Equal("Changed tool insert", history[2].SolutionText);
+        Assert.Equal("LOT-2", history[3].NewLotNum);
     }
 }

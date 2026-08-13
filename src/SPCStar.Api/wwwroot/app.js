@@ -1805,7 +1805,7 @@ function renderHistoryList(list, entries) {
   list.innerHTML = "";
   entries.forEach((entry) => {
     const item = document.createElement("article");
-    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : entry.entryType === "Material" ? "material-history-item" : entry.entryType === "PhaseComplete" ? "phase-complete-history-item" : ""}`;
+    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : entry.entryType === "Material" ? "material-history-item" : entry.entryType === "JobData" ? "job-data-history-item" : entry.entryType === "PhaseComplete" ? "phase-complete-history-item" : ""}`;
     const meta = document.createElement("div");
     meta.className = "job-note-meta";
     const user = document.createElement("strong");
@@ -1817,6 +1817,8 @@ function renderHistoryList(list, entries) {
       text.textContent = lockHistoryText(entry);
     } else if (entry.entryType === "Material") {
       text.textContent = materialHistoryText(entry);
+    } else if (entry.entryType === "JobData") {
+      text.textContent = jobDataHistoryText(entry);
     } else if (entry.entryType === "PhaseComplete") {
       text.textContent = phaseCompletionHistoryText(entry);
     } else if (entry.entryType === "MeasurementEdit") {
@@ -1855,6 +1857,10 @@ function historyEntryTitle(entry) {
 
   if (entry.entryType === "Material") {
     return `Material ${entry.reason || "event"}`;
+  }
+
+  if (entry.entryType === "JobData") {
+    return `Job Data - ${entry.tagName || "Field"}`;
   }
 
   if (entry.entryType === "PhaseComplete") {
@@ -1920,6 +1926,10 @@ function materialHistoryText(entry) {
   }
   parts.push(`Recorded by ${entry.operatorUserId}.`);
   return parts.join(" ");
+}
+
+function jobDataHistoryText(entry) {
+  return `${entry.tagName || "Job data"}: ${entry.tagValue || "-"}. Recorded by ${entry.operatorUserId}.`;
 }
 
 function canEditMaterialLots() {
@@ -2609,11 +2619,13 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map())
     ? lockHistoryText(entry)
     : entry.entryType === "Material"
       ? materialHistoryText(entry)
-      : entry.entryType === "PhaseComplete"
-        ? phaseCompletionHistoryText(entry)
-        : entry.entryType === "MeasurementEdit"
-          ? measurementEditHistoryText(entry)
-          : entry.noteText;
+      : entry.entryType === "JobData"
+        ? jobDataHistoryText(entry)
+        : entry.entryType === "PhaseComplete"
+          ? phaseCompletionHistoryText(entry)
+          : entry.entryType === "MeasurementEdit"
+            ? measurementEditHistoryText(entry)
+            : entry.noteText;
   const action = entry.entryType === "Material" && canEditMaterialLots()
     ? `<button type="button" class="secondary compact-button" data-action="edit-material-lot">Edit Lot</button>`
     : completionMeasurements.length

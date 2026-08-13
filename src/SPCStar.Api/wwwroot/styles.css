@@ -1248,7 +1248,8 @@ textarea {
   font-weight: 650;
 }
 .review-measurement-table .review-measurement-group-row small,
-.review-measurement-table .review-measurement-detail-row small {
+.review-measurement-table .review-measurement-detail-row small,
+.review-measurement-table .review-job-data-detail-row small {
   display: block;
   color: var(--muted);
   font-size: 11px;
@@ -1258,6 +1259,12 @@ textarea {
 .review-measurement-table .review-measurement-detail-row {
   background: #fbfcfe;
   border-left: 4px solid #d0d5dd;
+  padding-left: 14px;
+}
+.review-measurement-table .review-job-data-detail-row {
+  background: #f8fafc;
+  border-left: 4px solid #98a2b3;
+  color: #344054;
   padding-left: 14px;
 }
 .review-measurement-table .review-inspection-completion-detail-row {

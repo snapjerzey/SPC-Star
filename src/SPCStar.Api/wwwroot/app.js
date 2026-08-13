@@ -35,6 +35,8 @@ const INSPECTION_PHASES = ["Startup", "Setup", "In Process", "Coil Change", "Spo
 const MAX_LOT_NUMBER_LENGTH = 20;
 const MAX_MEASUREMENT_DECIMAL_PLACES = 5;
 const SESSION_STORAGE_KEY = "spc-star-session";
+const WORK_CONTEXT_STORAGE_KEY = "spc-star-work-context";
+const INSPECTION_DRAFT_STORAGE_KEY = "spc-star-inspection-drafts";
 
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -257,6 +259,7 @@ async function startAuthenticatedSession(options = {}) {
   $("logoutButton").classList.remove("hidden");
   $("loginPanel").classList.add("hidden");
   $("workPanel").classList.remove("hidden");
+  state.inspectionDrafts = readSavedInspectionDrafts();
   if (options.persist) {
     saveCurrentSession();
   }
@@ -265,7 +268,7 @@ async function startAuthenticatedSession(options = {}) {
     $("navTabs").classList.remove("hidden");
     await loadSetupAdmin();
   }
-  await loadSnapshot();
+  await loadSnapshot({ restoreWorkContext: true });
 }
 
 function saveCurrentSession() {
@@ -285,6 +288,64 @@ function readSavedSession() {
 
 function clearSavedSession() {
   window.localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function saveCurrentWorkContext() {
+  if (!state.user?.userName) {
+    return;
+  }
+
+  window.localStorage.setItem(WORK_CONTEXT_STORAGE_KEY, JSON.stringify({
+    userName: state.user.userName,
+    jobNum: $("jobNum").value.trim(),
+    resourceId: $("resourceId").value,
+    partNum: $("partNum").value.trim(),
+    operationCode: $("operationCode").value,
+    inspectionPhase: $("inspectionPhase").value
+  }));
+}
+
+function readSavedWorkContext() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(WORK_CONTEXT_STORAGE_KEY) || "null");
+    if (!saved || saved.userName?.toLowerCase() !== state.user?.userName?.toLowerCase()) {
+      return null;
+    }
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+function clearSavedWorkContext() {
+  window.localStorage.removeItem(WORK_CONTEXT_STORAGE_KEY);
+}
+
+function saveInspectionDrafts() {
+  if (!state.user?.userName) {
+    return;
+  }
+
+  window.localStorage.setItem(INSPECTION_DRAFT_STORAGE_KEY, JSON.stringify({
+    userName: state.user.userName,
+    entries: [...state.inspectionDrafts.entries()]
+  }));
+}
+
+function readSavedInspectionDrafts() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(INSPECTION_DRAFT_STORAGE_KEY) || "null");
+    if (!saved || saved.userName?.toLowerCase() !== state.user?.userName?.toLowerCase() || !Array.isArray(saved.entries)) {
+      return new Map();
+    }
+    return new Map(saved.entries);
+  } catch {
+    return new Map();
+  }
+}
+
+function clearSavedInspectionDrafts() {
+  window.localStorage.removeItem(INSPECTION_DRAFT_STORAGE_KEY);
 }
 
 function clearLoginFields() {
@@ -322,7 +383,7 @@ async function changePassword() {
   }
 }
 
-async function loadSnapshot() {
+async function loadSnapshot(options = {}) {
   state.snapshot = await api("/sync/setup-snapshot");
   fillDatalist($("jobOptions"), state.snapshot.jobs, (job) => job.jobNum);
   $("jobNum").value = "";
@@ -350,6 +411,34 @@ async function loadSnapshot() {
     }
   }
   clearWorkContext();
+  if (options.restoreWorkContext) {
+    await restoreWorkContext();
+  }
+}
+
+async function restoreWorkContext() {
+  const saved = readSavedWorkContext();
+  if (!saved?.jobNum || !saved.resourceId || !saved.partNum || !saved.operationCode) {
+    return;
+  }
+
+  $("jobNum").value = saved.jobNum;
+  $("partNum").value = saved.partNum;
+  $("resourceId").value = state.snapshot.resources.some((resource) => resource.resourceId === saved.resourceId)
+    ? saved.resourceId
+    : "";
+  $("inspectionPhase").value = saved.inspectionPhase || "In Process";
+  refreshOperationChoices({ preserve: false });
+  $("operationCode").value = [...$("operationCode").options].some((option) => option.value === saved.operationCode)
+    ? saved.operationCode
+    : "";
+
+  if (!$("resourceId").value || !$("operationCode").value) {
+    clearSavedWorkContext();
+    return;
+  }
+
+  await loadContext();
 }
 
 function fillSelect(select, rows, valueOf, labelOf) {
@@ -421,6 +510,7 @@ async function loadContext(event) {
 
   state.selectedPlans = set.plans;
   state.contexts = await Promise.all(set.plans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
+  saveCurrentWorkContext();
   renderContext();
 }
 
@@ -732,6 +822,7 @@ function updateMeasurementDraft(input, updates = {}) {
     lastSubmittedNumericValue: input.dataset.lastSubmittedNumericValue || "",
     ...updates
   });
+  saveInspectionDrafts();
 }
 
 function clearMeasurementDraftsForCurrentInspection() {
@@ -739,6 +830,7 @@ function clearMeasurementDraftsForCurrentInspection() {
     .map((input) => draftKeyForInput(input))
     .filter(Boolean);
   keys.forEach((key) => state.inspectionDrafts.delete(key));
+  saveInspectionDrafts();
 }
 
 function snapshotMeasurementInputs() {
@@ -778,6 +870,7 @@ function restoreMeasurementInputSnapshot(snapshot) {
     input.dataset.lastSubmittedValue = item.lastSubmittedValue;
     input.dataset.lastSubmittedNumericValue = item.lastSubmittedNumericValue;
   });
+  saveInspectionDrafts();
 }
 
 function sectionHeading(text) {
@@ -2320,6 +2413,8 @@ function partNumForJob(jobNum) {
 function logout() {
   disconnectSerialDevice();
   clearSavedSession();
+  clearSavedWorkContext();
+  clearSavedInspectionDrafts();
   state.user = null;
   state.snapshot = null;
   state.contexts = [];
@@ -2351,6 +2446,11 @@ function clearWorkContext() {
   state.trendCharacteristic = "";
   state.activeLock = null;
   renderEmptyContext();
+}
+
+function clearSelectedWorkContext() {
+  clearSavedWorkContext();
+  clearWorkContext();
 }
 
 async function loadSetupAdmin() {
@@ -4760,15 +4860,15 @@ $("changePasswordButton").addEventListener("click", changePassword);
 $("contextForm").addEventListener("submit", loadContext);
 $("jobNum").addEventListener("input", () => {
   updatePartFromJob();
-  clearWorkContext();
+  clearSelectedWorkContext();
 });
 $("partNum").addEventListener("input", () => {
   refreshOperationChoices({ preserve: false });
-  clearWorkContext();
+  clearSelectedWorkContext();
 });
-$("operationCode").addEventListener("change", clearWorkContext);
-$("inspectionPhase").addEventListener("change", clearWorkContext);
-$("resourceId").addEventListener("change", clearWorkContext);
+$("operationCode").addEventListener("change", clearSelectedWorkContext);
+$("inspectionPhase").addEventListener("change", clearSelectedWorkContext);
+$("resourceId").addEventListener("change", clearSelectedWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("jobTagsForm").addEventListener("submit", saveJobTags);

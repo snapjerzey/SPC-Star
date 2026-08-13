@@ -7,6 +7,7 @@ const state = {
   trendCharacteristic: "",
   trendChartType: "Individuals",
   activeLock: null,
+  lockedMeasurementInputKey: "",
   users: [],
   roles: [],
   editingSetup: null,
@@ -522,6 +523,7 @@ function renderLock(activeLock) {
     panel.classList.add("hidden");
     document.body.classList.remove("lock-active");
     $("overrideMessage").textContent = "";
+    state.lockedMeasurementInputKey = "";
     return;
   }
   banner.classList.remove("hidden");
@@ -691,6 +693,14 @@ function clearMeasurementDraftsForCurrentInspection() {
   keys.forEach((key) => state.inspectionDrafts.delete(key));
 }
 
+function clearMeasurementDraft(key) {
+  if (!key) {
+    return;
+  }
+
+  state.inspectionDrafts.delete(key);
+}
+
 function snapshotMeasurementInputs() {
   return [...document.querySelectorAll(".measurement-input:not(:disabled)")].map((input) => ({
     key: draftKeyForInput(input),
@@ -702,13 +712,23 @@ function snapshotMeasurementInputs() {
   })).filter((item) => item.key);
 }
 
-function restoreMeasurementInputSnapshot(snapshot) {
+function restoreMeasurementInputSnapshot(snapshot, options = {}) {
   if (!snapshot.length) {
     return;
   }
 
+  const skipKeys = new Set((options.skipKeys || []).filter(Boolean));
   const inputs = [...document.querySelectorAll(".measurement-input:not(:disabled)")];
   snapshot.forEach((item) => {
+    if (skipKeys.has(item.key)) {
+      clearMeasurementDraft(item.key);
+      const inputToClear = inputs.find((candidate) => draftKeyForInput(candidate) === item.key);
+      if (inputToClear) {
+        clearMeasurementInput(inputToClear);
+      }
+      return;
+    }
+
     state.inspectionDrafts.set(item.key, {
       clientRecordId: item.clientRecordId || newClientRecordId(),
       value: item.value,
@@ -727,6 +747,20 @@ function restoreMeasurementInputSnapshot(snapshot) {
     input.dataset.submitted = item.submitted ? "true" : "false";
     input.dataset.lastSubmittedValue = item.lastSubmittedValue;
     input.dataset.lastSubmittedNumericValue = item.lastSubmittedNumericValue;
+  });
+}
+
+function clearMeasurementInput(input) {
+  input.value = "";
+  input.dataset.clientRecordId = newClientRecordId();
+  input.dataset.submitted = "false";
+  input.dataset.lastSubmittedValue = "";
+  input.dataset.lastSubmittedNumericValue = "";
+  updateMeasurementDraft(input, {
+    value: "",
+    submitted: false,
+    lastSubmittedValue: "",
+    lastSubmittedNumericValue: ""
   });
 }
 
@@ -1007,6 +1041,7 @@ async function submitMeasurementInput(input, options = {}) {
     if (state.contexts[planIndex]?.activeLock) {
       await loadJobNotes(jobNum);
       state.activeLock = state.contexts[planIndex].activeLock;
+      state.lockedMeasurementInputKey = draftKeyForInput(input);
       renderLock(state.activeLock);
       showEntryMessage(`${sampleLabel(input)} saved. Lock detected.`, "error");
       return "locked";
@@ -1993,6 +2028,8 @@ async function clearLock(event) {
   }
 
   const preservedInputs = snapshotMeasurementInputs();
+  const lockedInputKey = state.lockedMeasurementInputKey;
+  clearMeasurementDraft(lockedInputKey);
   state.preserveInspectionEntriesUntil = Date.now() + 10000;
   try {
     const isGodOverride = overrideUserHasGodRole();
@@ -2016,11 +2053,19 @@ async function clearLock(event) {
     $("overrideMessage").textContent = "Lock cleared.";
     $("overrideMessage").className = "message ok";
     state.activeLock = null;
+    state.lockedMeasurementInputKey = "";
     renderLock(null);
     await refreshContextDataWithoutClearingEntries();
-    restoreMeasurementInputSnapshot(preservedInputs);
-    window.setTimeout(() => restoreMeasurementInputSnapshot(preservedInputs), 0);
-    window.setTimeout(() => restoreMeasurementInputSnapshot(preservedInputs), 300);
+    restoreMeasurementInputSnapshot(preservedInputs, { skipKeys: [lockedInputKey] });
+    updateInspectionSubmitState();
+    window.setTimeout(() => {
+      restoreMeasurementInputSnapshot(preservedInputs, { skipKeys: [lockedInputKey] });
+      updateInspectionSubmitState();
+    }, 0);
+    window.setTimeout(() => {
+      restoreMeasurementInputSnapshot(preservedInputs, { skipKeys: [lockedInputKey] });
+      updateInspectionSubmitState();
+    }, 300);
   } catch (error) {
     $("overrideMessage").textContent = readableError(error);
     $("overrideMessage").className = "message error";

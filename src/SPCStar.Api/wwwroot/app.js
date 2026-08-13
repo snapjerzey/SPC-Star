@@ -833,6 +833,16 @@ function clearMeasurementDraftsForCurrentInspection() {
   saveInspectionDrafts();
 }
 
+function clearVisibleMeasurementInputs() {
+  document.querySelectorAll(".measurement-input:not(:disabled)").forEach((input) => {
+    input.value = "";
+    input.dataset.clientRecordId = newClientRecordId();
+    input.dataset.submitted = "false";
+    input.dataset.lastSubmittedValue = "";
+    input.dataset.lastSubmittedNumericValue = "";
+  });
+}
+
 function snapshotMeasurementInputs() {
   return [...document.querySelectorAll(".measurement-input:not(:disabled)")].map((input) => ({
     key: draftKeyForInput(input),
@@ -1221,12 +1231,14 @@ function updateInspectionSubmitState() {
 }
 
 async function resetCompletedInspectionEntry() {
-  if (state.activeLock || Date.now() < state.preserveInspectionEntriesUntil) {
-    showEntryMessage("Lock cleared. Entries preserved for review.", "ok");
+  if (state.activeLock) {
+    showEntryMessage("Clear the active lock before submitting this inspection.", "error");
     return;
   }
 
+  state.preserveInspectionEntriesUntil = 0;
   clearMeasurementDraftsForCurrentInspection();
+  clearVisibleMeasurementInputs();
   await loadContext();
   updateInspectionSubmitState();
   showEntryMessage("Inspection submitted. Fields cleared for the next inspection.", "ok");

@@ -312,6 +312,56 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_MapsInspectionRowsFromEntryType_WhenCharacteristicTypeIsNotProvided()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "Part Number", "Part Description", "Product Group", "Operation",
+            "InspectionParameter", "EntryType", "Target", "Lower Spec", "Upper Spec", "Unit",
+            "In Process Required", "In Process Sample Size", "In Process Frequency", "In Process Frequency Unit"
+        };
+        string Row(params string[] values) => string.Join(",", values.Concat(Enumerable.Repeat("", header.Length)).Take(header.Length));
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row("INSPECTION", "P400", "Entry Type Part", "Schneider", "General Production", "Material Thickness", "Numeric Measurement", "0.050", "0.049", "0.051", "in", "Y", "1", "5000", "Pieces"),
+            Row("INSPECTION", "P400", "Entry Type Part", "Schneider", "General Production", "Box #", "Text Entry", "", "", "", "", "Y", "1", "5000", "Pieces"),
+            Row("INSPECTION", "P400", "Entry Type Part", "Schneider", "General Production", "Overall Visual", "Accept / Reject", "", "", "", "", "Y", "1", "5000", "Pieces"),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Material Thickness" && characteristic.Type == CharacteristicType.Variable);
+        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Box #" && characteristic.Type == CharacteristicType.Attribute);
+        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Overall Visual" && characteristic.Type == CharacteristicType.Attribute);
+    }
+
+    [Fact]
+    public void ImportCsv_DefaultsPhaseMatrixSampleSize_WhenPhaseIsRequiredWithoutSampleSize()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "Part Number", "Part Description", "Product Group", "Operation",
+            "InspectionParameter", "EntryType", "Setup Required"
+        };
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            "INSPECTION,P500,Default Sample Part,Schneider,General Production,Box #,Text Entry,Y",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var plan = Assert.Single(repository.InspectionPlans);
+        Assert.Equal("Setup", plan.InspectionPhase);
+        Assert.Equal(1, plan.SampleSize);
+    }
+
+    [Fact]
     public void ImportCsv_ImportsInspectionMetadataColumns()
     {
         var repository = new InMemorySpcRepository();

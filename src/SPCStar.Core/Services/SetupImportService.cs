@@ -239,6 +239,11 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static void ApplyPhaseDefaults(Dictionary<string, string> row, string phase)
     {
+        if (string.IsNullOrWhiteSpace(row.GetValueOrDefault("SampleSize")))
+        {
+            row["SampleSize"] = "1";
+        }
+
         if (string.IsNullOrWhiteSpace(row.GetValueOrDefault("FrequencyType")))
         {
             row["FrequencyType"] = phase.Equals("In Process", StringComparison.OrdinalIgnoreCase) ? "Quantity" : "Event";
@@ -301,7 +306,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         var rowType = CanonicalRowType(normalized.GetValueOrDefault("RowType"));
         if (rowType == "Inspection")
         {
-            rowType = CanonicalRowType(normalized.GetValueOrDefault("CharacteristicType"));
+            rowType = InspectionRowType(normalized);
             if (IsValidRowType(rowType))
             {
                 normalized["RowType"] = rowType;
@@ -353,6 +358,33 @@ public sealed class SetupImportService(ISpcRepository repository)
         NormalizeTimingFields(normalized);
 
         return normalized;
+    }
+
+    private static string InspectionRowType(Dictionary<string, string> row)
+    {
+        var explicitType = CanonicalRowType(row.GetValueOrDefault("CharacteristicType"));
+        if (IsValidRowType(explicitType))
+        {
+            return explicitType;
+        }
+
+        var entryType = Value(row, "EntryType", "Entry Type", "Input Type");
+        if (entryType.Contains("numeric", StringComparison.OrdinalIgnoreCase) ||
+            entryType.Contains("measurement", StringComparison.OrdinalIgnoreCase) ||
+            entryType.Contains("actual", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Variable";
+        }
+
+        if (entryType.Contains("accept", StringComparison.OrdinalIgnoreCase) ||
+            entryType.Contains("reject", StringComparison.OrdinalIgnoreCase) ||
+            entryType.Contains("text", StringComparison.OrdinalIgnoreCase) ||
+            entryType.Contains("typed", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Attribute";
+        }
+
+        return "";
     }
 
     private static void NormalizeTimingFields(Dictionary<string, string> row)

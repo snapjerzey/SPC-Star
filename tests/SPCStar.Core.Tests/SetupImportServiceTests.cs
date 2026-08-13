@@ -189,6 +189,52 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_RemovesStaleJobDataField_WhenFieldIsReimportedAsInspectionItem()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var jobDataResult = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "JobData,P200,Needle,Needles,Startup,,Material Thickness,,,,,,,,,,,,,,,,,,,true,1",
+            string.Empty
+        ]));
+
+        var variableResult = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "Variable,P200,Needle,Needles,Startup,Needle Forming,,,,,Material Thickness,Variable,0.018,0.0175,0.0185,0.0175,0.0185,in,1,Event,1,StartOfJob,GlobalDefault,,",
+            string.Empty
+        ]));
+
+        Assert.True(jobDataResult.Succeeded, string.Join(" | ", jobDataResult.Errors));
+        Assert.True(variableResult.Succeeded, string.Join(" | ", variableResult.Errors));
+        Assert.DoesNotContain(repository.PartJobDataFields, field => field.FieldName == "Material Thickness");
+        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Material Thickness" && characteristic.Type == CharacteristicType.Variable);
+    }
+
+    [Fact]
+    public void ImportCsv_RemovesStaleMaterialLotJobDataField_WhenMaterialRowIsImported()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var jobDataResult = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "JobData,P200,Needle,Needles,In Process,,BIMETAL LOT #,,,,,,,,,,,,,,,,,,,true,1",
+            string.Empty
+        ]));
+
+        var materialResult = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "Material,P200,Needle,Needles,In Process,,,BIMETAL,BIMETAL,BIMETAL lot traceability,,,,,,,,,,,,,,,,true,1",
+            string.Empty
+        ]));
+
+        Assert.True(jobDataResult.Succeeded, string.Join(" | ", jobDataResult.Errors));
+        Assert.True(materialResult.Succeeded, string.Join(" | ", materialResult.Errors));
+        Assert.DoesNotContain(repository.PartJobDataFields, field => field.FieldName == "BIMETAL LOT #");
+        Assert.Contains(repository.PartMaterialFields, field => field.MaterialName == "BIMETAL");
+    }
+
+    [Fact]
     public void ImportCsv_AcceptsHumanReadableTemplateHeaders()
     {
         var repository = new InMemorySpcRepository();

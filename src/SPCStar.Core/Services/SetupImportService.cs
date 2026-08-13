@@ -689,6 +689,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         var characteristic = repository.Characteristics.FirstOrDefault(c =>
             c.OperationId == operation.Id &&
             c.Name.Equals(row["CharacteristicName"], StringComparison.OrdinalIgnoreCase));
+        RemoveJobDataFieldsForInspectionItem(part, row["CharacteristicName"]);
         if (characteristic is null)
         {
             characteristic = new Characteristic
@@ -716,6 +717,13 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             UpsertControlLimit(row, part, process, operationSeq);
         }
+    }
+
+    private void RemoveJobDataFieldsForInspectionItem(Part part, string characteristicName)
+    {
+        repository.PartJobDataFields.RemoveAll(field =>
+            field.PartId == part.Id &&
+            field.FieldName.Equals(characteristicName.Trim(), StringComparison.OrdinalIgnoreCase));
     }
 
     private void UpsertSpecLimit(Dictionary<string, string> row, Characteristic characteristic)
@@ -791,6 +799,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     {
         var inspectionPhase = NormalizeInspectionPhase(row.GetValueOrDefault("InspectionPhase"));
         var materialName = row["MaterialName"].Trim();
+        RemoveJobDataFieldsForMaterial(part, materialName);
         var field = repository.PartMaterialFields.FirstOrDefault(item =>
             item.PartId == part.Id &&
             item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
@@ -812,6 +821,21 @@ public sealed class SetupImportService(ISpcRepository repository)
         field.MaterialDescription = row["MaterialDescription"].Trim();
         field.IsRequired = OptionalBool(row, "IsRequired", true);
         field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartMaterialFields.Count(item => item.PartId == part.Id && item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private void RemoveJobDataFieldsForMaterial(Part part, string materialName)
+    {
+        repository.PartJobDataFields.RemoveAll(field =>
+            field.PartId == part.Id &&
+            IsMaterialLotFieldFor(field.FieldName, materialName));
+    }
+
+    private static bool IsMaterialLotFieldFor(string fieldName, string materialName)
+    {
+        var normalizedField = fieldName.Trim().ToLowerInvariant();
+        var normalizedMaterial = materialName.Trim().ToLowerInvariant();
+        return normalizedField.Contains("lot") &&
+            (normalizedField.Contains(normalizedMaterial) || normalizedField.Contains("material"));
     }
 
     private static string DuplicateKey(Dictionary<string, string> row, string rowType)

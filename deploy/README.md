@@ -41,6 +41,8 @@ http://SERVER-NAME:5000/
 
 Use the server's Windows computer name or IP address from shop-floor computers.
 
+For serial gauge workstations, the preferred operator-facing URL is `https://spcstar.bihler.com/` with a trusted internal certificate. Plain `http://spcstar.bihler.com:5000` can load SPC-Star, but browsers usually block Web Serial access from that non-secure network URL. See `deploy/IT-SERVER-REFERENCE.md`.
+
 ## Update Existing Server
 
 After pulling the latest SPC-Star code onto the server:

@@ -252,6 +252,12 @@ Network app URL:
 http://SERVER-NAME:5000/
 ```
 
+Preferred operator-facing URL after HTTPS is configured:
+
+```text
+https://spcstar.bihler.com/
+```
+
 If the app does not respond:
 
 1. Check that the `SPC-Star Server` scheduled task is running.
@@ -270,6 +276,42 @@ For machines configured as `Serial text gauge`, SPC-Star uses the browser Web Se
 - `http://localhost:5000` can work when testing directly on the server.
 - `http://SERVER-NAME:5000` from another workstation is usually not considered secure by the browser.
 
+Current pilot issue observed:
+
+```text
+http://spcstar.bihler.com:5000
+```
+
+The page loads, but Chrome/Edge treats it as plain HTTP from a network host. In that state the browser blocks serial-port access before SPC-Star can use the ECNT machine's RS-232 settings.
+
+Recommended IT solution:
+
+```text
+https://spcstar.bihler.com/
+```
+
+Recommended architecture:
+
+```text
+Operator workstation Chrome/Edge
+    -> https://spcstar.bihler.com/
+    -> trusted internal certificate / HTTPS endpoint
+    -> reverse proxy on the SPC-Star server
+    -> http://localhost:5000
+    -> SPC-Star scheduled task / app
+```
+
+In this setup, SPC-Star can continue running internally on port `5000`. Operators should use the HTTPS URL, not the plain `http://spcstar.bihler.com:5000` URL.
+
+HTTPS requirements:
+
+- The certificate must be trusted by the shop-floor workstations.
+- The hostname on the certificate should match `spcstar.bihler.com`.
+- Desktop Chrome or desktop Microsoft Edge should be used for serial-gauge workstations.
+- IT should verify that `navigator.serial` is available from the HTTPS SPC-Star page.
+- IT should confirm the ECNT workstation can see the RS-232/USB serial port in Windows Device Manager as a COM port.
+- If WinSPC is running on the same workstation, IT/engineering should confirm whether WinSPC is holding the COM port open. Usually only one application can actively read the same serial port at a time.
+
 If an operator sees this message:
 
 ```text
@@ -283,3 +325,12 @@ then the workstation/browser is not exposing Web Serial to SPC-Star. For pilot u
 3. If HTTPS is not available yet, test serial-gauge behavior only from `localhost` on the server until IT provides a secure local URL.
 
 The baud rate setting, such as `9600`, only matters after the browser exposes serial access. If Web Serial is unavailable, the baud rate has not been reached yet.
+
+ECNT / RS-232 information to collect from engineering:
+
+- COM port number used by the ECNT workstation, such as `COM3`.
+- Baud rate, currently expected to be `9600`.
+- Data bits, parity, stop bits, and flow control.
+- Example raw output from the ECNT device.
+- Whether the device sends a newline/Enter after each reading.
+- Whether WinSPC or any other software must be closed before SPC-Star can connect.

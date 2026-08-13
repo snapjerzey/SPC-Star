@@ -34,6 +34,7 @@ const $ = (id) => document.getElementById(id);
 const INSPECTION_PHASES = ["Startup", "Setup", "In Process", "Coil Change", "Spool"];
 const MAX_LOT_NUMBER_LENGTH = 20;
 const MAX_MEASUREMENT_DECIMAL_PLACES = 5;
+const SESSION_STORAGE_KEY = "spc-star-session";
 
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -213,18 +214,7 @@ async function login(event) {
       method: "POST",
       body: JSON.stringify({ userName, password })
     });
-    $("loginMessage").textContent = "Loading inspection data...";
-    setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")}) / ${state.currentShift}`, "ok");
-    document.body.classList.remove("login-active");
-    $("logoutButton").classList.remove("hidden");
-    $("loginPanel").classList.add("hidden");
-    $("workPanel").classList.remove("hidden");
-    if (canAccessSetup()) {
-      $("loginMessage").textContent = "Loading setup data...";
-      $("navTabs").classList.remove("hidden");
-      await loadSetupAdmin();
-    }
-    await loadSnapshot();
+    await startAuthenticatedSession({ persist: true });
     $("loginMessage").textContent = "";
   } catch (error) {
     $("loginMessage").textContent = readableError(error);
@@ -235,6 +225,66 @@ async function login(event) {
   } finally {
     signInButton.disabled = false;
   }
+}
+
+async function restoreAuthenticatedSession() {
+  const saved = readSavedSession();
+  if (!saved?.userName) {
+    clearLoginFields();
+    return;
+  }
+
+  try {
+    $("loginMessage").textContent = "Restoring session...";
+    $("loginMessage").className = "message";
+    state.currentShift = saved.shift || $("loginShift").value;
+    $("loginShift").value = state.currentShift;
+    state.user = await api(`/auth/me?userName=${encodeURIComponent(saved.userName)}`);
+    await startAuthenticatedSession({ persist: true });
+    $("loginMessage").textContent = "";
+  } catch {
+    clearSavedSession();
+    clearLoginFields();
+    $("loginMessage").textContent = "Session expired. Sign in again.";
+    $("loginMessage").className = "message";
+  }
+}
+
+async function startAuthenticatedSession(options = {}) {
+  $("loginMessage").textContent = "Loading inspection data...";
+  setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")}) / ${state.currentShift}`, "ok");
+  document.body.classList.remove("login-active");
+  $("logoutButton").classList.remove("hidden");
+  $("loginPanel").classList.add("hidden");
+  $("workPanel").classList.remove("hidden");
+  if (options.persist) {
+    saveCurrentSession();
+  }
+  if (canAccessSetup()) {
+    $("loginMessage").textContent = "Loading setup data...";
+    $("navTabs").classList.remove("hidden");
+    await loadSetupAdmin();
+  }
+  await loadSnapshot();
+}
+
+function saveCurrentSession() {
+  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+    userName: state.user?.userName || "",
+    shift: state.currentShift || $("loginShift").value
+  }));
+}
+
+function readSavedSession() {
+  try {
+    return JSON.parse(window.localStorage.getItem(SESSION_STORAGE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function clearSavedSession() {
+  window.localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
 function clearLoginFields() {
@@ -2269,6 +2319,7 @@ function partNumForJob(jobNum) {
 
 function logout() {
   disconnectSerialDevice();
+  clearSavedSession();
   state.user = null;
   state.snapshot = null;
   state.contexts = [];
@@ -4849,7 +4900,7 @@ $("jobSummaryForm").addEventListener("submit", loadJobSummary);
 $("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
 $("reportForm").addEventListener("submit", runReport);
 setStatus($("syncStatus"), navigator.onLine ? "Online" : "Offline", navigator.onLine ? "ok" : "warn");
-clearLoginFields();
+restoreAuthenticatedSession();
 clearInspectionSetupForm();
 
 if ("serviceWorker" in navigator) {

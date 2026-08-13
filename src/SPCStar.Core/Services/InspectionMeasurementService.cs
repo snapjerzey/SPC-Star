@@ -130,10 +130,6 @@ public sealed class InspectionMeasurementService(
             return;
         }
 
-        var completedRuns = plans
-            .Select(plan => SubmittedMeasurements(measurement, phase, plan).Count / plan.Plan.SampleSize)
-            .DefaultIfEmpty(0)
-            .Min();
         var recordedRuns = repository.JobPhaseCompletions
             .Where(item =>
                 item.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
@@ -142,37 +138,36 @@ public sealed class InspectionMeasurementService(
                 item.OperationSeq == measurement.OperationSeq &&
                 item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
                 item.InspectionPhase.Equals(phase, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => item.CompletedAt)
+            .ToArray();
+        var recordedRunCount = recordedRuns
             .Select(item => Math.Max(item.CompletionNumber, 1))
             .DefaultIfEmpty(0)
             .Max();
+        var previousCompletionAt = recordedRuns.FirstOrDefault()?.CompletedAt;
+        var completionMeasurementIds = MeasurementIdsForCompletionWindow(measurement, phase, plans, previousCompletionAt, measurement.Timestamp);
 
-        for (var run = recordedRuns + 1; run <= completedRuns; run++)
+        if (completionMeasurementIds.Count == 0)
         {
-            var completion = new JobPhaseCompletion
-            {
-                JobNum = measurement.JobNum,
-                PartNum = measurement.PartNum,
-                ProcessCode = measurement.ProcessCode,
-                OperationSeq = measurement.OperationSeq,
-                ResourceId = measurement.ResourceId,
-                InspectionPhase = phase,
-                CompletionNumber = run,
-                CompletedByUserId = measurement.OperatorUserId,
-                OperatorShift = measurement.OperatorShift,
-                CompletedAt = measurement.Timestamp
-            };
-
-            foreach (var plan in plans)
-            {
-                var runMeasurements = SubmittedMeasurements(measurement, phase, plan)
-                    .Skip((run - 1) * plan.Plan.SampleSize)
-                    .Take(plan.Plan.SampleSize)
-                    .Select(item => item.Id);
-                completion.MeasurementIds.AddRange(runMeasurements);
-            }
-
-            repository.JobPhaseCompletions.Add(completion);
+            return;
         }
+
+        var completion = new JobPhaseCompletion
+        {
+            JobNum = measurement.JobNum,
+            PartNum = measurement.PartNum,
+            ProcessCode = measurement.ProcessCode,
+            OperationSeq = measurement.OperationSeq,
+            ResourceId = measurement.ResourceId,
+            InspectionPhase = phase,
+            CompletionNumber = recordedRunCount + 1,
+            CompletedByUserId = measurement.OperatorUserId,
+            OperatorShift = measurement.OperatorShift,
+            CompletedAt = measurement.Timestamp
+        };
+
+        completion.MeasurementIds.AddRange(completionMeasurementIds);
+        repository.JobPhaseCompletions.Add(completion);
     }
 
     private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansForMeasurementPhase(InspectionMeasurement measurement, string phase)
@@ -198,26 +193,78 @@ public sealed class InspectionMeasurementService(
                 where characteristic.OperationId == operation.Id &&
                     plan.SampleSize > 0 &&
                     NormalizeInspectionPhase(plan.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase)
+                orderby plan.DisplayOrder, characteristic.Name
                 select (plan, characteristic))
             .ToArray();
     }
 
-    private IReadOnlyList<InspectionMeasurement> SubmittedMeasurements(
+    private IReadOnlyList<Guid> MeasurementIdsForCompletionWindow(
         InspectionMeasurement measurement,
         string phase,
-        (InspectionPlan Plan, Characteristic Characteristic) plan)
+        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
+        DateTimeOffset? previousCompletionAt,
+        DateTimeOffset completedAt)
     {
-        return repository.Measurements
+        if (plans.Count == 0)
+        {
+            return [];
+        }
+
+        var finalPlan = plans[^1];
+        if (!measurement.CharacteristicName.Equals(finalPlan.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        var lowerBound = previousCompletionAt ?? new DateTimeOffset(completedAt.Date, completedAt.Offset);
+        var candidates = repository.Measurements
             .Where(item =>
-            item.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
-            item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
-            item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
-            item.OperationSeq == measurement.OperationSeq &&
+                item.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == measurement.OperationSeq &&
                 item.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
-                item.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase) &&
                 NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase) &&
-                item.Timestamp.Date == measurement.Timestamp.Date)
-            .OrderBy(item => item.Timestamp)
+                item.Timestamp > lowerBound &&
+                item.Timestamp <= completedAt)
+            .ToArray();
+
+        return BuildCompletionWindow(plans, candidates);
+    }
+
+    private static IReadOnlyList<Guid> BuildCompletionWindow(
+        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
+        IReadOnlyList<InspectionMeasurement> measurements)
+    {
+        var selected = new List<InspectionMeasurement>();
+        var cursor = DateTimeOffset.MaxValue;
+
+        for (var index = plans.Count - 1; index >= 0; index--)
+        {
+            var plan = plans[index];
+            var matches = measurements
+                .Where(measurement =>
+                    measurement.Timestamp <= cursor &&
+                    measurement.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(measurement => measurement.Timestamp)
+                .ThenByDescending(measurement => measurement.SubmittedAt)
+                .ThenByDescending(measurement => measurement.Id)
+                .Take(Math.Max(plan.Plan.SampleSize, 1))
+                .ToArray();
+            if (matches.Length < Math.Max(plan.Plan.SampleSize, 1))
+            {
+                return [];
+            }
+
+            selected.AddRange(matches);
+            cursor = matches.Min(measurement => measurement.Timestamp);
+        }
+
+        return selected
+            .OrderBy(measurement => measurement.Timestamp)
+            .ThenBy(measurement => measurement.SubmittedAt)
+            .ThenBy(measurement => measurement.Id)
+            .Select(measurement => measurement.Id)
             .ToArray();
     }
 

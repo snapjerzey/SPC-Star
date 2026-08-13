@@ -126,4 +126,93 @@ public sealed class JobHistoryServiceTests
         Assert.Equal("Box #", jobData.TagName);
         Assert.Equal("45", jobData.TagValue);
     }
+
+    [Fact]
+    public void GetForJob_RebuildsCompletedInspectionFromChronologicalChecklistPass()
+    {
+        var repository = new InMemorySpcRepository();
+        var part = new Part { PartNum = "P100", Description = "Test part" };
+        var process = new ManufacturingProcess { ProcessCode = "General Production", Description = "General Production" };
+        var operation = new Operation { PartId = part.Id, ProcessId = process.Id, OperationSeq = 10 };
+        repository.Parts.Add(part);
+        repository.Processes.Add(process);
+        repository.Operations.Add(operation);
+
+        AddCharacteristic(repository, operation.Id, "First", 1);
+        AddCharacteristic(repository, operation.Id, "Second", 2);
+        AddCharacteristic(repository, operation.Id, "Third", 3);
+        var orphanFirst = AddMeasurement(repository, "First", "2026-05-12T08:00:00Z");
+        var validFirst = AddMeasurement(repository, "First", "2026-05-12T08:01:00Z");
+        var validSecond = AddMeasurement(repository, "Second", "2026-05-12T08:02:00Z");
+        var validThird = AddMeasurement(repository, "Third", "2026-05-12T08:03:00Z");
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "General Production",
+            OperationSeq = 10,
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-05-12T08:03:00Z")
+        });
+        repository.JobPhaseCompletions.Single().MeasurementIds.AddRange([orphanFirst.Id, validSecond.Id, validThird.Id]);
+
+        var history = new JobHistoryService(repository).GetForJob("J100");
+
+        var completion = Assert.Single(history, entry => entry.EntryType == "PhaseComplete");
+        var measurementIds = Assert.IsAssignableFrom<IReadOnlyList<Guid>>(completion.MeasurementIds);
+        Assert.Equal([validFirst.Id, validSecond.Id, validThird.Id], measurementIds);
+        Assert.DoesNotContain(orphanFirst.Id, measurementIds);
+
+    }
+
+    private static Characteristic AddCharacteristic(InMemorySpcRepository repository, Guid operationId, string name, int displayOrder)
+    {
+        var characteristic = new Characteristic
+        {
+            OperationId = operationId,
+            Name = name,
+            Type = CharacteristicType.Variable,
+            UnitOfMeasure = "mm"
+        };
+        repository.Characteristics.Add(characteristic);
+        repository.InspectionPlans.Add(new InspectionPlan
+        {
+            CharacteristicId = characteristic.Id,
+            InspectionPhase = "In Process",
+            SampleSize = 1,
+            DisplayOrder = displayOrder,
+            AlertRuleSet = "SpecLimitOnly",
+            Frequency = new InspectionFrequency
+            {
+                Type = FrequencyType.Quantity,
+                Value = 1,
+                Unit = FrequencyUnit.Pieces
+            }
+        });
+
+        return characteristic;
+    }
+
+    private static InspectionMeasurement AddMeasurement(InMemorySpcRepository repository, string characteristicName, string timestamp)
+    {
+        var measurement = new InspectionMeasurement
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ProcessCode = "General Production",
+            OperationSeq = 10,
+            ResourceId = "PRESS1",
+            CharacteristicName = characteristicName,
+            InspectionPhase = "In Process",
+            Value = 1m,
+            Timestamp = DateTimeOffset.Parse(timestamp),
+            SubmittedAt = DateTimeOffset.Parse(timestamp),
+            OperatorUserId = "operator1"
+        };
+        repository.Measurements.Add(measurement);
+        return measurement;
+    }
 }

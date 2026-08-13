@@ -28,6 +28,7 @@ public sealed class JobTagService(ISpcRepository repository)
 
         return repository.JobTags
             .Where(tag => tag.JobNum.Equals(jobNum.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Where(tag => !IsPerInspectionTag(tag.TagName))
             .OrderBy(tag => tag.TagName)
             .Select(tag => new JobTagDto(tag.TagName, tag.TagValue, tag.OperatorUserId, tag.UpdatedAt))
             .ToArray();
@@ -48,6 +49,21 @@ public sealed class JobTagService(ISpcRepository repository)
             var value = pair.Value?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(name))
             {
+                continue;
+            }
+
+            if (IsPerInspectionTag(name))
+            {
+                repository.JobTags.Add(new JobTag
+                {
+                    JobNum = request.JobNum.Trim(),
+                    PartNum = request.PartNum.Trim(),
+                    ResourceId = request.ResourceId.Trim(),
+                    TagName = name,
+                    TagValue = value,
+                    OperatorUserId = request.OperatorUserId.Trim(),
+                    UpdatedAt = updatedAt
+                });
                 continue;
             }
 
@@ -99,5 +115,11 @@ public sealed class JobTagService(ISpcRepository repository)
         {
             errors.Add($"{field} is required.");
         }
+    }
+
+    private static bool IsPerInspectionTag(string tagName)
+    {
+        var normalized = tagName.Trim().ToLowerInvariant();
+        return normalized is "box" or "box #" or "box number";
     }
 }

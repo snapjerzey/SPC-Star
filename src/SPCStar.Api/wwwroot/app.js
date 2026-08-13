@@ -599,8 +599,11 @@ function renderConfiguredJobDataFields(set) {
   form.innerHTML = fields.map((field) => `
     <label>
       ${escapeHtml(field.fieldName)}
-      <input class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" autocomplete="off" ${field.isRequired ? "required" : ""}>
+      <input class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" data-per-inspection="${isPerInspectionJobDataField(field.fieldName) ? "true" : "false"}" autocomplete="off" ${field.isRequired ? "required" : ""}>
     </label>`).join("") + (fields.length ? `<button type="submit" class="secondary">Save Job Data</button>` : "");
+  form.querySelectorAll(".job-tag-input[data-per-inspection='true']").forEach((input) => {
+    input.addEventListener("input", updateInspectionSubmitState);
+  });
 }
 
 function isBuiltInOrPartStandardJobData(fieldName) {
@@ -617,6 +620,10 @@ function isMaterialLotJobDataField(fieldName) {
   return normalized.includes("bimetal lot") ||
     normalized.includes("material lot") ||
     normalized.includes("raw material lot");
+}
+
+function isPerInspectionJobDataField(fieldName) {
+  return isBoxNumberJobDataField(fieldName);
 }
 
 function partStandardJobData(set) {
@@ -1266,6 +1273,11 @@ function machineCounterComplete() {
   return value.length > 0 && Number.isInteger(Number(value)) && Number(value) >= 0;
 }
 
+function perInspectionJobDataComplete() {
+  return [...document.querySelectorAll(".job-tag-input[data-per-inspection='true'][required]")]
+    .every((input) => input.value.trim().length > 0);
+}
+
 function normalizeMachineCounterInput() {
   const input = $("machineCounter");
   input.value = input.value.replace(/[^\d]/g, "");
@@ -1282,7 +1294,7 @@ function updateInspectionSubmitState() {
   const isComplete = inspectionEntryComplete();
   button.classList.toggle("hidden", !hasInputs);
   $("machineCounter").disabled = !hasInputs;
-  button.disabled = !isComplete || !machineCounterComplete() || Boolean(state.activeLock);
+  button.disabled = !isComplete || !machineCounterComplete() || !perInspectionJobDataComplete() || Boolean(state.activeLock);
 }
 
 async function resetCompletedInspectionEntry() {
@@ -1297,6 +1309,12 @@ async function resetCompletedInspectionEntry() {
     return;
   }
 
+  if (!perInspectionJobDataComplete()) {
+    showEntryMessage("Complete the required per-inspection job data before submitting this inspection.", "error");
+    document.querySelector(".job-tag-input[data-per-inspection='true'][required]:invalid, .job-tag-input[data-per-inspection='true'][required]")?.focus();
+    return;
+  }
+
   try {
     await saveCompletedInspection();
   } catch (error) {
@@ -1307,6 +1325,7 @@ async function resetCompletedInspectionEntry() {
   state.preserveInspectionEntriesUntil = 0;
   clearMeasurementDraftsForCurrentInspection();
   clearVisibleMeasurementInputs();
+  clearPerInspectionJobDataInputs();
   $("machineCounter").value = "";
   await loadContext();
   updateInspectionSubmitState();
@@ -1319,6 +1338,8 @@ async function saveCompletedInspection() {
     throw new Error("No inspection plan is loaded.");
   }
 
+  await savePerInspectionJobDataForCompletion(jobNum, resourceId, set);
+
   await api("/inspections/complete", {
     method: "POST",
     body: JSON.stringify({
@@ -1330,6 +1351,38 @@ async function saveCompletedInspection() {
       inspectionPhase: set.activePhase || set.inspectionPhase || $("inspectionPhase").value,
       machineCounter: Number(machineCounterValue())
     })
+  });
+}
+
+async function savePerInspectionJobDataForCompletion(jobNum, resourceId, set) {
+  const tags = {};
+  document.querySelectorAll(".job-tag-input[data-per-inspection='true']").forEach((input) => {
+    const value = input.value.trim();
+    if (value) {
+      tags[input.dataset.tagName] = value;
+    }
+  });
+
+  if (!Object.keys(tags).length) {
+    return;
+  }
+
+  await api(`/jobs/${encodeURIComponent(jobNum)}/tags`, {
+    method: "POST",
+    body: JSON.stringify({
+      jobNum,
+      partNum: set.partNum,
+      resourceId,
+      operatorUserId: state.user.userName,
+      tags,
+      updatedAt: new Date().toISOString()
+    })
+  });
+}
+
+function clearPerInspectionJobDataInputs() {
+  document.querySelectorAll(".job-tag-input[data-per-inspection='true']").forEach((input) => {
+    input.value = "";
   });
 }
 
@@ -1872,7 +1925,7 @@ async function loadJobTags(jobNum) {
     tags.forEach((tag) => {
       const input = [...document.querySelectorAll(".job-tag-input")]
         .find((field) => field.dataset.tagName.toLowerCase() === tag.tagName.toLowerCase());
-      if (input) {
+      if (input && input.dataset.perInspection !== "true") {
         input.value = tag.tagValue || "";
       }
     });
@@ -1895,8 +1948,18 @@ async function saveJobTags(event) {
 
   const tags = {};
   document.querySelectorAll(".job-tag-input").forEach((input) => {
+    if (input.dataset.perInspection === "true") {
+      return;
+    }
+
     tags[input.dataset.tagName] = input.value.trim();
   });
+
+  if (!Object.keys(tags).length) {
+    $("tagMessage").textContent = "Per-inspection fields are saved when you submit the inspection.";
+    $("tagMessage").className = "message";
+    return;
+  }
 
   try {
     await api(`/jobs/${encodeURIComponent(jobNum)}/tags`, {

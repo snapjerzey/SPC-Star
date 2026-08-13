@@ -43,4 +43,30 @@ public sealed class JobTagServiceTests
         Assert.Equal("linetech1", wire.OperatorUserId);
         Assert.Contains(service.GetForJob("J100"), tag => tag.TagName == "Coil Number" && tag.TagValue == "COIL-1");
     }
+
+    [Fact]
+    public void Save_StoresBoxNumberAsPerInspectionHistoryInsteadOfPersistentTag()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new JobTagService(repository);
+
+        service.Save(new SaveJobTagsRequest(
+            "J100",
+            "P100",
+            "PRESS1",
+            "operator1",
+            new Dictionary<string, string> { ["Box #"] = "45" },
+            DateTimeOffset.Parse("2026-05-13T08:00:00Z")));
+        service.Save(new SaveJobTagsRequest(
+            "J100",
+            "P100",
+            "PRESS1",
+            "operator1",
+            new Dictionary<string, string> { ["Box #"] = "46" },
+            DateTimeOffset.Parse("2026-05-13T09:00:00Z")));
+
+        Assert.Equal(2, repository.JobTags.Count);
+        Assert.Equal(["45", "46"], repository.JobTags.OrderBy(tag => tag.UpdatedAt).Select(tag => tag.TagValue).ToArray());
+        Assert.DoesNotContain(service.GetForJob("J100"), tag => tag.TagName == "Box #");
+    }
 }

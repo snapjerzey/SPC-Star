@@ -1897,7 +1897,7 @@ function canEditMaterialLots() {
   return hasPermission("CanManageInspectionPlans") || hasPermission("CanUseGodMode");
 }
 
-async function editMaterialLot(entry) {
+async function editMaterialLot(entry, options = {}) {
   const currentLot = entry.newLotNum || "";
   const newLot = window.prompt(`Correct lot number for ${entry.materialPartNum || "material"}:`, currentLot);
   if (newLot === null) {
@@ -1924,11 +1924,27 @@ async function editMaterialLot(entry) {
         editedAt: new Date().toISOString()
       })
     });
-    showEntryMessage("Material lot corrected.", "ok");
-    await loadJobNotes(selectedValues().jobNum);
+    const activeJobNum = selectedValues().jobNum || entry.jobNum;
+    if (activeJobNum) {
+      await loadJobNotes(activeJobNum);
+    }
+    if (options.refreshReview) {
+      await loadReview();
+    }
+    showMaterialEditMessage("Material lot corrected.", "ok", options);
   } catch (error) {
-    showEntryMessage("Material lot was not updated. " + readableError(error), "error");
+    showMaterialEditMessage("Material lot was not updated. " + readableError(error), "error", options);
   }
+}
+
+function showMaterialEditMessage(message, kind, options = {}) {
+  if (options.refreshReview && $("reviewMessage")) {
+    $("reviewMessage").textContent = message;
+    $("reviewMessage").className = `message ${kind}`;
+    return;
+  }
+
+  showEntryMessage(message, kind);
 }
 
 async function clearLock(event) {
@@ -2569,6 +2585,11 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map())
         : entry.entryType === "MeasurementEdit"
           ? measurementEditHistoryText(entry)
           : entry.noteText;
+  const action = entry.entryType === "Material" && canEditMaterialLots()
+    ? `<button type="button" class="secondary compact-button" data-action="edit-material-lot">Edit Lot</button>`
+    : completionMeasurements.length
+      ? `<button type="button" class="secondary compact-button" data-action="details">Details</button>`
+      : "";
   item.innerHTML = `
     <span>${formatDateTime(entry.timestamp)}</span>
     <span>-</span>
@@ -2577,10 +2598,11 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map())
     <span>${escapeHtml(entry.resourceId || "-")}</span>
     <span>-</span>
     <span>${escapeHtml(historyEntryUser(entry))}</span>
-    <span>${completionMeasurements.length ? `<button type="button" class="secondary compact-button">Details</button>` : ""}</span>`;
-  item.querySelector("button")?.addEventListener("click", () => toggleReviewMeasurementGroup(container, completionGroupId));
+    <span>${action}</span>`;
+  item.querySelector("[data-action='details']")?.addEventListener("click", () => toggleReviewMeasurementGroup(container, completionGroupId));
+  item.querySelector("[data-action='edit-material-lot']")?.addEventListener("click", () => editMaterialLot(entry, { refreshReview: true }));
   container.appendChild(item);
-  completionMeasurements.forEach((measurement) => renderInspectionCompletionMeasurementDetail(container, completionGroupId, measurement));
+  completionMeasurements.forEach((measurement) => renderReviewMeasurementDetail(container, completionGroupId, measurement));
 }
 
 function inspectionCompletionMeasurements(entry, measurementById) {
@@ -2594,25 +2616,6 @@ function inspectionCompletionMeasurements(entry, measurementById) {
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 }
 
-function renderInspectionCompletionMeasurementDetail(container, groupId, measurement) {
-  const item = document.createElement("div");
-  item.dataset.reviewGroup = groupId;
-  item.className = `data-row review-inspection-completion-detail-row hidden ${measurement.isOutOfSpec ? "measurement-out-spec" : measurement.isOutOfControl ? "measurement-out-control" : ""}`;
-  const value = measurement.characteristicType === "Attribute"
-    ? Number(measurement.value) === 1 ? "Accept" : "Reject"
-    : formatNumber(measurement.value);
-  item.innerHTML = `
-    <span>${formatDateTime(measurement.timestamp)}</span>
-    <span>${escapeHtml(measurement.inspectionPhase)}</span>
-    <span>${escapeHtml(measurement.characteristicName)}<small>${escapeHtml(measurement.characteristicType === "Attribute" ? "Accept/Reject" : "Measured")}</small></span>
-    <span>${escapeHtml(value)}${measurement.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : measurement.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
-    <span>${escapeHtml(measurement.resourceId)}</span>
-    <span>${escapeHtml(measurement.processCode)} ${measurement.operationSeq}</span>
-    <span>${escapeHtml(measurement.operatorUserId)}${measurement.operatorShift ? ` (${escapeHtml(measurement.operatorShift)})` : ""}</span>
-    <span></span>`;
-  container.appendChild(item);
-}
-
 function reviewMeasurementValueControl(row) {
   if (row.characteristicType === "Attribute") {
     return `
@@ -2622,7 +2625,7 @@ function reviewMeasurementValueControl(row) {
       </select>`;
   }
 
-  return `<input class="review-measurement-value" type="number" step="0.0001" value="${Number(row.value)}">`;
+  return `<input class="review-measurement-value" type="number" step="0.00001" value="${Number(row.value)}">`;
 }
 
 async function loadJobSummary(event) {

@@ -136,6 +136,7 @@ public sealed class JobPhaseCompletion
     public required string CompletedByUserId { get; set; }
     public string OperatorShift { get; set; } = "";
     public DateTimeOffset CompletedAt { get; set; }
+    public long? MachineCounter { get; set; }
     public List<Guid> MeasurementIds { get; } = [];
 }
 

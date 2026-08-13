@@ -18,6 +18,15 @@ public sealed record InspectionMeasurementEntry(
     DateTimeOffset? SubmittedAt = null,
     string InspectionPhase = "In Process");
 
+public sealed record CompleteInspectionRequest(
+    string JobNum,
+    string PartNum,
+    string ProcessCode,
+    int OperationSeq,
+    string ResourceId,
+    string InspectionPhase,
+    long? MachineCounter);
+
 public sealed class InspectionMeasurementService(
     ISpcRepository repository,
     WesternElectricRuleService westernElectricRuleService)
@@ -170,6 +179,34 @@ public sealed class InspectionMeasurementService(
         repository.JobPhaseCompletions.Add(completion);
     }
 
+    public ServiceResult<JobPhaseCompletion> CompleteInspection(CompleteInspectionRequest request)
+    {
+        var errors = ValidateCompletion(request);
+        if (errors.Count > 0)
+        {
+            return ServiceResult<JobPhaseCompletion>.Fail(errors);
+        }
+
+        var phase = NormalizeInspectionPhase(request.InspectionPhase);
+        var completion = repository.JobPhaseCompletions
+            .Where(item =>
+                item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == request.OperationSeq &&
+                item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => item.CompletedAt)
+            .FirstOrDefault();
+        if (completion is null)
+        {
+            return ServiceResult<JobPhaseCompletion>.Fail("No completed inspection was found for this job, part, machine, operation, and phase.");
+        }
+
+        completion.MachineCounter = request.MachineCounter!.Value;
+        return ServiceResult<JobPhaseCompletion>.Ok(completion);
+    }
+
     private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansForMeasurementPhase(InspectionMeasurement measurement, string phase)
     {
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase));
@@ -308,6 +345,31 @@ public sealed class InspectionMeasurementService(
             measurement.ResourceId.Equals(entry.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
             measurement.CharacteristicName.Equals(entry.CharacteristicName.Trim(), StringComparison.OrdinalIgnoreCase) &&
             NormalizeInspectionPhase(measurement.InspectionPhase).Equals(NormalizeInspectionPhase(entry.InspectionPhase), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<string> ValidateCompletion(CompleteInspectionRequest request)
+    {
+        var errors = new List<string>();
+        Required(request.JobNum, nameof(request.JobNum), errors);
+        Required(request.PartNum, nameof(request.PartNum), errors);
+        Required(request.ProcessCode, nameof(request.ProcessCode), errors);
+        Required(request.ResourceId, nameof(request.ResourceId), errors);
+        Required(request.InspectionPhase, nameof(request.InspectionPhase), errors);
+        if (request.OperationSeq <= 0)
+        {
+            errors.Add($"{nameof(request.OperationSeq)} is required.");
+        }
+
+        if (request.MachineCounter is null)
+        {
+            errors.Add("Machine Counter is required.");
+        }
+        else if (request.MachineCounter < 0)
+        {
+            errors.Add("Machine Counter cannot be negative.");
+        }
+
+        return errors;
     }
 
     private bool HasActiveAlertForMeasurement(Guid measurementId)

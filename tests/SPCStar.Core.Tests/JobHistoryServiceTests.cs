@@ -105,7 +105,8 @@ public sealed class JobHistoryServiceTests
             InspectionPhase = "In Process",
             CompletionNumber = 1,
             CompletedByUserId = "operator1",
-            CompletedAt = DateTimeOffset.Parse("2026-05-12T08:10:00Z")
+            CompletedAt = DateTimeOffset.Parse("2026-05-12T08:10:00Z"),
+            MachineCounter = 12345
         });
         repository.JobTags.Add(new JobTag
         {
@@ -122,6 +123,7 @@ public sealed class JobHistoryServiceTests
 
         var completion = Assert.Single(history);
         Assert.Equal("PhaseComplete", completion.EntryType);
+        Assert.Equal(12345, completion.MachineCounter);
         var jobData = Assert.Single(completion.JobDataEntries!);
         Assert.Equal("Box #", jobData.TagName);
         Assert.Equal("45", jobData.TagValue);

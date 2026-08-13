@@ -478,6 +478,19 @@ app.MapPost("/inspections/measurements", (InspectionMeasurementEntry request, In
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapPost("/inspections/complete", (CompleteInspectionRequest request, InspectionMeasurementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.CompleteInspection(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/material-changes", (MaterialChangeLogEntry request, MaterialChangeLogService service, IRepositoryPersistence persistence) =>
 {
     var result = service.Record(request);

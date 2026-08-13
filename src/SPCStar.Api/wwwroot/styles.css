@@ -387,6 +387,17 @@ hr {
   padding: 8px 12px;
 }
 .measurement-form { margin-top: 18px; }
+.machine-counter-field {
+  border: 1px solid #cddbea;
+  border-radius: 6px;
+  background: #f8fbff;
+  display: grid;
+  max-width: 420px;
+  padding: 10px 12px;
+}
+.machine-counter-field input {
+  margin-top: 6px;
+}
 .inspection-submit-button {
   margin-top: 14px;
   width: min(420px, 100%);

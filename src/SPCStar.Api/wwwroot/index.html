@@ -220,6 +220,10 @@
 
           <form id="measurementForm" class="measurement-form hidden">
             <div id="measurementVariableList" class="variable-list"></div>
+            <label class="machine-counter-field">
+              Machine Counter
+              <input id="machineCounter" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" required>
+            </label>
             <button id="completeInspectionButton" type="submit" class="inspection-submit-button hidden" disabled>Submit Inspection</button>
           </form>
           <p id="entryMessage" class="message"></p>
@@ -1529,6 +1533,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260813-submit-clears-inspection"></script>
+  <script src="/app.js?v=20260813-machine-counter"></script>
 </body>
 </html>

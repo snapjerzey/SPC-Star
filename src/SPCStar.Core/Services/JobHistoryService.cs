@@ -46,6 +46,7 @@ public sealed record JobHistoryEntryDto(
     int? OperationSeq = null,
     int? CompletionNumber = null,
     IReadOnlyList<Guid>? MeasurementIds = null,
+    long? MachineCounter = null,
     string? TagName = null,
     string? TagValue = null,
     IReadOnlyList<JobHistoryJobDataDto>? JobDataEntries = null);
@@ -270,7 +271,8 @@ public sealed class JobHistoryService(ISpcRepository repository)
                     ProcessCode: completion.ProcessCode,
                     OperationSeq: completion.OperationSeq,
                     CompletionNumber: Math.Max(completion.CompletionNumber, 1),
-                    MeasurementIds: measurementIds);
+                    MeasurementIds: measurementIds,
+                    MachineCounter: completion.MachineCounter);
             })
             .ToList();
 

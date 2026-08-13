@@ -33,7 +33,7 @@ public sealed class InspectionAndOverrideTests
 
         var result = service.EnterMeasurement(Entry(6m));
 
-        Assert.True(result.Succeeded);
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal("1st Shift", result.Value!.OperatorShift);
         var alert = Assert.Single(repository.Alerts);
         Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
@@ -49,7 +49,7 @@ public sealed class InspectionAndOverrideTests
 
         var result = service.EnterMeasurement(Entry(5.123456m));
 
-        Assert.True(result.Succeeded);
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal(5.12346m, result.Value!.Value);
     }
 
@@ -69,7 +69,7 @@ public sealed class InspectionAndOverrideTests
 
         var result = service.EnterMeasurement(Entry(5m));
 
-        Assert.True(result.Succeeded);
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Empty(repository.Alerts);
         Assert.Empty(repository.RuleViolations);
     }
@@ -224,6 +224,32 @@ public sealed class InspectionAndOverrideTests
         Assert.Equal(first.Value!.Id, update.Value!.Id);
         Assert.Equal(10.25m, repository.Measurements.Single().Value);
         Assert.Equal(DateTimeOffset.Parse("2026-01-01T00:06:00Z"), repository.Measurements.Single().Timestamp);
+    }
+
+    [Fact]
+    public void CompleteInspection_SavesMachineCounterOnLatestCompletion()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        AddCompletedInspection(repository);
+
+        var result = service.CompleteInspection(CompletionRequest(12345));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(12345, repository.JobPhaseCompletions.Single().MachineCounter);
+    }
+
+    [Fact]
+    public void CompleteInspection_RequiresMachineCounter()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        AddCompletedInspection(repository);
+
+        var result = service.CompleteInspection(CompletionRequest(null));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Machine Counter is required", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -528,6 +554,34 @@ public sealed class InspectionAndOverrideTests
             value,
             DateTimeOffset.Parse("2026-01-01T00:00:00Z").AddMinutes(minutes),
             "operator1");
+    }
+
+    private static CompleteInspectionRequest CompletionRequest(long? machineCounter)
+    {
+        return new CompleteInspectionRequest(
+            "J100",
+            "P100",
+            "MOLD",
+            10,
+            "PRESS1",
+            "In Process",
+            machineCounter);
+    }
+
+    private static void AddCompletedInspection(InMemorySpcRepository repository)
+    {
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ProcessCode = "MOLD",
+            OperationSeq = 10,
+            ResourceId = "PRESS1",
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-01-01T00:02:00Z")
+        });
     }
 
     private static void AddAttributeCharacteristic(InMemorySpcRepository repository)

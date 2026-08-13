@@ -527,6 +527,7 @@ function renderEmptyContext(message = "") {
   $("tagsSection").classList.add("hidden");
   $("jobTagsList").innerHTML = "";
   $("measurementVariableList").innerHTML = "";
+  $("machineCounter").value = "";
   $("meanSummary").innerHTML = "";
   $("trendCharacteristic").innerHTML = "";
   $("entryMessage").textContent = message;
@@ -769,6 +770,7 @@ function renderVariables() {
   document.querySelectorAll(".measurement-input").forEach((input) => {
     restoreMeasurementDraft(input);
   });
+  $("machineCounter").value = "";
   wireMeasurementDeviceInputs();
   updateInspectionSubmitState();
 }
@@ -1217,6 +1219,20 @@ function inspectionEntryComplete() {
     input.value === input.dataset.lastSubmittedValue);
 }
 
+function machineCounterValue() {
+  return $("machineCounter").value.trim();
+}
+
+function machineCounterComplete() {
+  const value = machineCounterValue();
+  return value.length > 0 && Number.isInteger(Number(value)) && Number(value) >= 0;
+}
+
+function normalizeMachineCounterInput() {
+  const input = $("machineCounter");
+  input.value = input.value.replace(/[^\d]/g, "");
+}
+
 function updateInspectionSubmitState() {
   const button = $("completeInspectionButton");
   if (!button) {
@@ -1227,7 +1243,8 @@ function updateInspectionSubmitState() {
   const hasInputs = inputs.length > 0;
   const isComplete = inspectionEntryComplete();
   button.classList.toggle("hidden", !hasInputs);
-  button.disabled = !isComplete || Boolean(state.activeLock);
+  $("machineCounter").disabled = !hasInputs;
+  button.disabled = !isComplete || !machineCounterComplete() || Boolean(state.activeLock);
 }
 
 async function resetCompletedInspectionEntry() {
@@ -1236,12 +1253,46 @@ async function resetCompletedInspectionEntry() {
     return;
   }
 
+  if (!machineCounterComplete()) {
+    showEntryMessage("Enter the Machine Counter before submitting this inspection.", "error");
+    $("machineCounter").focus();
+    return;
+  }
+
+  try {
+    await saveCompletedInspection();
+  } catch (error) {
+    showEntryMessage("Inspection could not be submitted. " + readableError(error), "error");
+    return;
+  }
+
   state.preserveInspectionEntriesUntil = 0;
   clearMeasurementDraftsForCurrentInspection();
   clearVisibleMeasurementInputs();
+  $("machineCounter").value = "";
   await loadContext();
   updateInspectionSubmitState();
   showEntryMessage("Inspection submitted. Fields cleared for the next inspection.", "ok");
+}
+
+async function saveCompletedInspection() {
+  const { jobNum, resourceId, set } = selectedValues();
+  if (!set) {
+    throw new Error("No inspection plan is loaded.");
+  }
+
+  await api("/inspections/complete", {
+    method: "POST",
+    body: JSON.stringify({
+      jobNum,
+      partNum: set.partNum,
+      processCode: set.processCode,
+      operationSeq: set.operationSeq,
+      resourceId,
+      inspectionPhase: set.activePhase || set.inspectionPhase || $("inspectionPhase").value,
+      machineCounter: Number(machineCounterValue())
+    })
+  });
 }
 
 function sampleLabel(input) {
@@ -2050,7 +2101,10 @@ function phaseCompletionHistoryText(entry) {
   const operation = entry.processCode
     ? ` Operation: ${entry.processCode}${entry.operationSeq ? ` ${entry.operationSeq}` : ""}.`
     : "";
-  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed by ${historyEntryUser(entry)}.${operation}`;
+  const counter = entry.machineCounter !== null && entry.machineCounter !== undefined
+    ? ` Machine Counter: ${entry.machineCounter}.`
+    : "";
+  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed by ${historyEntryUser(entry)}.${operation}${counter}`;
 }
 
 function lockHistoryText(entry) {
@@ -4883,6 +4937,10 @@ $("inspectionPhase").addEventListener("change", clearSelectedWorkContext);
 $("resourceId").addEventListener("change", clearSelectedWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
+$("machineCounter").addEventListener("input", () => {
+  normalizeMachineCounterInput();
+  updateInspectionSubmitState();
+});
 $("jobTagsForm").addEventListener("submit", saveJobTags);
 $("materialChangeForm").addEventListener("submit", saveMaterialChange);
 $("jobNoteForm").addEventListener("submit", saveJobNote);

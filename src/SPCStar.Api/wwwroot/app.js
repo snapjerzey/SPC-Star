@@ -2104,7 +2104,7 @@ function phaseCompletionHistoryText(entry) {
   const counter = entry.machineCounter !== null && entry.machineCounter !== undefined
     ? ` Machine Counter: ${entry.machineCounter}.`
     : "";
-  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed by ${historyEntryUser(entry)}.${operation}${counter}`;
+  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed by ${historyEntryUser(entry)}.${counter}${operation}`;
 }
 
 function lockHistoryText(entry) {
@@ -2854,6 +2854,7 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
   item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""} ${entry.entryType === "PhaseComplete" ? "phase-complete-history-row" : ""}`;
   const completionMeasurements = inspectionCompletionMeasurements(entry, measurementById);
   const completionJobData = inspectionCompletionJobData(entry, jobDataEntries);
+  const completionMetadata = inspectionCompletionMetadata(entry);
   const completionGroupId = `review-inspection-completion-${entry.id}`;
   const details = entry.entryType === "Lock"
     ? lockHistoryText(entry)
@@ -2868,7 +2869,7 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
             : entry.noteText;
   const action = entry.entryType === "Material" && canEditMaterialLots()
     ? `<button type="button" class="secondary compact-button" data-action="edit-material-lot">Edit Lot</button>`
-    : completionMeasurements.length || completionJobData.length
+    : completionMeasurements.length || completionJobData.length || completionMetadata.length
       ? `<button type="button" class="secondary compact-button" data-action="details">Details</button>`
       : "";
   item.innerHTML = `
@@ -2883,8 +2884,38 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
   item.querySelector("[data-action='details']")?.addEventListener("click", () => toggleReviewMeasurementGroup(container, completionGroupId));
   item.querySelector("[data-action='edit-material-lot']")?.addEventListener("click", () => editMaterialLot(entry, { refreshReview: true }));
   container.appendChild(item);
+  completionMetadata.forEach((metadata) => renderReviewCompletionMetadataDetail(container, completionGroupId, metadata, entry));
   completionJobData.forEach((jobData) => renderReviewJobDataDetail(container, completionGroupId, jobData, entry));
   completionMeasurements.forEach((measurement) => renderReviewMeasurementDetail(container, completionGroupId, measurement));
+}
+
+function inspectionCompletionMetadata(entry) {
+  if (entry.entryType !== "PhaseComplete") {
+    return [];
+  }
+
+  const rows = [];
+  if (entry.machineCounter !== null && entry.machineCounter !== undefined) {
+    rows.push({ label: "Machine Counter", value: entry.machineCounter });
+  }
+
+  return rows;
+}
+
+function renderReviewCompletionMetadataDetail(container, groupId, metadata, completionEntry) {
+  const item = document.createElement("div");
+  item.dataset.reviewGroup = groupId;
+  item.className = "data-row review-job-data-detail-row hidden";
+  item.innerHTML = `
+    <span>${formatDateTime(completionEntry.timestamp)}</span>
+    <span>-</span>
+    <span>${escapeHtml(metadata.label)}<small>Inspection Data</small></span>
+    <span>${escapeHtml(metadata.value)}</span>
+    <span>${escapeHtml(completionEntry.resourceId || "-")}</span>
+    <span>${escapeHtml(completionEntry.processCode || "-")}${completionEntry.operationSeq ? ` ${completionEntry.operationSeq}` : ""}</span>
+    <span>${escapeHtml(historyEntryUser(completionEntry))}</span>
+    <span></span>`;
+  container.appendChild(item);
 }
 
 function inspectionCompletionJobData(entry, jobDataEntries) {

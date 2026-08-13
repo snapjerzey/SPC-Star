@@ -72,7 +72,7 @@ public sealed class InspectionMeasurementService(
             ResourceId = entry.ResourceId.Trim(),
             CharacteristicName = entry.CharacteristicName.Trim(),
             InspectionPhase = NormalizeInspectionPhase(entry.InspectionPhase),
-            Value = entry.Value,
+            Value = NormalizeMeasurementValue(entry.Value),
             Timestamp = entry.Timestamp,
             OperatorUserId = entry.OperatorUserId.Trim(),
             OperatorShift = operatorShift,
@@ -93,7 +93,8 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Fail("Client measurement record is already assigned to a different inspection sample.");
         }
 
-        if (measurement.Value == entry.Value)
+        var normalizedValue = NormalizeMeasurementValue(entry.Value);
+        if (measurement.Value == normalizedValue)
         {
             return ServiceResult<InspectionMeasurement>.Ok(measurement);
         }
@@ -109,7 +110,7 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Fail(ActiveLockMessage(activeLock));
         }
 
-        measurement.Value = entry.Value;
+        measurement.Value = normalizedValue;
         measurement.Timestamp = entry.Timestamp;
         measurement.OperatorUserId = entry.OperatorUserId.Trim();
         measurement.OperatorShift = OperatorShift(entry.OperatorUserId);
@@ -788,17 +789,12 @@ public sealed class InspectionMeasurementService(
             errors.Add("OperationSeq must be greater than zero.");
         }
 
-        if (DecimalPlaces(entry.Value) > MaxMeasurementDecimalPlaces)
-        {
-            errors.Add($"Measurement value cannot exceed {MaxMeasurementDecimalPlaces} decimal places.");
-        }
-
         return errors;
     }
 
-    private static int DecimalPlaces(decimal value)
+    private static decimal NormalizeMeasurementValue(decimal value)
     {
-        return (decimal.GetBits(value)[3] >> 16) & 0xFF;
+        return decimal.Round(value, MaxMeasurementDecimalPlaces, MidpointRounding.AwayFromZero);
     }
 
     private static void Required(string value, string field, List<string> errors)

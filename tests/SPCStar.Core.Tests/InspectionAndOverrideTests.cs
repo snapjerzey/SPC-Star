@@ -42,15 +42,15 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
-    public void EnterMeasurement_RejectsMoreThanFiveDecimalPlaces()
+    public void EnterMeasurement_NormalizesMoreThanFiveDecimalPlaces()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         var result = service.EnterMeasurement(Entry(5.123456m));
 
-        Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("5 decimal places", StringComparison.OrdinalIgnoreCase));
+        Assert.True(result.Succeeded);
+        Assert.Equal(5.12346m, result.Value!.Value);
     }
 
     [Fact]

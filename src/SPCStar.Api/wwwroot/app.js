@@ -909,6 +909,12 @@ function wireMeasurementDeviceInputs() {
   document.querySelectorAll(".measurement-input").forEach((input) => {
     input.addEventListener("focus", () => input.closest("label")?.classList.add("device-input-active"));
     input.addEventListener("input", () => {
+      if (input.dataset.entryType === "Variable") {
+        const limitedValue = capMeasurementDecimalPlaces(input.value);
+        if (limitedValue !== input.value) {
+          input.value = limitedValue;
+        }
+      }
       if (input.value !== input.dataset.lastSubmittedValue) {
         input.dataset.submitted = "false";
       }
@@ -951,9 +957,9 @@ async function submitMeasurementInput(input, options = {}) {
   if (!inputHasValue(input)) return;
   const { jobNum, resourceId } = selectedValues();
   const plan = state.selectedPlans[Number(input.dataset.planIndex)];
-  if (input.dataset.entryType !== "Attribute" && !measurementHasAllowedPrecision(input.value)) {
-    showEntryMessage(`${sampleLabel(input)} cannot exceed ${MAX_MEASUREMENT_DECIMAL_PLACES} decimal places.`, "error");
-    throw new Error(`${sampleLabel(input)} cannot exceed ${MAX_MEASUREMENT_DECIMAL_PLACES} decimal places.`);
+  if (input.dataset.entryType === "Variable") {
+    input.value = capMeasurementDecimalPlaces(input.value);
+    updateMeasurementDraft(input);
   }
 
   const value = Number(input.value);
@@ -1025,14 +1031,15 @@ function markAcceptedMeasurementInput(input, value) {
   window.setTimeout(() => label?.classList.remove("measurement-submitted"), 900);
 }
 
-function measurementHasAllowedPrecision(value) {
-  const normalized = String(value || "").trim().replace(",", ".");
-  const match = normalized.match(/^-?\d+(?:\.(\d+))?$/);
-  if (!match) {
-    return true;
+function capMeasurementDecimalPlaces(value) {
+  const normalized = String(value || "").replace(",", ".");
+  const decimalIndex = normalized.indexOf(".");
+  if (decimalIndex < 0) {
+    return normalized;
   }
 
-  return (match[1] || "").length <= MAX_MEASUREMENT_DECIMAL_PLACES;
+  const allowedEnd = decimalIndex + 1 + MAX_MEASUREMENT_DECIMAL_PLACES;
+  return normalized.length > allowedEnd ? normalized.slice(0, allowedEnd) : normalized;
 }
 
 function inspectionEntryComplete() {
@@ -1069,7 +1076,7 @@ function normalizeMeasurementInput(input) {
 
 function parseDeviceMeasurement(rawValue) {
   const match = String(rawValue).replace(",", ".").match(/[-+]?\d*\.?\d+/);
-  return match ? match[0] : null;
+  return match ? capMeasurementDecimalPlaces(match[0]) : null;
 }
 
 function setDeviceStatus(message, kind = "neutral") {

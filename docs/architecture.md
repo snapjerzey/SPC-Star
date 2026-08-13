@@ -44,7 +44,7 @@ Inspection entry is organized around top-level job data, part-specific job tags,
 
 The setup/admin UI includes Parts & Inspections, Machines, Users, Rules, History, and Archive. Import/export actions live inside the Parts & Inspections, Machines, and Users sections. Users can be assigned shifts for reporting. History combines the previous review/report/job-data functions into Ledger, Charts, Top Issues, and Export views with shared job/part filters.
 
-The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. It also supports a Web Serial text-gauge profile for USB devices that expose serial readings instead of acting like a keyboard. WebHID/custom binary profiles should be added once the actual gauge models and report formats are known.
+The browser UI supports keyboard-style USB measurement devices by focusing the target sample field, cleaning device strings down to numeric values, and advancing to the next field when Enter is received. It also supports a Web Serial text-gauge profile for USB devices that expose serial readings instead of acting like a keyboard. Web Serial requires a supporting desktop browser such as Chrome or Edge and a secure browser context, so shop-floor serial-gauge use should be served over HTTPS rather than plain `http://SERVER-NAME:5000`. WebHID/custom binary profiles should be added once the actual gauge models and report formats are known.
 
 ## Next Architecture Step
 

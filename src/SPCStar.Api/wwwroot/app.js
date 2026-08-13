@@ -1080,7 +1080,10 @@ function updateDeviceControls(connected) {
 
 async function connectSerialDevice() {
   if (!("serial" in navigator)) {
-    setDeviceStatus("Web Serial is not available in this browser.", "error");
+    const secureContextText = window.isSecureContext
+      ? "Use desktop Chrome or Edge with Web Serial enabled."
+      : "Serial gauges require a secure browser connection. Use HTTPS for the SPC-Star server URL, or test from localhost on the server.";
+    setDeviceStatus(`Serial device connection is not available here. ${secureContextText}`, "error");
     return;
   }
 

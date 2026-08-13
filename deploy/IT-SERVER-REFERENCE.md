@@ -258,3 +258,28 @@ If the app does not respond:
 2. Check `C:\SPCStar\logs\spcstar.log`.
 3. Confirm inbound TCP port `5000` is allowed on the server firewall.
 4. Confirm the live database exists at `C:\SPCStar\data\spcstar.db`.
+
+## Serial Gauge Browser Requirement
+
+SPC-Star supports keyboard-style USB gauges automatically when the gauge types into the focused measurement field.
+
+For machines configured as `Serial text gauge`, SPC-Star uses the browser Web Serial API. Web Serial has extra browser restrictions:
+
+- Use desktop Chrome or desktop Microsoft Edge.
+- The page must be opened in a secure browser context.
+- `http://localhost:5000` can work when testing directly on the server.
+- `http://SERVER-NAME:5000` from another workstation is usually not considered secure by the browser.
+
+If an operator sees this message:
+
+```text
+Serial device connection is not available here.
+```
+
+then the workstation/browser is not exposing Web Serial to SPC-Star. For pilot use from shop-floor computers, IT should plan either:
+
+1. Serve SPC-Star over HTTPS using a certificate trusted by the shop-floor computers, then use the HTTPS URL in Chrome or Edge.
+2. Use gauges that act like keyboard input where possible.
+3. If HTTPS is not available yet, test serial-gauge behavior only from `localhost` on the server until IT provides a secure local URL.
+
+The baud rate setting, such as `9600`, only matters after the browser exposes serial access. If Web Serial is unavailable, the baud rate has not been reached yet.

@@ -2666,7 +2666,7 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
   item.querySelector("[data-action='details']")?.addEventListener("click", () => toggleReviewMeasurementGroup(container, completionGroupId));
   item.querySelector("[data-action='edit-material-lot']")?.addEventListener("click", () => editMaterialLot(entry, { refreshReview: true }));
   container.appendChild(item);
-  completionJobData.forEach((jobData) => renderReviewJobDataDetail(container, completionGroupId, jobData));
+  completionJobData.forEach((jobData) => renderReviewJobDataDetail(container, completionGroupId, jobData, entry));
   completionMeasurements.forEach((measurement) => renderReviewMeasurementDetail(container, completionGroupId, measurement));
 }
 
@@ -2675,12 +2675,16 @@ function inspectionCompletionJobData(entry, jobDataEntries) {
     return [];
   }
 
+  if (Array.isArray(entry.jobDataEntries)) {
+    return [...entry.jobDataEntries].sort((a, b) => String(a.tagName || "").localeCompare(String(b.tagName || "")));
+  }
+
   return jobDataEntries
     .filter((jobData) => reviewJobDataBelongsToCompletion(jobData, entry))
     .sort((a, b) => String(a.tagName || "").localeCompare(String(b.tagName || "")));
 }
 
-function renderReviewJobDataDetail(container, groupId, jobData) {
+function renderReviewJobDataDetail(container, groupId, jobData, completionEntry) {
   const item = document.createElement("div");
   item.dataset.reviewGroup = groupId;
   item.className = "data-row review-job-data-detail-row hidden";
@@ -2689,7 +2693,7 @@ function renderReviewJobDataDetail(container, groupId, jobData) {
     <span>-</span>
     <span>${escapeHtml(jobData.tagName || "Job Data")}<small>Job Data</small></span>
     <span>${escapeHtml(jobData.tagValue || "-")}</span>
-    <span>${escapeHtml(jobData.resourceId || "-")}</span>
+    <span>${escapeHtml(jobData.resourceId || completionEntry.resourceId || "-")}</span>
     <span>-</span>
     <span>${escapeHtml(historyEntryUser(jobData))}</span>
     <span></span>`;

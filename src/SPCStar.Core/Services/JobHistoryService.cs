@@ -127,9 +127,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
         var phaseCompletionsWithJobData = phaseCompletions
             .Select(completion => completion with
             {
-                JobDataEntries = jobTags
-                    .Where(tag => JobTagBelongsToCompletion(tag, completion, phaseCompletions))
-                    .OrderBy(tag => tag.TagName)
+                JobDataEntries = LatestJobTagsForCompletion(jobTags, completion)
                     .Select(JobTagDetail)
                     .ToArray()
             })
@@ -195,8 +193,8 @@ public sealed class JobHistoryService(ISpcRepository repository)
     {
         if (completion.EntryType != "PhaseComplete" ||
             !tag.JobNum.Equals(completion.JobNum, StringComparison.OrdinalIgnoreCase) ||
-            !tag.PartNum.Equals(completion.PartNum, StringComparison.OrdinalIgnoreCase) ||
-            !tag.ResourceId.Equals(completion.ResourceId, StringComparison.OrdinalIgnoreCase) ||
+            !BlankOrEqual(tag.PartNum, completion.PartNum) ||
+            !BlankOrEqual(tag.ResourceId, completion.ResourceId) ||
             tag.UpdatedAt.Date != completion.Timestamp.Date)
         {
             return false;
@@ -206,14 +204,42 @@ public sealed class JobHistoryService(ISpcRepository repository)
             .Where(candidate =>
                 candidate.EntryType == "PhaseComplete" &&
                 candidate.JobNum.Equals(tag.JobNum, StringComparison.OrdinalIgnoreCase) &&
-                candidate.PartNum.Equals(tag.PartNum, StringComparison.OrdinalIgnoreCase) &&
-                candidate.ResourceId.Equals(tag.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+                BlankOrEqual(tag.PartNum, candidate.PartNum) &&
+                BlankOrEqual(tag.ResourceId, candidate.ResourceId) &&
                 candidate.Timestamp.Date == tag.UpdatedAt.Date &&
                 candidate.Timestamp >= tag.UpdatedAt.AddMinutes(-2))
             .OrderBy(candidate => Math.Abs((candidate.Timestamp - tag.UpdatedAt).TotalMilliseconds))
             .FirstOrDefault();
 
         return closest?.Id == completion.Id;
+    }
+
+    private static IReadOnlyList<JobTag> LatestJobTagsForCompletion(IReadOnlyList<JobTag> jobTags, JobHistoryEntryDto completion)
+    {
+        if (completion.EntryType != "PhaseComplete")
+        {
+            return [];
+        }
+
+        return jobTags
+            .Where(tag =>
+                tag.JobNum.Equals(completion.JobNum, StringComparison.OrdinalIgnoreCase) &&
+                BlankOrEqual(tag.PartNum, completion.PartNum) &&
+                BlankOrEqual(tag.ResourceId, completion.ResourceId) &&
+                tag.UpdatedAt <= completion.Timestamp)
+            .GroupBy(tag => tag.TagName, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderByDescending(tag => tag.UpdatedAt)
+                .ThenByDescending(tag => tag.Id)
+                .First())
+            .OrderBy(tag => tag.TagName)
+            .ToArray();
+    }
+
+    private static bool BlankOrEqual(string? value, string? expected)
+    {
+        return string.IsNullOrWhiteSpace(value) ||
+            value.Equals(expected ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
     private string UserShift(string userName)

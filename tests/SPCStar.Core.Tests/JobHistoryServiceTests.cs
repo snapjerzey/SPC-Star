@@ -130,6 +130,53 @@ public sealed class JobHistoryServiceTests
     }
 
     [Fact]
+    public void GetForJob_CarriesPersistentJobDataForwardToLaterCompletedInspections()
+    {
+        var repository = new InMemorySpcRepository();
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "General Production",
+            OperationSeq = 10,
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-05-12T08:10:00Z")
+        });
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "General Production",
+            OperationSeq = 10,
+            InspectionPhase = "In Process",
+            CompletionNumber = 2,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-05-12T11:00:00Z")
+        });
+        repository.JobTags.Add(new JobTag
+        {
+            JobNum = "J100",
+            PartNum = "",
+            ResourceId = "",
+            TagName = "Box #",
+            TagValue = "45",
+            OperatorUserId = "operator1",
+            UpdatedAt = DateTimeOffset.Parse("2026-05-12T08:09:30Z")
+        });
+
+        var history = new JobHistoryService(repository).GetForJob("J100");
+
+        var latestCompletion = history.First(entry => entry.EntryType == "PhaseComplete" && entry.CompletionNumber == 2);
+        var jobData = Assert.Single(latestCompletion.JobDataEntries!);
+        Assert.Equal("Box #", jobData.TagName);
+        Assert.Equal("45", jobData.TagValue);
+    }
+
+    [Fact]
     public void GetForJob_RebuildsCompletedInspectionFromChronologicalChecklistPass()
     {
         var repository = new InMemorySpcRepository();

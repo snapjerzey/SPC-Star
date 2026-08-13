@@ -587,7 +587,8 @@ function renderConfiguredJobDataFields(set) {
     .filter((field) =>
       field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
       normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase) &&
-      !isBuiltInOrPartStandardJobData(field.fieldName))
+      !isBuiltInOrPartStandardJobData(field.fieldName) &&
+      !isMaterialLotJobDataField(field.fieldName))
     .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   const form = $("jobTagsForm");
   $("jobTagsList").innerHTML = partStandardJobData(set).map((fact) => `
@@ -611,6 +612,13 @@ function isBuiltInOrPartStandardJobData(fieldName) {
     normalized === "hole size";
 }
 
+function isMaterialLotJobDataField(fieldName) {
+  const normalized = String(fieldName || "").trim().toLowerCase();
+  return normalized.includes("bimetal lot") ||
+    normalized.includes("material lot") ||
+    normalized.includes("raw material lot");
+}
+
 function partStandardJobData(set) {
   return [
     ["Blank Code", set.blankCode],
@@ -625,15 +633,21 @@ function renderConfiguredMaterialFields(set) {
     .filter((field) =>
       field.partNum.toLowerCase() === set.partNum.toLowerCase())
     .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+  const materialLotJobDataFields = (state.snapshot.partJobDataFields || [])
+    .filter((field) =>
+      field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
+      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase) &&
+      isMaterialLotJobDataField(field.fieldName))
+    .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   const rows = $("materialFieldRows");
-  const materialFields = fields.length ? fields : [{
+  const materialFields = fields.length || materialLotJobDataFields.length ? fields : [{
     materialName: "Material",
     materialPartNum: "",
     materialDescription: "",
     isRequired: true,
     displayOrder: 0
   }];
-  rows.innerHTML = materialFields.map((field, index) => `
+  const materialRows = materialFields.map((field, index) => `
     <section class="material-field-row">
       <h3>${escapeHtml(field.materialName)}${field.materialDescription ? ` - ${escapeHtml(field.materialDescription)}` : ""}</h3>
       <label>
@@ -651,7 +665,31 @@ function renderConfiguredMaterialFields(set) {
           <option value="Material issue at job start">Material issue at job start</option>
         </select>
       </label>
-    </section>`).join("");
+    </section>`);
+  const materialLotRows = materialLotJobDataFields.map((field, index) => `
+    <section class="material-field-row" data-material-tag-name="${escapeHtml(field.fieldName)}" data-material-name="${escapeHtml(materialNameFromLotField(field.fieldName))}">
+      <h3>${escapeHtml(field.fieldName)}</h3>
+      <label>
+        New lot number
+        <input class="material-lot-input" data-material-index="tag-${index}" autocomplete="off" inputmode="text" maxlength="${MAX_LOT_NUMBER_LENGTH}" ${field.isRequired ? "required" : ""}>
+      </label>
+      <label>
+        Reason
+        <select class="material-reason-input" data-material-index="tag-${index}" required>
+          <option value="Material change">Material change</option>
+          <option value="Material issue at job start">Material issue at job start</option>
+        </select>
+      </label>
+    </section>`);
+  rows.innerHTML = [...materialRows, ...materialLotRows].join("");
+}
+
+function materialNameFromLotField(fieldName) {
+  return String(fieldName || "Material")
+    .replace(/#/g, "")
+    .replace(/\blot\b/ig, "")
+    .replace(/\s+/g, " ")
+    .trim() || "Material";
 }
 
 function renderLock(activeLock) {
@@ -1886,7 +1924,7 @@ async function saveMaterialChange(event) {
   const { jobNum, resourceId, set } = selectedValues();
   const entries = [...document.querySelectorAll(".material-field-row")]
     .map((row) => ({
-      materialPartNum: row.querySelector(".material-part-input").value.trim(),
+      materialPartNum: (row.querySelector(".material-part-input")?.value || row.dataset.materialName || "").trim(),
       newLotNum: row.querySelector(".material-lot-input").value.trim(),
       reason: row.querySelector(".material-reason-input").value
     }))
@@ -2066,6 +2104,10 @@ function historyEntryTitle(entry) {
   }
 
   if (entry.entryType === "JobData") {
+    if (isMaterialLotJobDataField(entry.tagName)) {
+      return `Material - ${entry.tagName || "Lot"}`;
+    }
+
     return `Job Data - ${entry.tagName || "Field"}`;
   }
 
@@ -2104,7 +2146,8 @@ function phaseCompletionHistoryText(entry) {
   const counter = entry.machineCounter !== null && entry.machineCounter !== undefined
     ? ` Machine Counter: ${entry.machineCounter}.`
     : "";
-  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed by ${historyEntryUser(entry)}.${counter}${operation}`;
+  const box = inspectionBoxNumberText(entry);
+  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed by ${historyEntryUser(entry)}.${counter}${box}${operation}`;
 }
 
 function lockHistoryText(entry) {
@@ -2138,7 +2181,26 @@ function materialHistoryText(entry) {
 }
 
 function jobDataHistoryText(entry) {
+  if (isMaterialLotJobDataField(entry.tagName)) {
+    return `${entry.tagName || "Material lot"}: ${entry.tagValue || "-"}. Recorded by ${entry.operatorUserId}.`;
+  }
+
   return `${entry.tagName || "Job data"}: ${entry.tagValue || "-"}. Recorded by ${entry.operatorUserId}.`;
+}
+
+function inspectionBoxNumberText(entry) {
+  const boxEntry = (entry.jobDataEntries || [])
+    .find((jobData) => isBoxNumberJobDataField(jobData.tagName));
+  return boxEntry ? ` ${boxEntry.tagName}: ${boxEntry.tagValue || "-"}.` : "";
+}
+
+function isBoxNumberJobDataField(fieldName) {
+  const normalized = String(fieldName || "").trim().toLowerCase();
+  return normalized === "box" ||
+    normalized === "box #" ||
+    normalized === "box number" ||
+    normalized === "serial #" ||
+    normalized === "serial number";
 }
 
 function canEditMaterialLots() {
@@ -2686,6 +2748,7 @@ function renderReviewMeasurements(measurements, history) {
   const container = $("jobReviewMeasurements");
   const measurementById = new Map((measurements || []).map((measurement) => [String(measurement.id).toLowerCase(), measurement]));
   const jobDataEntries = (history || []).filter((entry) => entry.entryType === "JobData");
+  const materialEntries = (history || []).filter((entry) => entry.entryType === "Material");
   const phaseCompletions = (history || []).filter((entry) => entry.entryType === "PhaseComplete");
   const completedMeasurementIds = new Set(
     phaseCompletions
@@ -2695,9 +2758,17 @@ function renderReviewMeasurements(measurements, history) {
   const uncompletedMeasurements = (measurements || [])
     .filter((measurement) => !completedMeasurementIds.has(String(measurement.id).toLowerCase()));
   const historyRows = (history || [])
-    .filter((entry) => entry.entryType !== "JobData" || !phaseCompletions.some((completion) => {
-      return reviewJobDataBelongsToCompletion(entry, completion);
-    }));
+    .filter((entry) => {
+      if (entry.entryType === "JobData") {
+        return !phaseCompletions.some((completion) => reviewJobDataBelongsToCompletion(entry, completion));
+      }
+
+      if (entry.entryType === "Material") {
+        return !phaseCompletions.some((completion) => reviewTraceabilityEventBelongsToCompletion(entry, completion));
+      }
+
+      return true;
+    });
   const rows = [
     ...groupReviewMeasurements(uncompletedMeasurements).map((group) => ({ kind: "MeasurementGroup", timestamp: group.latest.timestamp, group })),
     ...historyRows.map((entry) => ({ kind: "History", timestamp: entry.timestamp, entry }))
@@ -2716,7 +2787,7 @@ function renderReviewMeasurements(measurements, history) {
     </div>`;
   rows.forEach((row) => {
     if (row.kind === "History") {
-      renderReviewHistoryEvent(container, row.entry, measurementById, jobDataEntries);
+      renderReviewHistoryEvent(container, row.entry, measurementById, jobDataEntries, materialEntries);
       return;
     }
 
@@ -2738,6 +2809,29 @@ function reviewJobDataBelongsToCompletion(jobDataEntry, completionEntry) {
   }
 
   return new Date(jobDataEntry.timestamp) <= new Date(completionEntry.timestamp);
+}
+
+function reviewTraceabilityEventBelongsToCompletion(traceabilityEntry, completionEntry) {
+  if (completionEntry.entryType !== "PhaseComplete") {
+    return false;
+  }
+
+  if (String(traceabilityEntry.partNum || "").toLowerCase() !== String(completionEntry.partNum || "").toLowerCase()) {
+    return false;
+  }
+
+  if (String(traceabilityEntry.resourceId || "").toLowerCase() !== String(completionEntry.resourceId || "").toLowerCase()) {
+    return false;
+  }
+
+  const traceabilityTime = new Date(traceabilityEntry.timestamp);
+  const completionTime = new Date(completionEntry.timestamp);
+  if (Number.isNaN(traceabilityTime.getTime()) || Number.isNaN(completionTime.getTime())) {
+    return false;
+  }
+
+  return traceabilityTime <= completionTime &&
+    traceabilityTime >= new Date(completionTime.getTime() - 2 * 60 * 1000);
 }
 
 function groupReviewMeasurements(measurements) {
@@ -2849,11 +2943,12 @@ function renderReviewMeasurementDetail(container, groupId, measurement) {
   container.appendChild(item);
 }
 
-function renderReviewHistoryEvent(container, entry, measurementById = new Map(), jobDataEntries = []) {
+function renderReviewHistoryEvent(container, entry, measurementById = new Map(), jobDataEntries = [], materialEntries = []) {
   const item = document.createElement("div");
   item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""} ${entry.entryType === "PhaseComplete" ? "phase-complete-history-row" : ""}`;
   const completionMeasurements = inspectionCompletionMeasurements(entry, measurementById);
   const completionJobData = inspectionCompletionJobData(entry, jobDataEntries);
+  const completionMaterials = inspectionCompletionMaterials(entry, materialEntries);
   const completionMetadata = inspectionCompletionMetadata(entry);
   const completionGroupId = `review-inspection-completion-${entry.id}`;
   const details = entry.entryType === "Lock"
@@ -2869,7 +2964,7 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
             : entry.noteText;
   const action = entry.entryType === "Material" && canEditMaterialLots()
     ? `<button type="button" class="secondary compact-button" data-action="edit-material-lot">Edit Lot</button>`
-    : completionMeasurements.length || completionJobData.length || completionMetadata.length
+    : completionMeasurements.length || completionJobData.length || completionMaterials.length || completionMetadata.length
       ? `<button type="button" class="secondary compact-button" data-action="details">Details</button>`
       : "";
   item.innerHTML = `
@@ -2885,6 +2980,7 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
   item.querySelector("[data-action='edit-material-lot']")?.addEventListener("click", () => editMaterialLot(entry, { refreshReview: true }));
   container.appendChild(item);
   completionMetadata.forEach((metadata) => renderReviewCompletionMetadataDetail(container, completionGroupId, metadata, entry));
+  completionMaterials.forEach((material) => renderReviewCompletionMaterialDetail(container, completionGroupId, material, entry));
   completionJobData.forEach((jobData) => renderReviewJobDataDetail(container, completionGroupId, jobData, entry));
   completionMeasurements.forEach((measurement) => renderReviewMeasurementDetail(container, completionGroupId, measurement));
 }
@@ -2918,6 +3014,32 @@ function renderReviewCompletionMetadataDetail(container, groupId, metadata, comp
   container.appendChild(item);
 }
 
+function inspectionCompletionMaterials(entry, materialEntries) {
+  if (entry.entryType !== "PhaseComplete") {
+    return [];
+  }
+
+  return materialEntries
+    .filter((material) => reviewTraceabilityEventBelongsToCompletion(material, entry))
+    .sort((a, b) => String(a.materialPartNum || "").localeCompare(String(b.materialPartNum || "")));
+}
+
+function renderReviewCompletionMaterialDetail(container, groupId, material, completionEntry) {
+  const item = document.createElement("div");
+  item.dataset.reviewGroup = groupId;
+  item.className = "data-row review-job-data-detail-row hidden";
+  item.innerHTML = `
+    <span>${formatDateTime(material.timestamp)}</span>
+    <span>-</span>
+    <span>${escapeHtml(material.materialPartNum || "Material")}<small>Material</small></span>
+    <span>${escapeHtml(material.newLotNum || "-")}</span>
+    <span>${escapeHtml(material.resourceId || completionEntry.resourceId || "-")}</span>
+    <span>-</span>
+    <span>${escapeHtml(historyEntryUser(material))}</span>
+    <span></span>`;
+  container.appendChild(item);
+}
+
 function inspectionCompletionJobData(entry, jobDataEntries) {
   if (entry.entryType !== "PhaseComplete") {
     return [];
@@ -2934,12 +3056,13 @@ function inspectionCompletionJobData(entry, jobDataEntries) {
 
 function renderReviewJobDataDetail(container, groupId, jobData, completionEntry) {
   const item = document.createElement("div");
+  const isMaterialLot = isMaterialLotJobDataField(jobData.tagName);
   item.dataset.reviewGroup = groupId;
   item.className = "data-row review-job-data-detail-row hidden";
   item.innerHTML = `
     <span>${formatDateTime(jobData.timestamp)}</span>
     <span>-</span>
-    <span>${escapeHtml(jobData.tagName || "Job Data")}<small>Job Data</small></span>
+    <span>${escapeHtml(jobData.tagName || (isMaterialLot ? "Material" : "Job Data"))}<small>${isMaterialLot ? "Material" : "Job Data"}</small></span>
     <span>${escapeHtml(jobData.tagValue || "-")}</span>
     <span>${escapeHtml(jobData.resourceId || completionEntry.resourceId || "-")}</span>
     <span>-</span>

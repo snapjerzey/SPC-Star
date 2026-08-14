@@ -57,7 +57,8 @@ public sealed class BackupServiceTests
     public void ClearDatabase_RemovesHistoryButKeepsSetupData()
     {
         var repository = new InMemorySpcRepository();
-        SeedData.SeedAll(repository);
+        SeedData.SeedSecurity(repository);
+        SeedData.SeedSampleInspectionPlans(repository);
         repository.Resources.Add(new ResourceMachine { ResourceId = "M1", Description = "Machine 1" });
         repository.Measurements.Add(new InspectionMeasurement
         {

@@ -1003,7 +1003,10 @@ public sealed class SetupImportService(ISpcRepository repository)
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
             ? "Setup"
-            : "In Process";
+            : phase.Equals("In Process", StringComparison.OrdinalIgnoreCase) ||
+                phase.Equals("InProcess", StringComparison.OrdinalIgnoreCase)
+                ? "In Process"
+                : phase;
     }
 
     private void UpsertControlLimit(Dictionary<string, string> row, Part part, ManufacturingProcess process, int operationSeq)

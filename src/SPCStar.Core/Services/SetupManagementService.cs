@@ -1251,7 +1251,10 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
             ? "Setup"
-            : "In Process";
+            : phase.Equals("In Process", StringComparison.OrdinalIgnoreCase) ||
+                phase.Equals("InProcess", StringComparison.OrdinalIgnoreCase)
+                ? "In Process"
+                : phase;
     }
 
     private static bool IsSupportedRuleSet(string ruleSet)

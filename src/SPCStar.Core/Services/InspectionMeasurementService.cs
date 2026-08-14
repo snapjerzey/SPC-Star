@@ -200,11 +200,90 @@ public sealed class InspectionMeasurementService(
             .FirstOrDefault();
         if (completion is null)
         {
-            return ServiceResult<JobPhaseCompletion>.Fail("No completed inspection was found for this job, part, machine, operation, and phase.");
+            completion = TryCreateCompletionFromSavedMeasurements(request, phase);
+            if (completion is null)
+            {
+                return ServiceResult<JobPhaseCompletion>.Fail("No completed inspection was found for this job, part, machine, operation, and phase.");
+            }
         }
 
         completion.MachineCounter = request.MachineCounter!.Value;
         return ServiceResult<JobPhaseCompletion>.Ok(completion);
+    }
+
+    private JobPhaseCompletion? TryCreateCompletionFromSavedMeasurements(CompleteInspectionRequest request, string phase)
+    {
+        var jobNum = request.JobNum.Trim();
+        var partNum = request.PartNum.Trim();
+        var processCode = request.ProcessCode.Trim();
+        var resourceId = request.ResourceId.Trim();
+        var plans = PlansForPhase(partNum, processCode, request.OperationSeq, phase);
+        if (plans.Count == 0)
+        {
+            return null;
+        }
+
+        var latestMeasurement = repository.Measurements
+            .Where(item =>
+                item.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(processCode, StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == request.OperationSeq &&
+                item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => item.Timestamp)
+            .ThenByDescending(item => item.SubmittedAt)
+            .ThenByDescending(item => item.Id)
+            .FirstOrDefault();
+        if (latestMeasurement is null)
+        {
+            return null;
+        }
+
+        var recordedRuns = repository.JobPhaseCompletions
+            .Where(item =>
+                item.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(processCode, StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == request.OperationSeq &&
+                item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => item.CompletedAt)
+            .ToArray();
+        var previousCompletionAt = recordedRuns.FirstOrDefault()?.CompletedAt;
+        var candidates = repository.Measurements
+            .Where(item =>
+                item.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(processCode, StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == request.OperationSeq &&
+                item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase) &&
+                item.Timestamp > (previousCompletionAt ?? new DateTimeOffset(latestMeasurement.Timestamp.Date, latestMeasurement.Timestamp.Offset)) &&
+                item.Timestamp <= latestMeasurement.Timestamp)
+            .ToArray();
+        var completionMeasurementIds = BuildLatestCompletionSet(plans, candidates);
+        if (completionMeasurementIds.Count == 0)
+        {
+            return null;
+        }
+
+        var completion = new JobPhaseCompletion
+        {
+            JobNum = jobNum,
+            PartNum = partNum,
+            ProcessCode = processCode,
+            OperationSeq = request.OperationSeq,
+            ResourceId = resourceId,
+            InspectionPhase = phase,
+            CompletionNumber = recordedRuns.Select(item => Math.Max(item.CompletionNumber, 1)).DefaultIfEmpty(0).Max() + 1,
+            CompletedByUserId = latestMeasurement.OperatorUserId,
+            OperatorShift = latestMeasurement.OperatorShift,
+            CompletedAt = latestMeasurement.Timestamp
+        };
+        completion.MeasurementIds.AddRange(completionMeasurementIds);
+        repository.JobPhaseCompletions.Add(completion);
+        return completion;
     }
 
     private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansForMeasurementPhase(InspectionMeasurement measurement, string phase)
@@ -235,12 +314,45 @@ public sealed class InspectionMeasurementService(
             .ToArray();
     }
 
+    private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansForPhase(
+        string partNum,
+        string processCode,
+        int operationSeq,
+        string phase)
+    {
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase));
+        var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(processCode, StringComparison.OrdinalIgnoreCase));
+        if (part is null || process is null)
+        {
+            return [];
+        }
+
+        var operation = repository.Operations.FirstOrDefault(item =>
+            item.PartId == part.Id &&
+            item.ProcessId == process.Id &&
+            item.OperationSeq == operationSeq);
+        if (operation is null)
+        {
+            return [];
+        }
+
+        return (from characteristic in repository.Characteristics
+                join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
+                where characteristic.OperationId == operation.Id &&
+                    plan.SampleSize > 0 &&
+                    NormalizeInspectionPhase(plan.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase)
+                orderby plan.DisplayOrder, characteristic.Name
+                select (plan, characteristic))
+            .ToArray();
+    }
+
     private IReadOnlyList<Guid> MeasurementIdsForCompletionWindow(
         InspectionMeasurement measurement,
         string phase,
         IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
         DateTimeOffset? previousCompletionAt,
-        DateTimeOffset completedAt)
+        DateTimeOffset completedAt,
+        bool requireFinalPlanMeasurement = true)
     {
         if (plans.Count == 0)
         {
@@ -248,7 +360,7 @@ public sealed class InspectionMeasurementService(
         }
 
         var finalPlan = plans[^1];
-        if (!measurement.CharacteristicName.Equals(finalPlan.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
+        if (requireFinalPlanMeasurement && !measurement.CharacteristicName.Equals(finalPlan.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
         {
             return [];
         }
@@ -298,6 +410,38 @@ public sealed class InspectionMeasurementService(
         }
 
         return selected
+            .OrderBy(measurement => measurement.Timestamp)
+            .ThenBy(measurement => measurement.SubmittedAt)
+            .ThenBy(measurement => measurement.Id)
+            .Select(measurement => measurement.Id)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<Guid> BuildLatestCompletionSet(
+        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
+        IReadOnlyList<InspectionMeasurement> measurements)
+    {
+        var selected = new List<InspectionMeasurement>();
+        foreach (var plan in plans)
+        {
+            var required = Math.Max(plan.Plan.SampleSize, 1);
+            var matches = measurements
+                .Where(measurement => measurement.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(measurement => measurement.Timestamp)
+                .ThenByDescending(measurement => measurement.SubmittedAt)
+                .ThenByDescending(measurement => measurement.Id)
+                .Take(required)
+                .ToArray();
+            if (matches.Length < required)
+            {
+                return [];
+            }
+
+            selected.AddRange(matches);
+        }
+
+        return selected
+            .DistinctBy(measurement => measurement.Id)
             .OrderBy(measurement => measurement.Timestamp)
             .ThenBy(measurement => measurement.SubmittedAt)
             .ThenBy(measurement => measurement.Id)
@@ -890,7 +1034,7 @@ public sealed class InspectionMeasurementService(
         Required(entry.OperatorUserId, nameof(entry.OperatorUserId), errors);
         if (!IsValidInspectionPhase(entry.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
         }
 
         if (entry.OperationSeq <= 0)
@@ -949,7 +1093,13 @@ public sealed class InspectionMeasurementService(
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
             ? "Setup"
-            : "In Process";
+            : phase.Equals("Coil Change", StringComparison.OrdinalIgnoreCase) ||
+                phase.Equals("CoilChange", StringComparison.OrdinalIgnoreCase)
+                ? "Coil Change"
+                : phase.Equals("In Process", StringComparison.OrdinalIgnoreCase) ||
+                    phase.Equals("InProcess", StringComparison.OrdinalIgnoreCase)
+                    ? "In Process"
+                    : phase;
     }
 
     private static string ActiveLockMessage(ProcessAlert alert)
@@ -999,6 +1149,8 @@ public sealed class InspectionMeasurementService(
             value.Trim().Equals("Startup", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Setup", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("Coil Change", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("CoilChange", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||

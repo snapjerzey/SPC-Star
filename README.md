@@ -14,7 +14,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Machine workbook import using a sheet named `SPC-Star Machine Import` with `Machine ID` and `Description` columns.
 - User management screens for operators, line techs, QA, admins, and GOD access, including shift assignment, add/edit/delete, password reset, and last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
-- Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, and Spool.
+- Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, Coil Change, and Spool.
 - Persistent job tag storage for part-specific context fields that will be driven by inspection setup.
 - Part-specific material requirements from setup/import, with lot entry on the inspection screen.
 - Ordered inspection-item entry for measured variables and accept/reject attributes, with inactive phase items removed from the operator view.

@@ -471,7 +471,8 @@ function normalizeInspectionPhase(value) {
   if (phase === "set up" || phase === "setup") return "Setup";
   if (phase === "coil change" || phase === "coilchange") return "Coil Change";
   if (phase === "spool" || phase === "spool start" || phase === "spool end") return "Spool";
-  return "In Process";
+  if (phase === "in process" || phase === "inprocess") return "In Process";
+  return value.trim();
 }
 
 function updatePartFromJob() {
@@ -1109,8 +1110,6 @@ async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) 
     }
     return result;
   } catch {
-    input.focus();
-    input.select?.();
     return "error";
   }
 }

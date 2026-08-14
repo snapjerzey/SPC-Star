@@ -40,7 +40,7 @@ This is intentionally still behind the repository/service boundary. Business rul
 
 ## Inspection UI behavior
 
-Inspection entry is organized around top-level job data, part-specific job tags, material lot entries, and ordered inspection items. Inspection items can be measured variables or accept/reject attributes. The supported operator inspection phases are Startup, Setup, In Process, and Spool; coil/material changes are captured through material/job data rather than as a standalone operator phase.
+Inspection entry is organized around top-level job data, part-specific job tags, material lot entries, and ordered inspection items. Inspection items can be measured variables or accept/reject attributes. The supported operator inspection phases are Startup, Setup, In Process, Coil Change, and Spool; material lot details are still captured through material/job data fields when the inspection plan requires them.
 
 The setup/admin UI includes Parts & Inspections, Machines, Users, Rules, History, and Archive. Import/export actions live inside the Parts & Inspections, Machines, and Users sections. Users can be assigned shifts for reporting. History combines the previous review/report/job-data functions into Ledger, Charts, Top Issues, and Export views with shared job/part filters.
 

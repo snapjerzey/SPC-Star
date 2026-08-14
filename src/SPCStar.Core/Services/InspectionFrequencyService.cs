@@ -108,7 +108,13 @@ public sealed class InspectionFrequencyService(ISpcRepository repository)
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
             phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
             ? "Setup"
-            : "In Process";
+            : phase.Equals("Coil Change", StringComparison.OrdinalIgnoreCase) ||
+                phase.Equals("CoilChange", StringComparison.OrdinalIgnoreCase)
+                ? "Coil Change"
+                : phase.Equals("In Process", StringComparison.OrdinalIgnoreCase) ||
+                    phase.Equals("InProcess", StringComparison.OrdinalIgnoreCase)
+                    ? "In Process"
+                    : phase;
     }
 
     private static InspectionFrequencyStatus EvaluateTime(

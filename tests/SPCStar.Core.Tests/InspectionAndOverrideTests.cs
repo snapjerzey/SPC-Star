@@ -240,6 +240,71 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void CompleteInspection_CreatesCompletionFromSavedMeasurements_WhenAutoCompletionWasMissed()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        repository.Measurements.Add(SavedMeasurement("Diameter", 10m, 1));
+        repository.Measurements.Add(SavedMeasurement("Length", 42m, 2));
+        repository.Measurements.Add(SavedMeasurement("Weight", 18m, 3));
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(12345));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var completion = Assert.Single(repository.JobPhaseCompletions);
+        Assert.Equal(12345, completion.MachineCounter);
+        Assert.Equal(3, completion.MeasurementIds.Count);
+        Assert.Equal("operator1", completion.CompletedByUserId);
+    }
+
+    [Fact]
+    public void CompleteInspection_DoesNotCountOtherPhasePlansAsInProcessRequirements()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        foreach (var characteristic in repository.Characteristics)
+        {
+            repository.InspectionPlans.Add(new InspectionPlan
+            {
+                CharacteristicId = characteristic.Id,
+                InspectionPhase = "Coil Change",
+                SampleSize = 10,
+                AlertRuleSet = "WesternElectric",
+                Frequency = new InspectionFrequency { Type = FrequencyType.Event, Value = 1, Unit = FrequencyUnit.Pieces }
+            });
+        }
+
+        repository.Measurements.Add(SavedMeasurement("Diameter", 10m, 1));
+        repository.Measurements.Add(SavedMeasurement("Length", 42m, 2));
+        repository.Measurements.Add(SavedMeasurement("Weight", 18m, 3));
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(12345));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var completion = Assert.Single(repository.JobPhaseCompletions);
+        Assert.Equal("In Process", completion.InspectionPhase);
+        Assert.Equal(3, completion.MeasurementIds.Count);
+    }
+
+    [Fact]
+    public void CompleteInspection_FailsWhenSavedMeasurementsAreIncomplete()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        repository.Measurements.Add(SavedMeasurement("Diameter", 10m, 1));
+        repository.Measurements.Add(SavedMeasurement("Length", 42m, 2));
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(12345));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("No completed inspection was found", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(repository.JobPhaseCompletions);
+    }
+
+    [Fact]
     public void CompleteInspection_RequiresMachineCounter()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -285,6 +350,18 @@ public sealed class InspectionAndOverrideTests
         var job = Assert.Single(repository.Jobs);
         Assert.Equal("J200", job.JobNum);
         Assert.Equal("P100", job.PartNum);
+    }
+
+    [Fact]
+    public void EnterMeasurement_AllowsCoilChangeInspectionPhase()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(10m) with { InspectionPhase = "Coil Change" });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal("Coil Change", Assert.Single(repository.Measurements).InspectionPhase);
     }
 
     [Fact]
@@ -582,6 +659,25 @@ public sealed class InspectionAndOverrideTests
             CompletedByUserId = "operator1",
             CompletedAt = DateTimeOffset.Parse("2026-01-01T00:02:00Z")
         });
+    }
+
+    private static InspectionMeasurement SavedMeasurement(string characteristicName, decimal value, int minutes)
+    {
+        return new InspectionMeasurement
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ProcessCode = "MOLD",
+            OperationSeq = 10,
+            ResourceId = "PRESS1",
+            CharacteristicName = characteristicName,
+            InspectionPhase = "In Process",
+            Value = value,
+            Timestamp = DateTimeOffset.Parse("2026-01-01T00:00:00Z").AddMinutes(minutes),
+            OperatorUserId = "operator1",
+            OperatorShift = "1st Half Days",
+            SubmittedAt = DateTimeOffset.Parse("2026-01-01T00:00:00Z").AddMinutes(minutes)
+        };
     }
 
     private static void AddAttributeCharacteristic(InMemorySpcRepository repository)

@@ -7,7 +7,6 @@ public static class SeedData
     public static void SeedAll(ISpcRepository repository)
     {
         SeedSecurity(repository);
-        SeedSampleInspectionPlans(repository);
     }
 
     public static void SeedSecurity(ISpcRepository repository)

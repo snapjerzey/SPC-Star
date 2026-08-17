@@ -296,12 +296,12 @@ public sealed class SetupImportService(ISpcRepository repository)
         CopyAlias(normalized, "AlertRuleSet", "Drift Rule", "Rule Set");
         CopyAlias(normalized, "IsRequired", "RequiresLotEntry", "Required");
         CopyAlias(normalized, "DisplayOrder", "ParameterSeq", "Sort Order");
-        CopyAlias(normalized, "Location", "SampleContext", "RequirementText", "Location", "Side", "Sample Location");
+        CopyAlias(normalized, "Location", "SampleContext", "RequirementText", "Requirement Text", "Location", "Side", "Sample Location");
         CopyAlias(normalized, "InspectionMethod", "ToolUsed", "Tool Used", "ToolMethod", "Inspection Method", "Measurement Method", "Tool", "Gauge", "Gage");
 
         CopyAlias(normalized, "FieldName", "Job Data Field", "Job Data Field Name");
-        CopyAlias(normalized, "MaterialName", "MaterialRole", "Material Name");
-        CopyAlias(normalized, "CharacteristicName", "InspectionParameter", "Variable Name", "Attribute Name");
+        CopyAlias(normalized, "MaterialName", "MaterialRole", "Material Role", "Material Name");
+        CopyAlias(normalized, "CharacteristicName", "InspectionParameter", "Inspection Item", "Variable Name", "Attribute Name");
         var itemName = Value(normalized, "Item Name", "Name");
         var rowType = CanonicalRowType(normalized.GetValueOrDefault("RowType"));
         if (rowType == "Inspection")

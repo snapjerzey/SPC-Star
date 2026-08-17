@@ -4075,6 +4075,7 @@ async function importUsersXlsx(event) {
 
 function setupVariableRowTemplate() {
   return `
+    <label class="setup-order-field"><span>Order</span><input class="setup-display-order" type="number" min="1" step="1"></label>
     <label class="setup-name-field"><span>Inspection item</span><input class="setup-characteristic-name" required></label>
     <label class="setup-type-field">
       <span>Type</span>
@@ -4099,6 +4100,10 @@ function setupVariableRowTemplate() {
     <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
     <label class="numeric-setup-field"><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
+    <div class="setup-row-actions">
+      <button type="button" class="secondary compact-button move-variable-up-button">Up</button>
+      <button type="button" class="secondary compact-button move-variable-down-button">Down</button>
+    </div>
     <button type="button" class="secondary compact-button remove-variable-button">Remove</button>`;
 }
 
@@ -4189,6 +4194,7 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || ""
   row.className = "setup-variable-row";
   row.dataset.originalCharacteristicName = values.characteristicName || "";
   row.innerHTML = setupVariableRowTemplate();
+  row.querySelector(".setup-display-order").value = values.displayOrder ?? "";
   row.querySelector(".setup-characteristic-name").value = values.characteristicName || "";
   row.querySelector(".setup-characteristic-type").value = type;
   row.querySelector(".setup-unit").value = values.unitOfMeasure || "";
@@ -4200,6 +4206,7 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || ""
   row.querySelector(".setup-lcl").value = values.lcl ?? "";
   row.querySelector(".setup-ucl").value = values.ucl ?? "";
   row.querySelector(".setup-characteristic-type").addEventListener("change", () => updateSetupVariableType(row));
+  row.querySelector(".setup-display-order").addEventListener("change", () => moveSetupVariableRowToPosition(row, Number(row.querySelector(".setup-display-order").value)));
   row.querySelectorAll(".setup-phase-row").forEach((phaseRow) => {
     phaseRow.querySelector(".setup-phase-frequency-type").addEventListener("change", () => updatePhaseFrequencyUnits(phaseRow));
   });
@@ -4215,12 +4222,54 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || ""
         phaseRow.querySelector(".setup-phase-alert-rule-set").value = "";
         updatePhaseFrequencyUnits(phaseRow, "");
       });
+      updateSetupVariableOrderInputs();
       return;
     }
     row.remove();
+    updateSetupVariableOrderInputs();
   });
   $("setupVariableRows").appendChild(row);
+  row.querySelector(".move-variable-up-button").addEventListener("click", () => moveSetupVariableRow(row, -1));
+  row.querySelector(".move-variable-down-button").addEventListener("click", () => moveSetupVariableRow(row, 1));
+  updateSetupVariableOrderInputs();
   updateSetupVariableType(row);
+}
+
+function setupVariableRowElements() {
+  return [...document.querySelectorAll(".setup-variable-row")];
+}
+
+function updateSetupVariableOrderInputs() {
+  setupVariableRowElements().forEach((row, index) => {
+    row.querySelector(".setup-display-order").value = String(index + 1);
+  });
+}
+
+function moveSetupVariableRow(row, delta) {
+  const rows = setupVariableRowElements();
+  const currentIndex = rows.indexOf(row);
+  const nextIndex = currentIndex + delta;
+  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= rows.length) {
+    return;
+  }
+
+  if (delta < 0) {
+    rows[nextIndex].before(row);
+  } else {
+    rows[nextIndex].after(row);
+  }
+  updateSetupVariableOrderInputs();
+}
+
+function moveSetupVariableRowToPosition(row, requestedPosition) {
+  const rows = setupVariableRowElements().filter((item) => item !== row);
+  const boundedIndex = Math.max(0, Math.min(rows.length, Math.trunc(requestedPosition || rows.length + 1) - 1));
+  if (boundedIndex >= rows.length) {
+    $("setupVariableRows").appendChild(row);
+  } else {
+    rows[boundedIndex].before(row);
+  }
+  updateSetupVariableOrderInputs();
 }
 
 function phaseSettingsFromPlan(plan) {
@@ -4576,7 +4625,7 @@ function setupVariableRows() {
     usl: Number(row.querySelector(".setup-usl").value),
     lcl: optionalInputNumber(row.querySelector(".setup-lcl")),
     ucl: optionalInputNumber(row.querySelector(".setup-ucl")),
-    displayOrder: index + 1
+    displayOrder: Number(row.querySelector(".setup-display-order").value) || index + 1
   }));
 }
 

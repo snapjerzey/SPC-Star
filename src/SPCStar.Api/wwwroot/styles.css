@@ -640,8 +640,9 @@ textarea {
   padding: 12px;
   background: #ffffff;
 }
+.setup-order-field { grid-column: span 1; }
 .setup-name-field { grid-column: span 4; }
-.setup-type-field { grid-column: span 3; }
+.setup-type-field { grid-column: span 2; }
 .setup-unit-field { grid-column: span 2; }
 .setup-location-field { grid-column: span 5; }
 .setup-method-field { grid-column: span 3; }
@@ -699,6 +700,12 @@ textarea {
   width: 18px;
 }
 .numeric-setup-field { grid-column: span 2; }
+.setup-row-actions {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
 .remove-variable-button { grid-column: span 2; }
 .setup-type-field select {
   border-color: #93c5fd;

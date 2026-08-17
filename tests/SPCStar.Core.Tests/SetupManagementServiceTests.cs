@@ -425,6 +425,69 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertInspectionSetup_InsertsNewManualInspectionItemAtRequestedPosition()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        for (var index = 1; index <= 10; index++)
+        {
+            Assert.True(service.UpsertInspectionSetup(Request(
+                "MOLD",
+                $"Variable {index}",
+                displayOrder: index)).Succeeded);
+        }
+
+        var result = service.UpsertInspectionSetup(Request(
+            "MOLD",
+            "Inserted Variable",
+            displayOrder: 5));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var orderedNames = new SetupQueryService(repository)
+            .GetInspectionPlans("P200")
+            .OrderBy(plan => plan.DisplayOrder)
+            .Select(plan => plan.CharacteristicName)
+            .ToArray();
+        Assert.Equal([
+            "Variable 1",
+            "Variable 2",
+            "Variable 3",
+            "Variable 4",
+            "Inserted Variable",
+            "Variable 5",
+            "Variable 6",
+            "Variable 7",
+            "Variable 8",
+            "Variable 9",
+            "Variable 10"
+        ], orderedNames);
+        Assert.Equal(Enumerable.Range(1, 11), new SetupQueryService(repository).GetInspectionPlans("P200").OrderBy(plan => plan.DisplayOrder).Select(plan => plan.DisplayOrder));
+    }
+
+    [Fact]
+    public void UpsertInspectionSetup_ReordersExistingManualInspectionItems()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        Assert.True(service.UpsertInspectionSetup(Request("MOLD", "First", displayOrder: 1)).Succeeded);
+        Assert.True(service.UpsertInspectionSetup(Request("MOLD", "Second", displayOrder: 2)).Succeeded);
+        Assert.True(service.UpsertInspectionSetup(Request("MOLD", "Third", displayOrder: 3)).Succeeded);
+
+        var result = service.UpsertInspectionSetup(Request(
+            "MOLD",
+            "Third",
+            originalCharacteristicName: "Third",
+            displayOrder: 1));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(["Third", "First", "Second"], new SetupQueryService(repository)
+            .GetInspectionPlans("P200")
+            .OrderBy(plan => plan.DisplayOrder)
+            .Select(plan => plan.CharacteristicName)
+            .ToArray());
+    }
+
+    [Fact]
     public void UpsertPartJobDataField_SavesFieldForPartAndPhase()
     {
         var repository = new InMemorySpcRepository();
@@ -577,7 +640,8 @@ public sealed class SetupManagementServiceTests
         string characteristicName,
         string? originalProcessCode = null,
         string? originalCharacteristicName = null,
-        string inspectionPhase = "In Process")
+        string inspectionPhase = "In Process",
+        int? displayOrder = null)
     {
         return new UpsertInspectionSetupRequest(
             "P200",
@@ -602,7 +666,8 @@ public sealed class SetupManagementServiceTests
             originalProcessCode,
             10,
             originalCharacteristicName,
-            inspectionPhase);
+            inspectionPhase,
+            DisplayOrder: displayOrder);
     }
 }
 

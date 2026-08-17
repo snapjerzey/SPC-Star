@@ -691,12 +691,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
             item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase));
         if (plan is null)
         {
+            ShiftInspectionDisplayOrdersForInsert(operation.Id, inspectionPhase, request.DisplayOrder.GetValueOrDefault(), characteristic.Id);
             plan = new InspectionPlan
             {
                 CharacteristicId = characteristic.Id,
                 InspectionPhase = inspectionPhase,
                 SampleSize = request.SampleSize,
-                DisplayOrder = request.DisplayOrder.GetValueOrDefault(repository.InspectionPlans.Count(item => item.CharacteristicId == characteristic.Id)),
+                DisplayOrder = request.DisplayOrder.GetValueOrDefault(NextInspectionDisplayOrder(operation.Id, inspectionPhase)),
                 AlertRuleSet = request.AlertRuleSet.Trim()
             };
             repository.InspectionPlans.Add(plan);
@@ -716,6 +717,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             RemoveControlLimit(request);
         }
 
+        NormalizeInspectionDisplayOrders(operation.Id, inspectionPhase, request.DisplayOrder.HasValue ? characteristic.Id : null);
         return ServiceResult<InspectionPlanSetupDto>.Ok(new SetupQueryService(repository).GetInspectionPlans(request.PartNum).First(item =>
             item.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
             item.OperationSeq == request.OperationSeq &&
@@ -771,6 +773,55 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         return ServiceResult.Ok();
+    }
+
+    private int NextInspectionDisplayOrder(Guid operationId, string inspectionPhase)
+    {
+        var currentMax = (from characteristic in repository.Characteristics
+                          join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
+                          where characteristic.OperationId == operationId &&
+                              plan.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)
+                          select (int?)plan.DisplayOrder)
+            .Max();
+        return currentMax.GetValueOrDefault() + 1;
+    }
+
+    private void ShiftInspectionDisplayOrdersForInsert(Guid operationId, string inspectionPhase, int requestedDisplayOrder, Guid insertedCharacteristicId)
+    {
+        if (requestedDisplayOrder <= 0)
+        {
+            return;
+        }
+
+        var affectedPlans = from characteristic in repository.Characteristics
+                            join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
+                            where characteristic.OperationId == operationId &&
+                                characteristic.Id != insertedCharacteristicId &&
+                                plan.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
+                                plan.DisplayOrder >= requestedDisplayOrder
+                            select plan;
+        foreach (var affectedPlan in affectedPlans)
+        {
+            affectedPlan.DisplayOrder++;
+        }
+    }
+
+    private void NormalizeInspectionDisplayOrders(Guid operationId, string inspectionPhase, Guid? preferredCharacteristicId = null)
+    {
+        var plans = (from characteristic in repository.Characteristics
+                     join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
+                     where characteristic.OperationId == operationId &&
+                         plan.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)
+                     orderby plan.DisplayOrder,
+                         preferredCharacteristicId.HasValue && characteristic.Id == preferredCharacteristicId.Value ? 0 : 1,
+                         characteristic.Name
+                     select plan)
+            .ToArray();
+
+        for (var index = 0; index < plans.Length; index++)
+        {
+            plans[index].DisplayOrder = index + 1;
+        }
     }
 
     public ServiceResult<PartJobDataFieldSetupDto> UpsertPartJobDataField(UpsertPartJobDataFieldRequest request)

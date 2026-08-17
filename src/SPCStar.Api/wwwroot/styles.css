@@ -1440,6 +1440,28 @@ textarea {
   font-size: 12px;
   font-weight: 800;
 }
+.inspection-item-context {
+  display: grid;
+  gap: 5px;
+  margin: 6px 0 8px;
+}
+.inspection-item-context p {
+  color: #35516f;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  margin: 0;
+}
+.inspection-tool {
+  border: 1px solid #fedf89;
+  border-radius: 999px;
+  color: #b35c00;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 4px 9px;
+  width: fit-content;
+}
 .attribute-note {
   border: 1px solid #fedf89;
   border-radius: 999px;

@@ -777,10 +777,12 @@ function renderVariables() {
               <span>${formatFrequency(plan)}</span>`}
           </div>
         </div>
-        ${isAttribute ? `
-          <div class="attribute-note">Comparator/template check</div>` : `
-          ${isRecordOnly ? `
-          <div class="record-only-note">Record only - no specification limits or capability calculations are applied.</div>` : `
+        ${plan.inspectionMethod || plan.location ? `
+          <div class="inspection-item-context">
+            ${plan.inspectionMethod ? `<span class="inspection-tool">${escapeHtml(plan.inspectionMethod)}</span>` : ""}
+            ${plan.location ? `<p>${escapeHtml(plan.location)}</p>` : ""}
+          </div>` : ""}
+        ${isAttribute || isRecordOnly ? "" : `
           <div class="limit-grid">
             <div><span>LSL</span><strong>${formatNumber(context.lowerSpecLimit)}</strong></div>
             <div><span>Target</span><strong>${formatNumber(plan.nominal)}</strong></div>
@@ -788,7 +790,7 @@ function renderVariables() {
             <div><span>LCL</span><strong>${formatNumber(context.lowerControlLimit)}</strong></div>
             <div><span>Center</span><strong>${formatNumber(plan.nominal)}</strong></div>
             <div><span>UCL</span><strong>${formatNumber(context.upperControlLimit)}</strong></div>
-          </div>`}`}
+          </div>`}
       </div>
       ${isInactive ? `
         <div class="inactive-plan-note">This item is part of the full inspection plan, but it is not entered during this inspection type.</div>` : `

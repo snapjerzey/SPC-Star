@@ -193,6 +193,78 @@ function displayPlansForPhase(plans, phase) {
     }));
 }
 
+function requiredPhasesForOperation(set) {
+  const partNum = String(set?.partNum || "").toLowerCase();
+  const operationKey = operationKeyFor(set || {});
+  const phases = new Set((state.snapshot?.inspectionPlans || [])
+    .filter((plan) =>
+      plan.partNum.toLowerCase() === partNum &&
+      operationKeyFor(plan) === operationKey)
+    .map((plan) => normalizeInspectionPhase(plan.inspectionPhase)));
+  return {
+    setup: phases.has("Setup"),
+    startup: phases.has("Startup")
+  };
+}
+
+async function requiredPhaseGate(jobNum, resourceId, set) {
+  const phase = normalizeInspectionPhase(set?.activePhase || set?.inspectionPhase || $("inspectionPhase").value);
+  if (!["Startup", "In Process"].includes(phase)) {
+    return { allowed: true };
+  }
+
+  const required = requiredPhasesForOperation(set);
+  if ((phase === "Startup" && !required.setup) || (phase === "In Process" && !required.setup && !required.startup)) {
+    return { allowed: true };
+  }
+
+  const history = await jobHistoryForPhaseGate(jobNum);
+  const hasSetup = !required.setup || phaseCompletionExists(history, set, resourceId, "Setup");
+  const hasStartup = !required.startup || phaseCompletionExists(history, set, resourceId, "Startup");
+  if (phase === "Startup" && !hasSetup) {
+    return {
+      allowed: false,
+      message: `Setup is required before Startup for ${set.partNum} / ${operationLabelFor(set)} on ${resourceId}. Complete Setup first, then run Startup.`
+    };
+  }
+
+  if (phase === "In Process") {
+    if (!hasSetup) {
+      return {
+        allowed: false,
+        message: `Setup is required before In Process for ${set.partNum} / ${operationLabelFor(set)} on ${resourceId}. Complete Setup first.`
+      };
+    }
+
+    if (!hasStartup) {
+      return {
+        allowed: false,
+        message: `Startup is required before In Process for ${set.partNum} / ${operationLabelFor(set)} on ${resourceId}. Complete Startup first.`
+      };
+    }
+  }
+
+  return { allowed: true };
+}
+
+async function jobHistoryForPhaseGate(jobNum) {
+  if (!jobNum) {
+    return [];
+  }
+
+  return api(`/jobs/${encodeURIComponent(jobNum)}/history`);
+}
+
+function phaseCompletionExists(history, set, resourceId, phase) {
+  return (history || []).some((entry) =>
+    entry.entryType === "PhaseComplete" &&
+    String(entry.partNum || "").toLowerCase() === String(set.partNum || "").toLowerCase() &&
+    String(entry.resourceId || "").toLowerCase() === String(resourceId || "").toLowerCase() &&
+    String(entry.processCode || "").toLowerCase() === String(set.processCode || "").toLowerCase() &&
+    Number(entry.operationSeq || 0) === Number(set.operationSeq || 0) &&
+    normalizeInspectionPhase(entry.inspectionPhase) === normalizeInspectionPhase(phase));
+}
+
 function selectedValues() {
   const set = selectedInspectionSet();
   return {
@@ -506,6 +578,14 @@ async function loadContext(event) {
     state.selectedPlans = [];
     state.contexts = [];
     renderEmptyContext(`No inspection items are required for ${$("inspectionPhase").value} on ${partNum} / ${operationLabelFor(set)}.`);
+    return;
+  }
+
+  const phaseGate = await requiredPhaseGate(jobNum, resourceId, set);
+  if (!phaseGate.allowed) {
+    state.selectedPlans = [];
+    state.contexts = [];
+    renderEmptyContext(phaseGate.message);
     return;
   }
 
@@ -1169,6 +1249,11 @@ async function submitMeasurementInput(input, options = {}) {
   if (!inputHasValue(input)) return;
   const { jobNum, resourceId } = selectedValues();
   const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  const phaseGate = await requiredPhaseGate(jobNum, resourceId, selectedInspectionSet());
+  if (!phaseGate.allowed) {
+    showEntryMessage(phaseGate.message, "error");
+    throw new Error(phaseGate.message);
+  }
   if (input.dataset.entryType === "Variable") {
     input.value = capMeasurementDecimalPlaces(input.value);
     updateMeasurementDraft(input);
@@ -1337,6 +1422,11 @@ async function saveCompletedInspection() {
   const { jobNum, resourceId, set } = selectedValues();
   if (!set) {
     throw new Error("No inspection plan is loaded.");
+  }
+
+  const phaseGate = await requiredPhaseGate(jobNum, resourceId, set);
+  if (!phaseGate.allowed) {
+    throw new Error(phaseGate.message);
   }
 
   await savePerInspectionJobDataForCompletion(jobNum, resourceId, set);

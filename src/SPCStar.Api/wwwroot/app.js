@@ -857,10 +857,9 @@ function renderVariables() {
               <span>${formatFrequency(plan)}</span>`}
           </div>
         </div>
-        ${plan.inspectionMethod || plan.location ? `
+        ${plan.inspectionMethod ? `
           <div class="inspection-item-context">
-            ${plan.inspectionMethod ? `<span class="inspection-tool">${escapeHtml(plan.inspectionMethod)}</span>` : ""}
-            ${plan.location ? `<p>${escapeHtml(plan.location)}</p>` : ""}
+            <span class="inspection-tool">${escapeHtml(plan.inspectionMethod)}</span>
           </div>` : ""}
         ${isAttribute || isRecordOnly ? "" : `
           <div class="limit-grid">

@@ -505,6 +505,22 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertPartJobDataField_EndCountIsOptionalEvenWhenMarkedRequired()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        Assert.True(service.UpsertInspectionSetup(Request("MOLD", "Diameter")).Succeeded);
+
+        var result = service.UpsertPartJobDataField(new UpsertPartJobDataFieldRequest("P200", "Setup", "End Count", true, 0));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var field = Assert.Single(repository.PartJobDataFields);
+        Assert.Equal("End Count", field.FieldName);
+        Assert.False(field.IsRequired);
+        Assert.False(result.Value!.IsRequired);
+    }
+
+    [Fact]
     public void UpsertPartMaterialField_SavesMaterialForPartAndPhase()
     {
         var repository = new InMemorySpcRepository();

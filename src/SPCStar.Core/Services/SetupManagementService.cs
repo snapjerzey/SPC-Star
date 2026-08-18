@@ -852,7 +852,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 PartId = part.Id,
                 InspectionPhase = inspectionPhase,
                 FieldName = request.FieldName.Trim(),
-                IsRequired = request.IsRequired,
+                IsRequired = !IsEndCountField(request.FieldName) && request.IsRequired,
                 DisplayOrder = request.DisplayOrder
             };
             repository.PartJobDataFields.Add(field);
@@ -861,11 +861,19 @@ public sealed class SetupManagementService(ISpcRepository repository)
         {
             field.InspectionPhase = inspectionPhase;
             field.FieldName = request.FieldName.Trim();
-            field.IsRequired = request.IsRequired;
+            field.IsRequired = !IsEndCountField(request.FieldName) && request.IsRequired;
             field.DisplayOrder = request.DisplayOrder;
         }
 
         return ServiceResult<PartJobDataFieldSetupDto>.Ok(new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder));
+    }
+
+    private static bool IsEndCountField(string fieldName)
+    {
+        var normalized = new string((fieldName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
+        return normalized.Equals("EndCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("EndingCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("FinalCount", StringComparison.OrdinalIgnoreCase);
     }
 
     public ServiceResult<PartMaterialFieldSetupDto> UpsertPartMaterialField(UpsertPartMaterialFieldRequest request)

@@ -189,6 +189,24 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_EndCountJobDataIsOptionalEvenWhenTemplateMarksRequired()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "JobData,P200,Needle,Needles,Setup,,End Count,,,,,,,,,,,,,,,,,,,true,1",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var field = Assert.Single(repository.PartJobDataFields);
+        Assert.Equal("End Count", field.FieldName);
+        Assert.False(field.IsRequired);
+    }
+
+    [Fact]
     public void ImportCsv_RemovesStaleJobDataField_WhenFieldIsReimportedAsInspectionItem()
     {
         var repository = new InMemorySpcRepository();

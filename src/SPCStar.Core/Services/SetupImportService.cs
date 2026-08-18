@@ -878,8 +878,16 @@ public sealed class SetupImportService(ISpcRepository repository)
             repository.PartJobDataFields.Add(field);
         }
 
-        field.IsRequired = OptionalBool(row, "IsRequired", true);
+        field.IsRequired = !IsEndCountField(fieldName) && OptionalBool(row, "IsRequired", true);
         field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartJobDataFields.Count(item => item.PartId == part.Id && item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static bool IsEndCountField(string fieldName)
+    {
+        var normalized = new string((fieldName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
+        return normalized.Equals("EndCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("EndingCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("FinalCount", StringComparison.OrdinalIgnoreCase);
     }
 
     private void UpsertMaterialField(Dictionary<string, string> row, Part part)

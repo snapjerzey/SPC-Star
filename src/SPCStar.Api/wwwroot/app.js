@@ -680,7 +680,7 @@ function renderConfiguredJobDataFields(set) {
   form.innerHTML = fields.map((field) => `
     <label>
       ${escapeHtml(field.fieldName)}
-      <input class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" data-per-inspection="${isPerInspectionJobDataField(field.fieldName) ? "true" : "false"}" autocomplete="off" ${field.isRequired ? "required" : ""}>
+      <input class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" data-per-inspection="${isPerInspectionJobDataField(field.fieldName) ? "true" : "false"}" autocomplete="off" ${jobDataFieldIsRequiredAtLoad(field) ? "required" : ""}>
     </label>`).join("") + (fields.length ? `<button type="submit" class="secondary">Save Job Data</button>` : "");
   form.querySelectorAll(".job-tag-input[data-per-inspection='true']").forEach((input) => {
     input.addEventListener("input", updateInspectionSubmitState);
@@ -694,6 +694,15 @@ function isBuiltInOrPartStandardJobData(fieldName) {
     normalized === "machine" ||
     normalized === "blank code" ||
     normalized === "hole size";
+}
+
+function jobDataFieldIsRequiredAtLoad(field) {
+  return Boolean(field?.isRequired) && !isEndCountJobDataField(field.fieldName);
+}
+
+function isEndCountJobDataField(fieldName) {
+  const normalized = String(fieldName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  return normalized === "endcount" || normalized === "endingcount" || normalized === "finalcount";
 }
 
 function isMaterialLotJobDataField(fieldName) {
@@ -2042,7 +2051,12 @@ async function saveJobTags(event) {
       return;
     }
 
-    tags[input.dataset.tagName] = input.value.trim();
+    const value = input.value.trim();
+    if (!value && !input.required) {
+      return;
+    }
+
+    tags[input.dataset.tagName] = value;
   });
 
   if (!Object.keys(tags).length) {

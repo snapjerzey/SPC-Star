@@ -124,6 +124,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             {
                 ["InspectionPhase"] = phase.CanonicalName
             };
+            clone["PhaseMatrixSampleSizeProvided"] = PhaseFieldValue(row, phase, "Sample Size") != "" ? "true" : "false";
             CopyPhaseValue(row, clone, phase, "SampleSize", "Sample Size");
             CopyPhaseValue(row, clone, phase, "FrequencyType", "Frequency Type");
             CopyPhaseValue(row, clone, phase, "FrequencyValue", "Frequency");
@@ -602,6 +603,10 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             errors.Add($"Row {rowNumber}: SampleSize must be greater than zero.");
         }
+        else if (IsPhaseMatrixExpanded(row) && !IsTruthy(row.GetValueOrDefault("PhaseMatrixSampleSizeProvided") ?? "false"))
+        {
+            errors.Add($"Row {rowNumber}: {row.GetValueOrDefault("InspectionPhase")} Sample Size is required when that phase is marked required.");
+        }
 
         var hasFrequencyType = Enum.TryParse<FrequencyType>(row.GetValueOrDefault("FrequencyType"), true, out var frequencyType);
         if (!hasFrequencyType)
@@ -632,6 +637,29 @@ public sealed class SetupImportService(ISpcRepository repository)
         if (rowType == "Variable")
         {
             ValidateVariableLimits(row, rowNumber, errors);
+        }
+
+        ValidateSourceText(row, rowNumber, errors);
+    }
+
+    private static bool IsPhaseMatrixExpanded(Dictionary<string, string> row)
+    {
+        return row.TryGetValue("PhaseMatrixSampleSizeProvided", out _);
+    }
+
+    private static void ValidateSourceText(Dictionary<string, string> row, int rowNumber, List<string> errors)
+    {
+        var text = row.GetValueOrDefault("Location") ?? "";
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        if (text.Contains("Invalid parsed source limits removed", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("Reference Work Instructions", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("Initials", StringComparison.OrdinalIgnoreCase) && text.Length > 120)
+        {
+            errors.Add($"Row {rowNumber}: Requirement/source text appears to contain parsed PDF table contamination. Rebuild this row from the source inspection sheet.");
         }
     }
 

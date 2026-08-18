@@ -357,7 +357,7 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
-    public void ImportCsv_DefaultsPhaseMatrixSampleSize_WhenPhaseIsRequiredWithoutSampleSize()
+    public void ImportCsv_RejectsPhaseMatrixRequiredWithoutSampleSize()
     {
         var repository = new InMemorySpcRepository();
         var service = new SetupImportService(repository);
@@ -373,10 +373,29 @@ public sealed class SetupImportServiceTests
             string.Empty
         ]));
 
-        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        var plan = Assert.Single(repository.InspectionPlans);
-        Assert.Equal("Setup", plan.InspectionPhase);
-        Assert.Equal(1, plan.SampleSize);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Setup Sample Size is required", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ImportCsv_RejectsContaminatedPdfTableRequirementText()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "Part Number", "Part Description", "Product Group", "Operation",
+            "InspectionParameter", "EntryType", "RequirementText", "Setup Required", "Setup Sample Size"
+        };
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            "INSPECTION,71319,Cardio Needle,Ethicon,Needlemaker,Needle Location,Numeric Measurement,Invalid parsed source limits removed: LSL=175; USL=6; Target=90.5.,Y,1",
+            string.Empty
+        ]));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("parsed PDF table contamination", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

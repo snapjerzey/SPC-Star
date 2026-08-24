@@ -136,6 +136,26 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_ImportsPhaseMatrixFirstDueQuantity()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            "RecordType,PartNum,PartDescription,ProductGroup,Operation,InspectionParameter,Attribute/Variable,UOM,SampleSize,InProcessRequired,InProcessSampleSize,InProcessFrequencyQty,InProcessFirstDueQty,InProcessFrequencyUnit",
+            "INSPECTION,P100,Widget,General,MOLD,L30,Variable,in,4,Y,4,10000,5000,Pieces",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var plan = Assert.Single(repository.InspectionPlans);
+        Assert.Equal(FrequencyType.Quantity, plan.Frequency.Type);
+        Assert.Equal(10000, plan.Frequency.Value);
+        Assert.Equal(5000, plan.Frequency.FirstDueValue);
+        Assert.Equal(FrequencyUnit.Pieces, plan.Frequency.Unit);
+    }
+
+    [Fact]
     public void ImportCsv_UsesRequirementTextWhenSampleContextIsBlank()
     {
         var repository = new InMemorySpcRepository();
@@ -647,6 +667,41 @@ public sealed class SetupImportServiceTests
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.DisplayOrder == 1);
         Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Spool" && plan.DisplayOrder == 14);
+    }
+
+    [Fact]
+    public void ImportCsv_ImportsEndOfSpoolAsSeparatePhase()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "PartNum", "PartDescription", "ProductGroup", "Operation",
+            "ParameterSeq", "InspectionParameter", "Attribute/Variable", "Tool Used",
+            "LowerSpec", "UpperSpec", "NominalSpec",
+            "SpoolRequired", "SpoolSampleSize",
+            "EndOfSpoolRequired", "EndOfSpoolSampleSize"
+        };
+        string Row(params (string Field, string Value)[] values)
+        {
+            var row = header.ToDictionary(field => field, _ => "", StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, value) in values)
+            {
+                row[field] = value;
+            }
+
+            return string.Join(",", header.Select(field => row[field]));
+        }
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("RecordType", "INSPECTION"), ("PartNum", "61135"), ("PartDescription", "22MIL SH-1 Undrilled"), ("ProductGroup", "Ethicon Taperpoint"), ("Operation", "Needlemaker"), ("ParameterSeq", "22"), ("InspectionParameter", "Machine Count"), ("Attribute/Variable", "Variable"), ("Tool Used", "Operator Entry"), ("SpoolRequired", "Y"), ("SpoolSampleSize", "1"), ("EndOfSpoolRequired", "Y"), ("EndOfSpoolSampleSize", "1")),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Spool" && plan.SampleSize == 1);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "End of Spool" && plan.SampleSize == 1);
     }
 
     [Fact]

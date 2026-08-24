@@ -31,12 +31,13 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
-const INSPECTION_PHASES = ["Startup", "Setup", "In Process", "Coil Change", "Spool"];
+const INSPECTION_PHASES = ["Startup", "Setup", "In Process", "Coil Change", "Spool", "End of Spool"];
 const MAX_LOT_NUMBER_LENGTH = 20;
 const MAX_MEASUREMENT_DECIMAL_PLACES = 5;
 const SESSION_STORAGE_KEY = "spc-star-session";
 const WORK_CONTEXT_STORAGE_KEY = "spc-star-work-context";
 const INSPECTION_DRAFT_STORAGE_KEY = "spc-star-inspection-drafts";
+let machineCounterReloadTimer = null;
 
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -191,6 +192,34 @@ function displayPlansForPhase(plans, phase) {
       isActiveForSelectedPhase: true,
       selectedInspectionPhase: phase
     }));
+}
+
+function planUsesMachineCounterFrequency(plan) {
+  return plan.frequencyType === "Quantity" &&
+    ["Pieces", "Box"].includes(plan.frequencyUnit);
+}
+
+function planIsDueAtCurrentMachineCounter(plan) {
+  if (!planUsesMachineCounterFrequency(plan)) {
+    return true;
+  }
+
+  if (!machineCounterComplete()) {
+    return false;
+  }
+
+  const counter = Number(machineCounterValue());
+  const every = Math.max(Number(plan.frequencyValue || 0), 1);
+  const firstDue = Math.max(Number(plan.firstDueValue || every), 1);
+  return counter >= firstDue;
+}
+
+function plansDueAtCurrentMachineCounter(plans) {
+  return plans.filter(planIsDueAtCurrentMachineCounter);
+}
+
+function selectedSetNeedsMachineCounter(set) {
+  return (set?.plans || []).some(planUsesMachineCounterFrequency);
 }
 
 function requiredPhasesForOperation(set) {
@@ -542,7 +571,8 @@ function normalizeInspectionPhase(value) {
   if (phase === "startup") return "Startup";
   if (phase === "set up" || phase === "setup") return "Setup";
   if (phase === "coil change" || phase === "coilchange") return "Coil Change";
-  if (phase === "spool" || phase === "spool start" || phase === "spool end") return "Spool";
+  if (phase === "spool" || phase === "spool start") return "Spool";
+  if (phase === "end of spool" || phase === "endofspool" || phase === "spool end") return "End of Spool";
   if (phase === "in process" || phase === "inprocess") return "In Process";
   return value.trim();
 }
@@ -589,8 +619,8 @@ async function loadContext(event) {
     return;
   }
 
-  state.selectedPlans = set.plans;
-  state.contexts = await Promise.all(set.plans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
+  state.selectedPlans = plansDueAtCurrentMachineCounter(set.plans);
+  state.contexts = await Promise.all(state.selectedPlans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
   saveCurrentWorkContext();
   renderContext();
 }
@@ -844,14 +874,28 @@ function updateGodReasonVisibility() {
 function renderVariables() {
   const measurementList = $("measurementVariableList");
   measurementList.innerHTML = "";
+  const set = selectedInspectionSet();
+  if (!state.selectedPlans.length) {
+    const message = machineCounterDueMessage(set);
+    measurementList.innerHTML = `<p class="message">${escapeHtml(message)}</p>`;
+    $("machineCounter").disabled = false;
+    wireMeasurementDeviceInputs();
+    updateInspectionSubmitState();
+    return;
+  }
+
   state.selectedPlans.forEach((plan, index) => {
     const context = state.contexts[index];
     const card = document.createElement("section");
     const isInactive = plan.isActiveForSelectedPhase === false;
-    card.className = `variable-card${isInactive ? " inactive-plan-card" : ""}`;
     const isAttribute = plan.characteristicType === "Attribute";
     const isRecordOnly = !isAttribute && !hasSpecLimits(plan, context);
+    const status = inspectionItemStatus(plan, context, isAttribute, isRecordOnly);
+    card.className = `variable-card ${status.className}${isInactive ? " inactive-plan-card" : ""}`;
     card.innerHTML = `
+      <div class="inspection-status-rail" aria-label="${escapeHtml(status.label)}" title="${escapeHtml(status.label)}">
+        <span>${escapeHtml(status.shortLabel)}</span>
+      </div>
       <div>
         <div class="variable-header">
           <div class="variable-title">
@@ -906,9 +950,103 @@ function renderVariables() {
   document.querySelectorAll(".measurement-input").forEach((input) => {
     restoreMeasurementDraft(input);
   });
-  $("machineCounter").value = "";
   wireMeasurementDeviceInputs();
   updateInspectionSubmitState();
+}
+
+function machineCounterDueMessage(set) {
+  if (!selectedSetNeedsMachineCounter(set)) {
+    return "No inspection items are required for this selection.";
+  }
+
+  const duePlans = (set?.plans || []).filter(planUsesMachineCounterFrequency);
+  const dueThreshold = nextMachineCounterDue(duePlans);
+  const dueText = dueThreshold ? ` Inspection becomes due at ${formatInteger(dueThreshold)} and remains due until submitted.` : "";
+
+  if (!machineCounterComplete()) {
+    return `Enter the Machine Counter to show inspection items due at that count.${dueText}`;
+  }
+
+  return `No inspection items are due yet at Machine Counter ${formatInteger(Number(machineCounterValue()))}.${dueText}`;
+}
+
+function nextMachineCounterDue(plans) {
+  if (!plans?.length) return null;
+  const current = machineCounterComplete() ? Number(machineCounterValue()) : 0;
+  const candidates = plans
+    .map((plan) => {
+      const every = Math.max(Number(plan.frequencyValue || 0), 1);
+      const firstDue = Math.max(Number(plan.firstDueValue || every), 1);
+      if (current < firstDue) return firstDue;
+      const intervals = Math.floor((current - firstDue) / every) + 1;
+      return firstDue + (intervals * every);
+    })
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return candidates.length ? Math.min(...candidates) : null;
+}
+
+function formatInteger(value) {
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function inspectionItemStatus(plan, context, isAttribute, isRecordOnly) {
+  if (context?.activeLock) {
+    return {
+      className: "inspection-status-bad",
+      shortLabel: "Lock",
+      label: `Locked: ${context.activeLock.detail || context.activeLock.characteristicName || "inspection item"}`
+    };
+  }
+
+  const points = context?.recentMeasurements || [];
+  if (!points.length) {
+    return {
+      className: isRecordOnly ? "inspection-status-record" : "inspection-status-neutral",
+      shortLabel: isRecordOnly ? "Record" : "New",
+      label: isRecordOnly ? "Record only item" : "No measurements recorded yet"
+    };
+  }
+
+  if (isAttribute) {
+    const rejected = points.some((point) => Number(point.value) === 0);
+    return rejected
+      ? { className: "inspection-status-bad", shortLabel: "Reject", label: "Recent reject recorded" }
+      : { className: "inspection-status-good", shortLabel: "OK", label: "Recent attribute entries accepted" };
+  }
+
+  if (isRecordOnly) {
+    return { className: "inspection-status-record", shortLabel: "Record", label: "Record only item" };
+  }
+
+  const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
+  if (!values.length) {
+    return { className: "inspection-status-neutral", shortLabel: "New", label: "No numeric measurements recorded yet" };
+  }
+
+  const lsl = firstFiniteValue(context?.lowerSpecLimit, plan?.lsl);
+  const usl = firstFiniteValue(context?.upperSpecLimit, plan?.usl);
+  const lcl = firstFiniteValue(context?.lowerControlLimit);
+  const ucl = firstFiniteValue(context?.upperControlLimit);
+  const outOfSpec = values.some((value) =>
+    (lsl !== null && value < lsl) ||
+    (usl !== null && value > usl));
+  if (outOfSpec) {
+    return { className: "inspection-status-bad", shortLabel: "Spec", label: "Recent value is outside specification" };
+  }
+
+  const outOfControl = values.some((value) =>
+    (lcl !== null && value < lcl) ||
+    (ucl !== null && value > ucl));
+  if (outOfControl || points.some((point) => point.hasRuleViolation)) {
+    return { className: "inspection-status-warn", shortLabel: "Watch", label: "Recent value is outside control limits or has a drift warning" };
+  }
+
+  return { className: "inspection-status-good", shortLabel: "OK", label: "Recent values are within current limits" };
+}
+
+function firstFiniteValue(...values) {
+  const value = values.find((item) => isFiniteValue(item));
+  return value === undefined ? null : Number(value);
 }
 
 function draftKeyForInput(input) {
@@ -1141,6 +1279,9 @@ function formatFrequency(plan) {
   }[plan.frequencyUnit] || plan.frequencyUnit;
 
   if (plan.frequencyType === "Quantity") {
+    if (plan.firstDueValue && Number(plan.firstDueValue) !== Number(plan.frequencyValue)) {
+      return `First due at ${plan.firstDueValue} ${unit}, then every ${plan.frequencyValue} ${unit}`;
+    }
     return `Every ${plan.frequencyValue} ${unit}`;
   }
 
@@ -1387,7 +1528,7 @@ function updateInspectionSubmitState() {
   const hasInputs = inputs.length > 0;
   const isComplete = inspectionEntryComplete();
   button.classList.toggle("hidden", !hasInputs);
-  $("machineCounter").disabled = !hasInputs;
+  $("machineCounter").disabled = false;
   button.disabled = !isComplete || !machineCounterComplete() || !perInspectionJobDataComplete() || Boolean(state.activeLock);
 }
 
@@ -4196,7 +4337,7 @@ function setupVariableRowTemplate() {
     <section class="setup-phase-matrix">
       <h4>Phase requirements</h4>
       <div class="setup-phase-grid">
-        <div class="setup-phase-grid-header"><span>Phase</span><span>Use</span><span>Sample</span><span>Frequency type</span><span>Frequency</span><span>Unit</span><span>Rule</span></div>
+        <div class="setup-phase-grid-header"><span>Phase</span><span>Use</span><span>Sample</span><span>Frequency type</span><span>Frequency</span><span>First due</span><span>Unit</span><span>Rule</span></div>
         ${INSPECTION_PHASES.map((phase) => setupPhaseRowTemplate(phase)).join("")}
       </div>
     </section>
@@ -4225,6 +4366,7 @@ function setupPhaseRowTemplate(phase) {
         <option value="Event">Event</option>
       </select>
       <input class="setup-phase-frequency-value" type="number" min="1" aria-label="${escapeHtml(phase)} frequency">
+      <input class="setup-phase-first-due-value" type="number" min="1" aria-label="${escapeHtml(phase)} first due">
       <select class="setup-phase-frequency-unit" aria-label="${escapeHtml(phase)} frequency unit"></select>
       <select class="setup-phase-alert-rule-set" aria-label="${escapeHtml(phase)} drift rule">
         <option value=""></option>
@@ -4324,6 +4466,7 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || ""
         phaseRow.querySelector(".setup-phase-required").checked = false;
         phaseRow.querySelector(".setup-phase-frequency-type").value = "";
         phaseRow.querySelector(".setup-phase-frequency-value").value = "";
+        phaseRow.querySelector(".setup-phase-first-due-value").value = "";
         phaseRow.querySelector(".setup-phase-alert-rule-set").value = "";
         updatePhaseFrequencyUnits(phaseRow, "");
       });
@@ -4387,6 +4530,7 @@ function phaseSettingsFromPlan(plan) {
     sampleSize: plan.sampleSize,
     frequencyType: plan.frequencyType,
     frequencyValue: plan.frequencyValue,
+    firstDueValue: plan.firstDueValue,
     frequencyUnit: plan.frequencyUnit,
     alertRuleSet: plan.alertRuleSet
   }];
@@ -4401,6 +4545,7 @@ function populatePhaseRows(row, phaseSettings = []) {
     phaseRow.querySelector(".setup-phase-sample-size").value = setting?.sampleSize ?? "";
     phaseRow.querySelector(".setup-phase-frequency-type").value = setting?.frequencyType || "";
     phaseRow.querySelector(".setup-phase-frequency-value").value = setting?.frequencyValue ?? "";
+    phaseRow.querySelector(".setup-phase-first-due-value").value = setting?.firstDueValue ?? "";
     phaseRow.querySelector(".setup-phase-alert-rule-set").value = setting?.alertRuleSet || "";
     updatePhaseFrequencyUnits(phaseRow, setting?.frequencyUnit || "");
   });
@@ -4742,6 +4887,7 @@ function setupPhaseRows(row) {
       sampleSize: Number(phaseRow.querySelector(".setup-phase-sample-size").value),
       frequencyType: phaseRow.querySelector(".setup-phase-frequency-type").value,
       frequencyValue: Number(phaseRow.querySelector(".setup-phase-frequency-value").value),
+      firstDueValue: optionalInputNumber(phaseRow.querySelector(".setup-phase-first-due-value")),
       frequencyUnit: phaseRow.querySelector(".setup-phase-frequency-unit").value,
       alertRuleSet: phaseRow.querySelector(".setup-phase-alert-rule-set").value
     }));
@@ -4875,6 +5021,7 @@ async function saveInspectionSetup(event) {
             sampleSize: phase.sampleSize,
             frequencyType: phase.frequencyType,
             frequencyValue: phase.frequencyValue,
+            firstDueValue: phase.firstDueValue,
             frequencyUnit: phase.frequencyUnit,
             originalProcessCode: state.editingSetup?.processCode || null,
             originalOperationSeq: state.editingSetup?.operationSeq || null,
@@ -5309,6 +5456,13 @@ $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("machineCounter").addEventListener("input", () => {
   normalizeMachineCounterInput();
+  window.clearTimeout(machineCounterReloadTimer);
+  machineCounterReloadTimer = window.setTimeout(() => {
+    const { jobNum, resourceId, set } = selectedValues();
+    if (jobNum && resourceId && set && selectedSetNeedsMachineCounter(set)) {
+      loadContext();
+    }
+  }, 200);
   updateInspectionSubmitState();
 });
 $("jobTagsForm").addEventListener("submit", saveJobTags);

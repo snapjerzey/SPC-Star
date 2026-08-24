@@ -128,6 +128,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             CopyPhaseValue(row, clone, phase, "SampleSize", "Sample Size");
             CopyPhaseValue(row, clone, phase, "FrequencyType", "Frequency Type");
             CopyPhaseValue(row, clone, phase, "FrequencyValue", "Frequency");
+            CopyPhaseValue(row, clone, phase, "FirstDueValue", "First Due");
             CopyPhaseValue(row, clone, phase, "FrequencyUnit", "Frequency Unit");
             CopyPhaseValue(row, clone, phase, "AlertRuleSet", "Drift Rule");
             CopyPhaseValue(row, clone, phase, "DisplayOrder", "Display Order");
@@ -150,6 +151,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             PhaseFieldValue(row, phase, "Frequency Type") != "" ||
             PhaseFieldValue(row, phase, "Frequency") != "" ||
             PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
+            PhaseFieldValue(row, phase, "First Due") != "" ||
             PhaseFieldValue(row, phase, "Frequency Unit") != "" ||
             PhaseFieldValue(row, phase, "Drift Rule") != "" ||
             PhaseFieldValue(row, phase, "Display Order") != "");
@@ -167,6 +169,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             PhaseFieldValue(row, phase, "Frequency Type") != "" ||
             PhaseFieldValue(row, phase, "Frequency") != "" ||
             PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
+            PhaseFieldValue(row, phase, "First Due") != "" ||
             PhaseFieldValue(row, phase, "Frequency Unit") != "" ||
             PhaseFieldValue(row, phase, "Drift Rule") != "" ||
             PhaseFieldValue(row, phase, "Display Order") != "";
@@ -218,6 +221,15 @@ public sealed class SetupImportService(ISpcRepository repository)
             yield return $"{prefix}FrequencyQty";
             yield return $"{prefix}FrequencyValue";
         }
+        if (suffix.Equals("First Due", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return $"{prefix} First Due";
+            yield return $"{prefix} First Due Qty";
+            yield return $"{prefix} First Due Quantity";
+            yield return $"{prefix}FirstDue";
+            yield return $"{prefix}FirstDueQty";
+            yield return $"{prefix}FirstDueQuantity";
+        }
         if (suffix.Equals("Display Order", StringComparison.OrdinalIgnoreCase))
         {
             yield return $"{prefix} Order";
@@ -234,7 +246,8 @@ public sealed class SetupImportService(ISpcRepository repository)
             new("Setup", ["Setup", "Set Up"]),
             new("In Process", ["In Process", "InProcess"]),
             new("Coil Change", ["Coil Change", "CoilChange"]),
-            new("Spool", ["Spool"])
+            new("Spool", ["Spool", "Spool Start"]),
+            new("End of Spool", ["End of Spool", "EndOfSpool", "Spool End"])
         ];
     }
 
@@ -293,6 +306,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         CopyAlias(normalized, "SampleSize", "Sample Size");
         CopyAlias(normalized, "FrequencyType", "Frequency Type");
         CopyAlias(normalized, "FrequencyValue", "FrequencyQty", "Frequency Value", "Frequency");
+        CopyAlias(normalized, "FirstDueValue", "First Due", "FirstDue", "FirstDueQty", "First Due Qty", "First Due Quantity");
         CopyAlias(normalized, "FrequencyUnit", "Frequency Unit");
         CopyAlias(normalized, "AlertRuleSet", "Drift Rule", "Rule Set");
         CopyAlias(normalized, "IsRequired", "RequiresLotEntry", "Required");
@@ -392,6 +406,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     {
         NormalizeLeadingInt(row, "SampleSize");
         NormalizeLeadingInt(row, "FrequencyValue");
+        NormalizeLeadingInt(row, "FirstDueValue");
 
         var unit = row.GetValueOrDefault("FrequencyUnit");
         if (string.IsNullOrWhiteSpace(unit))
@@ -555,7 +570,7 @@ public sealed class SetupImportService(ISpcRepository repository)
 
             if (rowType != "Part" && !IsValidInspectionPhase(row.GetValueOrDefault("InspectionPhase")))
             {
-                errors.Add($"Row {rowNumber}: InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
+                errors.Add($"Row {rowNumber}: InspectionPhase must be Startup, Setup, In Process, Coil Change, Spool, or End of Spool.");
             }
 
             switch (rowType)
@@ -617,6 +632,12 @@ public sealed class SetupImportService(ISpcRepository repository)
         if (!int.TryParse(row.GetValueOrDefault("FrequencyValue"), out var frequencyValue) || frequencyValue <= 0)
         {
             errors.Add($"Row {rowNumber}: FrequencyValue must be greater than zero.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.GetValueOrDefault("FirstDueValue")) &&
+            (!int.TryParse(row.GetValueOrDefault("FirstDueValue"), out var firstDueValue) || firstDueValue <= 0))
+        {
+            errors.Add($"Row {rowNumber}: FirstDueValue must be greater than zero when provided.");
         }
 
         var hasFrequencyUnit = Enum.TryParse<FrequencyUnit>(row.GetValueOrDefault("FrequencyUnit"), true, out var frequencyUnit);
@@ -1009,6 +1030,8 @@ public sealed class SetupImportService(ISpcRepository repository)
             value.Trim().Equals("Coil Change", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("End of Spool", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("EndOfSpool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
     }
@@ -1026,10 +1049,15 @@ public sealed class SetupImportService(ISpcRepository repository)
             return "Startup";
         }
         if (phase.Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
         {
             return "Spool";
+        }
+        if (phase.Equals("End of Spool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("EndOfSpool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+        {
+            return "End of Spool";
         }
         if (phase.Equals("Coil Change", StringComparison.OrdinalIgnoreCase))
         {
@@ -1110,11 +1138,13 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static InspectionFrequency BuildFrequency(Dictionary<string, string> row)
     {
+        var firstDueValue = OptionalInt(row, "FirstDueValue", 0);
         return new InspectionFrequency
         {
             Type = Enum.Parse<FrequencyType>(row["FrequencyType"], true),
             Value = int.Parse(row["FrequencyValue"]),
-            Unit = Enum.Parse<FrequencyUnit>(row["FrequencyUnit"], true)
+            Unit = Enum.Parse<FrequencyUnit>(row["FrequencyUnit"], true),
+            FirstDueValue = firstDueValue > 0 ? firstDueValue : null
         };
     }
 

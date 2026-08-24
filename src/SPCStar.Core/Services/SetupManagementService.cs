@@ -53,7 +53,8 @@ public sealed record UpsertInspectionSetupRequest(
     string? InspectionMethod = null,
     int? DisplayOrder = null,
     string? BlankCode = null,
-    string? HoleSize = null);
+    string? HoleSize = null,
+    int? FirstDueValue = null);
 
 public sealed record DeleteInspectionSetupPhaseRequest(
     string PartNum,
@@ -707,7 +708,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
         plan.SampleSize = request.SampleSize;
         plan.DisplayOrder = request.DisplayOrder.GetValueOrDefault(plan.DisplayOrder);
         plan.AlertRuleSet = request.AlertRuleSet.Trim();
-        plan.Frequency = new InspectionFrequency { Type = request.FrequencyType, Value = request.FrequencyValue, Unit = request.FrequencyUnit };
+        plan.Frequency = new InspectionFrequency
+        {
+            Type = request.FrequencyType,
+            Value = request.FrequencyValue,
+            Unit = request.FrequencyUnit,
+            FirstDueValue = request.FirstDueValue is > 0 ? request.FirstDueValue : null
+        };
         if (request.CharacteristicType == CharacteristicType.Variable)
         {
             UpsertControlLimit(request);
@@ -733,7 +740,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.CharacteristicName, nameof(request.CharacteristicName), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, Spool, or End of Spool.");
         }
         if (request.OperationSeq <= 0)
         {
@@ -1199,7 +1206,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.AlertRuleSet, nameof(request.AlertRuleSet), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, Spool, or End of Spool.");
         }
 
         if (request.OperationSeq <= 0) errors.Add("OperationSeq must be greater than zero.");
@@ -1207,6 +1214,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         if (request.CharacteristicType == CharacteristicType.Variable && request.Lcl.HasValue && request.Ucl.HasValue && request.Lcl.Value >= request.Ucl.Value) errors.Add("LCL must be less than UCL.");
         if (request.SampleSize <= 0) errors.Add("SampleSize must be greater than zero.");
         if (request.FrequencyValue <= 0) errors.Add("FrequencyValue must be greater than zero.");
+        if (request.FirstDueValue is <= 0) errors.Add("FirstDueValue must be greater than zero when provided.");
         if (!IsSupportedRuleSet(request.AlertRuleSet))
         {
             errors.Add("AlertRuleSet is not supported.");
@@ -1227,7 +1235,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.FieldName, nameof(request.FieldName), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, Spool, or End of Spool.");
         }
 
         if (request.DisplayOrder < 0)
@@ -1247,7 +1255,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.MaterialDescription, nameof(request.MaterialDescription), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, Spool, or End of Spool.");
         }
 
         if (request.DisplayOrder < 0)
@@ -1279,6 +1287,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
             value.Trim().Equals("CoilChange", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("End of Spool", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("EndOfSpool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
     }
@@ -1296,10 +1306,15 @@ public sealed class SetupManagementService(ISpcRepository repository)
             return "Startup";
         }
         if (phase.Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
         {
             return "Spool";
+        }
+        if (phase.Equals("End of Spool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("EndOfSpool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+        {
+            return "End of Spool";
         }
         if (phase.Equals("Coil Change", StringComparison.OrdinalIgnoreCase) ||
             phase.Equals("CoilChange", StringComparison.OrdinalIgnoreCase))

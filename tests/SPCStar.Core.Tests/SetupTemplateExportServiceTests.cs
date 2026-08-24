@@ -105,7 +105,13 @@ public sealed class SetupTemplateExportServiceTests
             "Spool Frequency Type",
             "Spool Frequency",
             "Spool Frequency Unit",
-            "Spool Drift Rule"
+            "Spool Drift Rule",
+            "End of Spool Required",
+            "End of Spool Sample Size",
+            "End of Spool Frequency Type",
+            "End of Spool Frequency",
+            "End of Spool Frequency Unit",
+            "End of Spool Drift Rule"
         ]);
     }
 }

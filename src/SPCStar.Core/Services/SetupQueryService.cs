@@ -28,6 +28,7 @@ public sealed record InspectionPlanSetupDto(
     FrequencyType FrequencyType,
     int FrequencyValue,
     FrequencyUnit FrequencyUnit,
+    int? FirstDueValue,
     string AlertRuleSet);
 
 public sealed record ProcessSetupDto(Guid Id, string ProcessCode, string Description);
@@ -150,6 +151,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 plan.Frequency.Type,
                 plan.Frequency.Value,
                 plan.Frequency.Unit,
+                plan.Frequency.FirstDueValue,
                 plan.AlertRuleSet);
 
         return query.ToArray();

@@ -103,6 +103,7 @@ public sealed class InspectionFrequency
     public FrequencyType Type { get; set; }
     public int Value { get; set; }
     public FrequencyUnit Unit { get; set; }
+    public int? FirstDueValue { get; set; }
 }
 
 public sealed class Job

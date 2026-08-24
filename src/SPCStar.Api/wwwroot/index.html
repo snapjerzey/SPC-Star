@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260813-grouped-job-data">
+  <link rel="stylesheet" href="/styles.css?v=20260824-compact-status">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -131,6 +131,7 @@
                 <option value="In Process" selected>In Process</option>
                 <option value="Coil Change">Coil Change</option>
                 <option value="Spool">Spool</option>
+                <option value="End of Spool">End of Spool</option>
               </select>
             </label>
             <button type="submit">Load</button>
@@ -343,6 +344,7 @@
                     <option value="In Process">In Process</option>
                     <option value="Coil Change">Coil Change</option>
                     <option value="Spool">Spool</option>
+                    <option value="End of Spool">End of Spool</option>
                   </select>
                 </label>
                 <label>Sample size<input id="setupSampleSize" type="number" min="1" required></label>
@@ -1533,6 +1535,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260818-end-count-optional"></script>
+  <script src="/app.js?v=20260824-past-due-counter"></script>
 </body>
 </html>

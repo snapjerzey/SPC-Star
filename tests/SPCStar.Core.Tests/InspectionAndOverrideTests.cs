@@ -259,6 +259,30 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void CompleteInspection_OnlyRequiresPlansDueAtMachineCounter()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        foreach (var plan in repository.InspectionPlans)
+        {
+            var characteristic = repository.Characteristics.Single(item => item.Id == plan.CharacteristicId);
+            plan.Frequency = characteristic.Name == "Diameter"
+                ? new InspectionFrequency { Type = FrequencyType.Quantity, Value = 10000, Unit = FrequencyUnit.Pieces, FirstDueValue = 5000 }
+                : new InspectionFrequency { Type = FrequencyType.Quantity, Value = 10000, Unit = FrequencyUnit.Pieces };
+        }
+
+        repository.Measurements.Add(SavedMeasurement("Diameter", 10m, 1));
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(5125));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var completion = Assert.Single(repository.JobPhaseCompletions);
+        Assert.Single(completion.MeasurementIds);
+        Assert.Equal(repository.Measurements.Single().Id, completion.MeasurementIds.Single());
+    }
+
+    [Fact]
     public void CompleteInspection_DoesNotCountOtherPhasePlansAsInProcessRequirements()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -362,6 +386,18 @@ public sealed class InspectionAndOverrideTests
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal("Coil Change", Assert.Single(repository.Measurements).InspectionPhase);
+    }
+
+    [Fact]
+    public void EnterMeasurement_AllowsEndOfSpoolInspectionPhase()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(10m) with { InspectionPhase = "Spool End" });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal("End of Spool", Assert.Single(repository.Measurements).InspectionPhase);
     }
 
     [Fact]

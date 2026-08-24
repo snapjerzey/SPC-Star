@@ -219,10 +219,15 @@ public sealed class JobReviewService(
             return "Startup";
         }
         if (phase.Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
         {
             return "Spool";
+        }
+        if (phase.Equals("End of Spool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("EndOfSpool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+        {
+            return "End of Spool";
         }
 
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||

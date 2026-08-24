@@ -14,7 +14,7 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Machine workbook import using a sheet named `SPC-Star Machine Import` with `Machine ID` and `Description` columns.
 - User management screens for operators, line techs, QA, admins, and GOD access, including shift assignment, add/edit/delete, password reset, and last-admin/GOD protection.
 - Browser/tablet inspection console served by the API.
-- Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, Coil Change, and Spool.
+- Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, Coil Change, Spool, and End of Spool.
 - Persistent job tag storage for part-specific context fields that will be driven by inspection setup.
 - Part-specific material requirements from setup/import, with lot entry on the inspection screen.
 - Ordered inspection-item entry for measured variables and accept/reject attributes, with inactive phase items removed from the operator view.
@@ -102,7 +102,8 @@ Primary readable columns:
 - Bimetal lot, raw material lot, and other material lot traceability fields should be entered as Material rows, not Job Data rows. Use `Material Name`, `Material Part Number`, and `Material Description`; operators enter the actual lot number in the Materials section during inspection.
 - Variable rows use `Variable Name`, `Operation`, `Unit`, `Location`, `Inspection Method`, `Target`, `Lower Spec`, `Upper Spec`, optional control limits, sample/frequency columns, and drift rule.
 - Attribute rows use `Attribute Name`, `Operation`, `Location`, `Inspection Method`, sample/frequency columns, and drift rule.
-- Universal inspection rows can use phase-specific columns such as `Startup Required`, `Startup Sample Size`, `Setup Required`, `Setup Sample Size`, `In Process Required`, `In Process Sample Size`, `CoilChange Required`, `CoilChange Sample Size`, `Spool Required`, and `Spool Sample Size`.
+- Universal inspection rows can use phase-specific columns such as `Startup Required`, `Startup Sample Size`, `Setup Required`, `Setup Sample Size`, `In Process Required`, `In Process Sample Size`, `CoilChange Required`, `CoilChange Sample Size`, `Spool Required`, `Spool Sample Size`, `End of Spool Required`, and `End of Spool Sample Size`.
+- Quantity-based phases can also use optional `First Due` columns, such as `In Process First Due`. `Frequency` means the repeat interval. `First Due` is only needed when the first inspection happens at a different count than the repeat interval, for example first due at 5000 parts and then every 10000 parts after that.
 - `Attribute/Variable`, `Tool Used`, `ParameterSeq`, and other standardized inspection-sheet conversion headers are accepted for bulk import workflows.
 
 The importer also accepts the older technical column names for compatibility.

@@ -217,7 +217,7 @@ public sealed class InspectionMeasurementService(
         var partNum = request.PartNum.Trim();
         var processCode = request.ProcessCode.Trim();
         var resourceId = request.ResourceId.Trim();
-        var plans = PlansForPhase(partNum, processCode, request.OperationSeq, phase);
+        var plans = DuePlansForCompletion(PlansForPhase(partNum, processCode, request.OperationSeq, phase), request.MachineCounter);
         if (plans.Count == 0)
         {
             return null;
@@ -344,6 +344,32 @@ public sealed class InspectionMeasurementService(
                 orderby plan.DisplayOrder, characteristic.Name
                 select (plan, characteristic))
             .ToArray();
+    }
+
+    private static IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> DuePlansForCompletion(
+        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
+        long? machineCounter)
+    {
+        return plans
+            .Where(item => IsPlanDueAtMachineCounter(item.Plan, machineCounter))
+            .ToArray();
+    }
+
+    private static bool IsPlanDueAtMachineCounter(InspectionPlan plan, long? machineCounter)
+    {
+        if (plan.Frequency.Type != FrequencyType.Quantity)
+        {
+            return true;
+        }
+
+        if (machineCounter is null)
+        {
+            return true;
+        }
+
+        var every = Math.Max(plan.Frequency.Value, 1);
+        var firstDue = Math.Max(plan.Frequency.FirstDueValue ?? every, 1);
+        return machineCounter.Value >= firstDue;
     }
 
     private IReadOnlyList<Guid> MeasurementIdsForCompletionWindow(
@@ -1034,7 +1060,7 @@ public sealed class InspectionMeasurementService(
         Required(entry.OperatorUserId, nameof(entry.OperatorUserId), errors);
         if (!IsValidInspectionPhase(entry.InspectionPhase))
         {
-            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, or Spool.");
+            errors.Add("InspectionPhase must be Startup, Setup, In Process, Coil Change, Spool, or End of Spool.");
         }
 
         if (entry.OperationSeq <= 0)
@@ -1084,10 +1110,15 @@ public sealed class InspectionMeasurementService(
             return "Startup";
         }
         if (phase.Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
-            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+            phase.Equals("Spool Start", StringComparison.OrdinalIgnoreCase))
         {
             return "Spool";
+        }
+        if (phase.Equals("End of Spool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("EndOfSpool", StringComparison.OrdinalIgnoreCase) ||
+            phase.Equals("Spool End", StringComparison.OrdinalIgnoreCase))
+        {
+            return "End of Spool";
         }
 
         return phase.Equals("Set Up", StringComparison.OrdinalIgnoreCase) ||
@@ -1153,6 +1184,8 @@ public sealed class InspectionMeasurementService(
             value.Trim().Equals("CoilChange", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool Start", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("End of Spool", StringComparison.OrdinalIgnoreCase) ||
+            value.Trim().Equals("EndOfSpool", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("Spool End", StringComparison.OrdinalIgnoreCase) ||
             value.Trim().Equals("In Process", StringComparison.OrdinalIgnoreCase);
     }

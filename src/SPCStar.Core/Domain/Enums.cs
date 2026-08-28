@@ -23,7 +23,8 @@ public enum FrequencyUnit
     MaterialChange,
     ToolChange,
     Restart,
-    Shift
+    Shift,
+    Spool
 }
 
 public enum AlertStatus

@@ -42,6 +42,54 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_AllowsDraftSampleCorrection_WhenAlertWasCreatedBeforeCompletion()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        SetRuleSet(repository, "Diameter", "SpecLimitOnly");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var bad = service.EnterMeasurement(Entry(6m) with { DeviceId = "browser-dev", ClientRecordId = "slot-1" });
+        var corrected = service.EnterMeasurement(Entry(5m, minutes: 1) with { DeviceId = "browser-dev", ClientRecordId = "slot-1" });
+
+        Assert.True(bad.Succeeded, string.Join(" | ", bad.Errors));
+        Assert.True(corrected.Succeeded, string.Join(" | ", corrected.Errors));
+        Assert.Single(repository.Measurements);
+        Assert.Equal(5m, repository.Measurements.Single().Value);
+        Assert.Empty(repository.Alerts);
+        Assert.Empty(repository.RuleViolations);
+    }
+
+    [Fact]
+    public void EnterMeasurement_DoesNotAllowDraftCorrection_WhenMeasurementIsAlreadyCompleted()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        SetRuleSet(repository, "Diameter", "SpecLimitOnly");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var bad = service.EnterMeasurement(Entry(6m) with { DeviceId = "browser-dev", ClientRecordId = "slot-1" });
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ProcessCode = "MOLD",
+            OperationSeq = 10,
+            ResourceId = "PRESS1",
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-01-01T00:02:00Z")
+        });
+        repository.JobPhaseCompletions.Single().MeasurementIds.Add(bad.Value!.Id);
+
+        var corrected = service.EnterMeasurement(Entry(5m, minutes: 1) with { DeviceId = "browser-dev", ClientRecordId = "slot-1" });
+
+        Assert.False(corrected.Succeeded);
+        Assert.Contains(corrected.Errors, error => error.Contains("active lock", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(6m, repository.Measurements.Single().Value);
+        Assert.Single(repository.Alerts);
+    }
+
+    [Fact]
     public void EnterMeasurement_NormalizesMoreThanFiveDecimalPlaces()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -259,7 +307,7 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
-    public void CompleteInspection_OnlyRequiresPlansDueAtMachineCounter()
+    public void CompleteInspection_RequiresSelectedPhasePlansRegardlessOfMachineCounter()
     {
         var repository = RepositoryWithSecurityAndLimits();
         repository.JobPhaseCompletions.Clear();
@@ -272,14 +320,15 @@ public sealed class InspectionAndOverrideTests
         }
 
         repository.Measurements.Add(SavedMeasurement("Diameter", 10m, 1));
+        repository.Measurements.Add(SavedMeasurement("Length", 42m, 2));
+        repository.Measurements.Add(SavedMeasurement("Weight", 18m, 3));
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         var result = service.CompleteInspection(CompletionRequest(5125));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         var completion = Assert.Single(repository.JobPhaseCompletions);
-        Assert.Single(completion.MeasurementIds);
-        Assert.Equal(repository.Measurements.Single().Id, completion.MeasurementIds.Single());
+        Assert.Equal(3, completion.MeasurementIds.Count);
     }
 
     [Fact]
@@ -443,9 +492,23 @@ public sealed class InspectionAndOverrideTests
     public void EnterMeasurement_AllowsQaInspectionWithoutProductGroupAssignment()
     {
         var repository = RepositoryWithSecurityAndLimits();
+        repository.Parts.Single(part => part.PartNum == "P100").ProductGroup = "Needles";
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         var result = service.EnterMeasurement(Entry(10m) with { OperatorUserId = "qa1" });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Single(repository.Measurements);
+    }
+
+    [Fact]
+    public void EnterMeasurement_AllowsGodInspectionAcrossProductGroups()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.Parts.Single(part => part.PartNum == "P100").ProductGroup = "Needles";
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(10m) with { OperatorUserId = "god1" });
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Single(repository.Measurements);

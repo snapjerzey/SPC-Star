@@ -16,7 +16,8 @@ public sealed record UpsertResourceMachineRequest(
     string? Description,
     string? OriginalResourceId = null,
     string DeviceProfile = "keyboard",
-    int SerialBaudRate = 9600);
+    int SerialBaudRate = 9600,
+    IReadOnlyList<string>? ProductGroups = null);
 
 public sealed record ResourceImportResult(int Imported);
 
@@ -86,6 +87,17 @@ public sealed record UpsertPartMaterialFieldRequest(
 
 public sealed class SetupManagementService(ISpcRepository repository)
 {
+    private static readonly string[] StandardProductGroups =
+    [
+        "Ethicon Cutting Edge - Drilled",
+        "Ethicon Cutting Edge - Needles",
+        "Ethicon Ethalloy Cardio - Needles",
+        "Ethicon Everpoint - Needles",
+        "Ethicon Taperpoint - Drilled",
+        "Ethicon Taperpoint - Needles",
+        "Schneider"
+    ];
+
     public IReadOnlyList<UserSetupDto> GetUsers()
     {
         return repository.Users
@@ -113,7 +125,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
             .OrderBy(resource => resource.ResourceId)
-            .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description, resource.DeviceProfile, resource.SerialBaudRate))
+            .Select(ResourceDto)
             .ToArray();
     }
 
@@ -391,6 +403,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             var description = Value(row, "Description", "Machine Description", "Resource Description");
             var deviceProfile = Value(row, "DeviceProfile", "Device Profile", "Gauge Profile", "Measurement Device");
             var baud = Value(row, "SerialBaudRate", "Serial Baud Rate", "Baud Rate", "Baud");
+            var productGroups = ProductGroupsFromMachineRow(row);
             if (string.IsNullOrWhiteSpace(resourceId))
             {
                 errors.Add($"Row {rowNumber}: Machine ID is required.");
@@ -408,8 +421,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 description.Trim(),
                 resourceId.Trim(),
                 string.IsNullOrWhiteSpace(deviceProfile) ? "keyboard" : deviceProfile.Trim(),
-                int.TryParse(baud, out var parsedBaud) ? parsedBaud : 9600);
+                int.TryParse(baud, out var parsedBaud) ? parsedBaud : 9600,
+                productGroups);
             errors.AddRange(ValidateResource(request).Select(error => $"Row {rowNumber}: {error}"));
+            foreach (var group in CleanProductGroups(productGroups).Where(group => !LoadedProductGroups().Contains(group, StringComparer.OrdinalIgnoreCase)))
+            {
+                errors.Add($"Row {rowNumber}: Unknown product group {group}.");
+            }
             requests.Add(request);
         }
 
@@ -432,20 +450,17 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
     public string ExportResourcesCsv()
     {
-        var headers = new[] { "Machine ID", "Description", "Device Profile", "Baud Rate" };
-        var rows = repository.Resources
-            .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
-            .OrderBy(resource => resource.ResourceId)
-            .Select(resource => new Dictionary<string, string>
-            {
-                ["Machine ID"] = resource.ResourceId,
-                ["Description"] = resource.Description ?? "",
-                ["Device Profile"] = DeviceProfileLabel(resource.DeviceProfile),
-                ["Baud Rate"] = resource.SerialBaudRate.ToString()
-            });
+        var (headers, rows) = ResourceExportRows();
 
         return CsvSupport.WriteRows(headers, rows);
+    }
+
+    public byte[] ExportResourcesXlsx()
+    {
+        var (headers, rows) = ResourceExportRows();
+        return XlsxSupport.WriteWorkbook([
+            new XlsxWorksheet("SPC-Star Machine Import", headers, rows)
+        ]);
     }
 
     public string ExportUsersCsv()
@@ -470,6 +485,33 @@ public sealed class SetupManagementService(ISpcRepository repository)
             });
 
         return CsvSupport.WriteRows(headers, rows);
+    }
+
+    private (IReadOnlyList<string> Headers, IReadOnlyList<Dictionary<string, string>> Rows) ResourceExportRows()
+    {
+        var productGroups = LoadedProductGroups().OrderBy(group => group).ToArray();
+        var headers = new[] { "Machine ID", "Description", "Device Profile", "Baud Rate" }.Concat(productGroups).ToArray();
+        var rows = repository.Resources
+            .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
+            .OrderBy(resource => resource.ResourceId)
+            .Select(resource =>
+            {
+                var row = headers.ToDictionary(header => header, _ => "", StringComparer.OrdinalIgnoreCase);
+                row["Machine ID"] = resource.ResourceId;
+                row["Description"] = resource.Description ?? "";
+                row["Device Profile"] = DeviceProfileLabel(resource.DeviceProfile);
+                row["Baud Rate"] = resource.SerialBaudRate.ToString();
+                foreach (var group in productGroups)
+                {
+                    row[group] = resource.ProductGroups.Contains(group, StringComparer.OrdinalIgnoreCase) ? "X" : "";
+                }
+
+                return row;
+            })
+            .ToArray();
+
+        return (headers, rows);
     }
 
     public ServiceResult DeleteUser(string userName, string? actingUserName = null)
@@ -556,7 +598,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
             resource.SerialBaudRate = NormalizeBaudRate(request.SerialBaudRate);
         }
 
-        return ServiceResult<ResourceSetupDto>.Ok(new ResourceSetupDto(resource.ResourceId, resource.Description, resource.DeviceProfile, resource.SerialBaudRate));
+        resource.ProductGroups.Clear();
+        foreach (var group in CleanProductGroups(request.ProductGroups))
+        {
+            resource.ProductGroups.Add(group);
+        }
+
+        return ServiceResult<ResourceSetupDto>.Ok(ResourceDto(resource));
     }
 
     public ServiceResult DeleteResource(string resourceId)
@@ -842,8 +890,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase));
         if (part is null)
         {
-            part = new Part { PartNum = request.PartNum.Trim(), Description = request.PartNum.Trim() };
-            repository.Parts.Add(part);
+            return ServiceResult<PartJobDataFieldSetupDto>.Fail($"Part {request.PartNum.Trim()} must be created with a product group before job data fields can be added.");
         }
 
         var inspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
@@ -894,15 +941,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase));
         if (part is null)
         {
-            part = new Part { PartNum = request.PartNum.Trim(), Description = request.PartNum.Trim() };
-            repository.Parts.Add(part);
+            return ServiceResult<PartMaterialFieldSetupDto>.Fail($"Part {request.PartNum.Trim()} must be created with a product group before material fields can be added.");
         }
 
         var inspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
         var originalName = string.IsNullOrWhiteSpace(request.OriginalMaterialName) ? request.MaterialName.Trim() : request.OriginalMaterialName.Trim();
         var field = repository.PartMaterialFields.FirstOrDefault(item =>
             item.PartId == part.Id &&
-            item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
             item.MaterialName.Equals(originalName, StringComparison.OrdinalIgnoreCase));
         if (field is null)
         {
@@ -920,7 +965,6 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
         else
         {
-            field.InspectionPhase = inspectionPhase;
             field.MaterialName = request.MaterialName.Trim();
             field.MaterialPartNum = request.MaterialPartNum.Trim();
             field.MaterialDescription = request.MaterialDescription.Trim();
@@ -1115,6 +1159,31 @@ public sealed class SetupManagementService(ISpcRepository repository)
             repository.MaterialChanges.Any(item => item.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase));
     }
 
+    private ResourceSetupDto ResourceDto(ResourceMachine resource)
+    {
+        return new ResourceSetupDto(
+            resource.ResourceId,
+            resource.Description,
+            resource.DeviceProfile,
+            resource.SerialBaudRate,
+            resource.ProductGroups.OrderBy(group => group).ToArray());
+    }
+
+    private IReadOnlyList<string> ProductGroupsFromMachineRow(Dictionary<string, string> row)
+    {
+        var groups = new List<string>();
+        groups.AddRange(SplitValues(Value(row, "ProductGroups", "Product Groups")));
+        foreach (var group in LoadedProductGroups())
+        {
+            if (IsMarked(row.GetValueOrDefault(group)))
+            {
+                groups.Add(group);
+            }
+        }
+
+        return groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
     private UpsertUserRequest? UserRequestFromImportRow(Dictionary<string, string> row)
     {
         var userName = Value(row, "UserName", "User Name", "Username");
@@ -1152,6 +1221,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
     {
         return repository.Parts
             .Select(part => CleanProductGroup(part.ProductGroup))
+            .Concat(repository.Users.SelectMany(user => user.ProductGroups.Select(CleanProductGroup)))
+            .Concat(repository.Resources.SelectMany(resource => resource.ProductGroups.Select(CleanProductGroup)))
+            .Concat(StandardProductGroups)
             .Where(group => !string.IsNullOrWhiteSpace(group))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(group => group)
@@ -1272,7 +1344,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         {
             FrequencyType.Time => unit is FrequencyUnit.Minutes or FrequencyUnit.Hours,
             FrequencyType.Quantity => unit is FrequencyUnit.Pieces or FrequencyUnit.Box,
-            FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart,
+            FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart or FrequencyUnit.Shift or FrequencyUnit.Spool,
             _ => false
         };
     }
@@ -1353,7 +1425,23 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
     }
 
-    private static string CleanProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
+    private static string CleanProductGroup(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "General";
+        }
+
+        var trimmed = value.Trim();
+        return trimmed switch
+        {
+            "Ethicon Cutting Edge - Driller" => "Ethicon Cutting Edge - Drilled",
+            "Ethicon Taperpoint - Driller" => "Ethicon Taperpoint - Drilled",
+            "Ethicon Ethalloy Cardio" => "Ethicon Ethalloy Cardio - Needles",
+            "Ethicon Everpoint" => "Ethicon Everpoint - Needles",
+            _ => trimmed
+        };
+    }
 
     private static string CleanOptional(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value.Trim();
 

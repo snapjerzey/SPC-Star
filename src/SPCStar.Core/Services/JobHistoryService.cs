@@ -151,7 +151,8 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 OldValue: edit.OldValue,
                 NewValue: edit.NewValue,
                 OldInspectionPhase: edit.OldInspectionPhase,
-                NewInspectionPhase: edit.NewInspectionPhase));
+                NewInspectionPhase: edit.NewInspectionPhase,
+                Reason: edit.Reason));
 
         return notes
             .Concat(locks)

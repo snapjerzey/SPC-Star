@@ -182,6 +182,7 @@ public sealed class ResourceMachine
     public string? Description { get; set; }
     public string DeviceProfile { get; set; } = "keyboard";
     public int SerialBaudRate { get; set; } = 9600;
+    public List<string> ProductGroups { get; } = [];
 }
 
 public sealed class Device
@@ -226,6 +227,7 @@ public sealed class MeasurementEditAudit
     public required string NewInspectionPhase { get; set; }
     public required string EditedByUserId { get; set; }
     public DateTimeOffset EditedAt { get; set; }
+    public string Reason { get; set; } = "";
 }
 
 public sealed class MaterialChangeLog

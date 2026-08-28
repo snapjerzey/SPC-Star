@@ -56,7 +56,7 @@ public sealed class HistoryIssueSummaryService(ISpcRepository repository)
                 group => group.Key,
                 group => group.OrderByDescending(overrideEntry => overrideEntry.SubmittedAt).First());
 
-        return alerts
+        var rows = alerts
             .GroupBy(alert => new
             {
                 alert.PartNum,
@@ -91,9 +91,11 @@ public sealed class HistoryIssueSummaryService(ISpcRepository repository)
             })
             .OrderByDescending(row => row.EventCount)
             .ThenByDescending(row => row.ActiveCount)
-            .ThenByDescending(row => row.LatestEventAt)
-            .Take(Math.Clamp(request.Limit, 1, 100))
-            .ToArray();
+            .ThenByDescending(row => row.LatestEventAt);
+
+        return request.Limit <= 0
+            ? rows.ToArray()
+            : rows.Take(Math.Clamp(request.Limit, 1, 100)).ToArray();
     }
 
     private static IReadOnlyList<HistoryIssueBreakdownItem> SignalBreakdown(IEnumerable<ProcessAlert> alerts)

@@ -7,6 +7,7 @@ public static class SeedData
     public static void SeedAll(ISpcRepository repository)
     {
         SeedSecurity(repository);
+        NormalizeLegacyProductGroups(repository);
     }
 
     public static void SeedSecurity(ISpcRepository repository)
@@ -142,6 +143,77 @@ public static class SeedData
         }
 
         repository.Users.Add(User(userName, password, role, productGroups));
+    }
+
+    private static void NormalizeLegacyProductGroups(ISpcRepository repository)
+    {
+        foreach (var part in repository.Parts)
+        {
+            part.ProductGroup = NormalizeProductGroup(part.ProductGroup);
+        }
+
+        var drillingProcessIds = repository.Processes
+            .Where(process => ContainsDrill(process.ProcessCode) || ContainsDrill(process.Description))
+            .Select(process => process.Id)
+            .ToHashSet();
+        var drilledPartIds = repository.Operations
+            .Where(operation => drillingProcessIds.Contains(operation.ProcessId))
+            .Select(operation => operation.PartId)
+            .ToHashSet();
+
+        foreach (var part in repository.Parts.Where(part => drilledPartIds.Contains(part.Id)))
+        {
+            if (part.ProductGroup.Equals("Ethicon Cutting Edge - Needles", StringComparison.OrdinalIgnoreCase))
+            {
+                part.ProductGroup = "Ethicon Cutting Edge - Drilled";
+            }
+            else if (part.ProductGroup.Equals("Ethicon Taperpoint - Needles", StringComparison.OrdinalIgnoreCase))
+            {
+                part.ProductGroup = "Ethicon Taperpoint - Drilled";
+            }
+        }
+
+        foreach (var user in repository.Users)
+        {
+            NormalizeProductGroupList(user.ProductGroups);
+        }
+
+        foreach (var resource in repository.Resources)
+        {
+            NormalizeProductGroupList(resource.ProductGroups);
+        }
+    }
+
+    private static bool ContainsDrill(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Contains("Drill", StringComparison.OrdinalIgnoreCase);
+
+    private static void NormalizeProductGroupList(List<string> groups)
+    {
+        var normalized = groups
+            .Select(NormalizeProductGroup)
+            .Where(group => !string.IsNullOrWhiteSpace(group))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        groups.Clear();
+        groups.AddRange(normalized);
+    }
+
+    private static string NormalizeProductGroup(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "General";
+        }
+
+        var trimmed = value.Trim();
+        return trimmed switch
+        {
+            "Ethicon Cutting Edge - Driller" => "Ethicon Cutting Edge - Drilled",
+            "Ethicon Taperpoint - Driller" => "Ethicon Taperpoint - Drilled",
+            "Ethicon Ethalloy Cardio" => "Ethicon Ethalloy Cardio - Needles",
+            "Ethicon Everpoint" => "Ethicon Everpoint - Needles",
+            _ => trimmed
+        };
     }
 
     private static User User(string userName, string password, Role role, params string[] productGroups)

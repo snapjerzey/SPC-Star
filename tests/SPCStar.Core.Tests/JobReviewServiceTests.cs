@@ -17,7 +17,7 @@ public sealed class JobReviewServiceTests
             new QaSummaryExportService(repository),
             new JobHistoryService(repository));
 
-        var result = service.UpdateMeasurement(measurement.Id, new UpdateInspectionMeasurementRequest(5.25m, InspectionPhase: "Setup"));
+        var result = service.UpdateMeasurement(measurement.Id, new UpdateInspectionMeasurementRequest(5.25m, InspectionPhase: "Setup", Reason: "Corrected data entry error"));
 
         Assert.True(result.Succeeded);
         Assert.Equal(5.25m, measurement.Value);
@@ -28,6 +28,26 @@ public sealed class JobReviewServiceTests
         Assert.Equal(5.25m, audit.NewValue);
         Assert.Equal("In Process", audit.OldInspectionPhase);
         Assert.Equal("Setup", audit.NewInspectionPhase);
+        Assert.Equal("Corrected data entry error", audit.Reason);
+    }
+
+    [Fact]
+    public void UpdateMeasurement_RequiresReason()
+    {
+        var repository = RepositoryWithMeasurement();
+        var measurement = repository.Measurements.Single();
+        var service = new JobReviewService(
+            repository,
+            new QaSummaryExportService(repository),
+            new JobHistoryService(repository));
+
+        var result = service.UpdateMeasurement(measurement.Id, new UpdateInspectionMeasurementRequest(5.25m, InspectionPhase: "Setup"));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("A reason is required when editing inspection history.", result.Errors);
+        Assert.Equal(5m, measurement.Value);
+        Assert.Equal("In Process", measurement.InspectionPhase);
+        Assert.Empty(repository.MeasurementEditAudits);
     }
 
     [Fact]

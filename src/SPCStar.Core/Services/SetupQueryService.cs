@@ -57,7 +57,7 @@ public sealed record ControlLimitSetupDto(
 
 public sealed record JobSetupDto(string JobNum, string PartNum);
 
-public sealed record ResourceSetupDto(string ResourceId, string? Description, string DeviceProfile, int SerialBaudRate);
+public sealed record ResourceSetupDto(string ResourceId, string? Description, string DeviceProfile, int SerialBaudRate, IReadOnlyList<string> ProductGroups);
 
 public sealed record CustomDriftRuleSetupDto(
     string Name,
@@ -96,6 +96,7 @@ public sealed record SetupSnapshotDto(
     DateTimeOffset GeneratedAt,
     string SetupVersion,
     SettingsSetupDto Settings,
+    IReadOnlyList<string> ProductGroups,
     IReadOnlyList<PartSetupDto> Parts,
     IReadOnlyList<ProcessSetupDto> Processes,
     IReadOnlyList<OperationSetupDto> Operations,
@@ -110,6 +111,17 @@ public sealed record SetupSnapshotDto(
 
 public sealed class SetupQueryService(ISpcRepository repository)
 {
+    private static readonly string[] StandardProductGroups =
+    [
+        "Ethicon Cutting Edge - Drilled",
+        "Ethicon Cutting Edge - Needles",
+        "Ethicon Ethalloy Cardio - Needles",
+        "Ethicon Everpoint - Needles",
+        "Ethicon Taperpoint - Drilled",
+        "Ethicon Taperpoint - Needles",
+        "Schneider"
+    ];
+
     public IReadOnlyList<PartSetupDto> GetParts()
     {
         return repository.Parts
@@ -209,7 +221,12 @@ public sealed class SetupQueryService(ISpcRepository repository)
             .GroupBy(resource => resource.ResourceId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(resource => !string.IsNullOrWhiteSpace(resource.Description)).First())
             .OrderBy(resource => resource.ResourceId)
-            .Select(resource => new ResourceSetupDto(resource.ResourceId, resource.Description, resource.DeviceProfile, resource.SerialBaudRate))
+            .Select(resource => new ResourceSetupDto(
+                resource.ResourceId,
+                resource.Description,
+                resource.DeviceProfile,
+                resource.SerialBaudRate,
+                resource.ProductGroups.OrderBy(group => group).ToArray()))
             .ToArray();
         var jobDataFields =
             (from field in repository.PartJobDataFields
@@ -223,11 +240,13 @@ public sealed class SetupQueryService(ISpcRepository repository)
              orderby part.PartNum, field.InspectionPhase, field.DisplayOrder, field.MaterialName
              select new PartMaterialFieldSetupDto(part.PartNum, field.InspectionPhase, field.MaterialName, field.MaterialPartNum, field.MaterialDescription, field.IsRequired, field.DisplayOrder))
             .ToArray();
+        var productGroups = LoadedProductGroups();
 
         return new SetupSnapshotDto(
             generatedAt ?? DateTimeOffset.UtcNow,
-            BuildSetupVersion(SettingsDto(), parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources, jobDataFields, materialFields),
+            BuildSetupVersion(SettingsDto(), productGroups, parts, processes, operations, characteristics, specLimits, inspectionPlans, controlLimits, jobs, resources, jobDataFields, materialFields),
             SettingsDto(),
+            productGroups,
             parts,
             processes,
             operations,
@@ -261,10 +280,40 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 capability.GreenMinimum));
     }
 
-    private static string ProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
+    private IReadOnlyList<string> LoadedProductGroups()
+    {
+        return repository.Parts
+            .Select(part => ProductGroup(part.ProductGroup))
+            .Concat(repository.Users.SelectMany(user => user.ProductGroups.Select(ProductGroup)))
+            .Concat(repository.Resources.SelectMany(resource => resource.ProductGroups.Select(ProductGroup)))
+            .Concat(StandardProductGroups)
+            .Where(group => !string.IsNullOrWhiteSpace(group))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group)
+            .ToArray();
+    }
+
+    private static string ProductGroup(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "General";
+        }
+
+        var trimmed = value.Trim();
+        return trimmed switch
+        {
+            "Ethicon Cutting Edge - Driller" => "Ethicon Cutting Edge - Drilled",
+            "Ethicon Taperpoint - Driller" => "Ethicon Taperpoint - Drilled",
+            "Ethicon Ethalloy Cardio" => "Ethicon Ethalloy Cardio - Needles",
+            "Ethicon Everpoint" => "Ethicon Everpoint - Needles",
+            _ => trimmed
+        };
+    }
 
     private static string BuildSetupVersion(
         SettingsSetupDto settings,
+        IReadOnlyList<string> productGroups,
         IReadOnlyList<PartSetupDto> parts,
         IReadOnlyList<ProcessSetupDto> processes,
         IReadOnlyList<OperationSetupDto> operations,
@@ -279,6 +328,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
     {
         var builder = new StringBuilder();
         builder.Append(nameof(SettingsSetupDto)).Append('|').Append(settings).AppendLine();
+        AppendRows(builder, productGroups);
         AppendRows(builder, parts);
         AppendRows(builder, processes);
         AppendRows(builder, operations);

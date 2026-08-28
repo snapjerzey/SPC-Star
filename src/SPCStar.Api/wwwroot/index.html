@@ -6,7 +6,7 @@
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260824-compact-status">
+  <link rel="stylesheet" href="/styles.css?v=20260828-material-part-completion-submit">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -466,6 +466,15 @@
             <button type="submit" class="secondary import-only">Import Machines</button>
             <button id="exportMachineTemplateButton" type="button" class="secondary">Export Machines</button>
           </form>
+          <div class="machine-filter-bar">
+            <label>
+              Product group
+              <select id="machineProductGroupFilter">
+                <option value="">All product groups</option>
+              </select>
+            </label>
+            <p id="machineFilterMessage" class="message"></p>
+          </div>
           <div class="machine-admin-layout">
             <div>
               <div id="machineList" class="setup-list empty">No machines loaded.</div>
@@ -493,6 +502,15 @@
                     <option value="115200">115200</option>
                   </select>
                 </label>
+              </div>
+              <div class="permission-panel">
+                <div class="permission-header">
+                  <div>
+                    <strong>Allowed product groups</strong>
+                    <p>Operators will only see this machine for these product groups. Leave blank to allow all product groups.</p>
+                  </div>
+                </div>
+                <div id="setupMachineProductGroups" class="product-group-picker empty">No product groups loaded.</div>
               </div>
               <input id="setupOriginalResourceId" type="hidden">
               <div class="user-detail-actions">
@@ -705,7 +723,20 @@
               <div class="review-filter-bar">
                 <input id="partReviewFilter" list="partOptions" autocomplete="off" inputmode="text" placeholder="Part number">
                 <input id="reviewJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="Optional job number">
+                <select id="reviewOperationCode" aria-label="Ledger operation"></select>
+                <select id="reviewInspectionPhase" aria-label="Ledger inspection phase">
+                  <option value="">All phases</option>
+                  <option value="Startup">Startup</option>
+                  <option value="Setup">Setup</option>
+                  <option value="In Process">In Process</option>
+                  <option value="Coil Change">Coil Change</option>
+                  <option value="Spool">Spool</option>
+                  <option value="End of Spool">End of Spool</option>
+                </select>
+                <input id="reviewFrom" type="datetime-local" aria-label="Ledger from date">
+                <input id="reviewTo" type="datetime-local" aria-label="Ledger to date">
                 <button id="reviewLoadButton" type="button" class="secondary">Review Job</button>
+                <button id="ledgerExportXlsxButton" type="button" class="secondary">Export XLSX</button>
               </div>
             </div>
             <p id="reviewMessage" class="message"></p>
@@ -803,6 +834,7 @@
               <label>
                 Show
                 <select id="topIssuesLimit">
+                  <option value="0">All issues</option>
                   <option value="10">Top 10</option>
                   <option value="25" selected>Top 25</option>
                   <option value="50">Top 50</option>
@@ -1535,6 +1567,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260824-past-due-counter"></script>
+  <script src="/app.js?v=20260828-material-part-completion-submit"></script>
 </body>
 </html>

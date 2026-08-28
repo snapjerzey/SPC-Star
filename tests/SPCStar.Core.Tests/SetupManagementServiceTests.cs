@@ -79,7 +79,11 @@ public sealed class SetupManagementServiceTests
         var csv = service.ExportUsersCsv();
         var rows = CsvSupport.ReadRows(csv);
 
-        Assert.StartsWith("UserName,TemporaryPassword,Role,Shift,Ethicon Taperpoint - Needles,Schneider", csv);
+        Assert.StartsWith("UserName,TemporaryPassword,Role,Shift,", csv);
+        Assert.Contains("Ethicon Cutting Edge - Drilled", rows[0].Keys);
+        Assert.Contains("Ethicon Taperpoint - Drilled", rows[0].Keys);
+        Assert.Contains("Ethicon Taperpoint - Needles", rows[0].Keys);
+        Assert.Contains("Schneider", rows[0].Keys);
         var operatorRow = Assert.Single(rows, row => row["UserName"] == "Jsmith");
         Assert.Equal("test", operatorRow["TemporaryPassword"]);
         Assert.Equal("Operator", operatorRow["Role"]);
@@ -96,12 +100,14 @@ public sealed class SetupManagementServiceTests
     public void ExportResourcesCsv_WritesMachineImportColumns()
     {
         var repository = new InMemorySpcRepository();
+        repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
+        repository.Parts.Add(new Part { PartNum = "61135", Description = "Needle blank", ProductGroup = "Ethicon Taperpoint - Needles" });
         var service = new SetupManagementService(repository);
 
         var result = service.ImportResourcesCsv(string.Join(Environment.NewLine, [
-            "Machine ID,Description,Device Profile,Baud Rate",
-            "ETH-1,Needle Maker #1,Keyboard input,9600",
-            "FX19,Comparator,Serial text gauge,19200",
+            "Machine ID,Description,Device Profile,Baud Rate,Schneider,Ethicon Taperpoint - Needles",
+            "ETH-1,Needle Maker #1,Keyboard input,9600,,X",
+            "FX19,Comparator,Serial text gauge,19200,X,",
             string.Empty
         ]));
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
@@ -109,15 +115,52 @@ public sealed class SetupManagementServiceTests
         var csv = service.ExportResourcesCsv();
         var rows = CsvSupport.ReadRows(csv);
 
-        Assert.StartsWith("Machine ID,Description,Device Profile,Baud Rate", csv);
+        Assert.StartsWith("Machine ID,Description,Device Profile,Baud Rate,", csv);
+        Assert.Contains("Ethicon Cutting Edge - Drilled", rows[0].Keys);
+        Assert.Contains("Ethicon Taperpoint - Drilled", rows[0].Keys);
+        Assert.Contains("Ethicon Taperpoint - Needles", rows[0].Keys);
+        Assert.Contains("Schneider", rows[0].Keys);
         var keyboard = Assert.Single(rows, row => row["Machine ID"] == "ETH-1");
         Assert.Equal("Needle Maker #1", keyboard["Description"]);
         Assert.Equal("Keyboard input", keyboard["Device Profile"]);
         Assert.Equal("9600", keyboard["Baud Rate"]);
+        Assert.Equal("X", keyboard["Ethicon Taperpoint - Needles"]);
+        Assert.Equal("", keyboard["Schneider"]);
 
         var serial = Assert.Single(rows, row => row["Machine ID"] == "FX19");
         Assert.Equal("Serial text gauge", serial["Device Profile"]);
         Assert.Equal("19200", serial["Baud Rate"]);
+        Assert.Equal("X", serial["Schneider"]);
+        Assert.Equal("", serial["Ethicon Taperpoint - Needles"]);
+    }
+
+    [Fact]
+    public void ExportResourcesXlsx_WritesMachineImportWorkbook()
+    {
+        var repository = new InMemorySpcRepository();
+        repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
+        repository.Parts.Add(new Part { PartNum = "61135", Description = "Needle blank", ProductGroup = "Ethicon Taperpoint - Needles" });
+        var service = new SetupManagementService(repository);
+
+        var result = service.ImportResourcesCsv(string.Join(Environment.NewLine, [
+            "Machine ID,Description,Device Profile,Baud Rate,Schneider,Ethicon Taperpoint - Needles",
+            "ETH-1,Needle Maker #1,Keyboard input,9600,,X",
+            "FX19,Comparator,Serial text gauge,19200,X,",
+            string.Empty
+        ]));
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+
+        var bytes = service.ExportResourcesXlsx();
+
+        Assert.Equal('P', (char)bytes[0]);
+        Assert.Equal('K', (char)bytes[1]);
+        using var stream = new MemoryStream(bytes);
+        var csv = XlsxImportSupport.ReadImportSheetAsCsv(stream, "SPC-Star Machine Import");
+        var rows = CsvSupport.ReadRows(csv);
+        Assert.Contains("Ethicon Taperpoint - Drilled", rows[0].Keys);
+        Assert.Contains("Ethicon Taperpoint - Needles", rows[0].Keys);
+        Assert.Contains("Schneider", rows[0].Keys);
+        Assert.Contains(rows, row => row["Machine ID"] == "ETH-1" && row["Ethicon Taperpoint - Needles"] == "X");
     }
 
     [Fact]
@@ -521,6 +564,19 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertPartJobDataField_RejectsUnknownPartWithoutProductGroup()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpsertPartJobDataField(new UpsertPartJobDataFieldRequest("P404", "Setup", "Lot Number", true, 0));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("product group", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(repository.Parts, part => part.PartNum == "P404");
+    }
+
+    [Fact]
     public void UpsertPartMaterialField_SavesMaterialForPartAndPhase()
     {
         var repository = new InMemorySpcRepository();
@@ -537,6 +593,19 @@ public sealed class SetupManagementServiceTests
         Assert.Equal("Startup", field.InspectionPhase);
         var snapshot = new SetupQueryService(repository).GetSetupSnapshot();
         Assert.Contains(snapshot.PartMaterialFields, item => item.PartNum == "P200" && item.MaterialPartNum == "WIRE-302" && item.MaterialDescription == "302 stainless wire");
+    }
+
+    [Fact]
+    public void UpsertPartMaterialField_RejectsUnknownPartWithoutProductGroup()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpsertPartMaterialField(new UpsertPartMaterialFieldRequest("P404", "Startup", "Wire", "WIRE-302", "302 stainless wire", true, 0));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("product group", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(repository.Parts, part => part.PartNum == "P404");
     }
 
     [Fact]
@@ -585,11 +654,12 @@ public sealed class SetupManagementServiceTests
         var repository = new InMemorySpcRepository();
         var service = new SetupManagementService(repository);
 
-        var result = service.UpsertResource(new UpsertResourceMachineRequest("NM-10", "Needlemaker 10", DeviceProfile: "serial-text", SerialBaudRate: 19200));
+        var result = service.UpsertResource(new UpsertResourceMachineRequest("NM-10", "Needlemaker 10", DeviceProfile: "serial-text", SerialBaudRate: 19200, ProductGroups: ["Ethicon"]));
 
         Assert.True(result.Succeeded);
         Assert.Contains(service.GetResources(), resource => resource.ResourceId == "NM-10" && resource.Description == "Needlemaker 10");
         Assert.Contains(service.GetResources(), resource => resource.ResourceId == "NM-10" && resource.DeviceProfile == "serial-text" && resource.SerialBaudRate == 19200);
+        Assert.Contains(service.GetResources(), resource => resource.ResourceId == "NM-10" && resource.ProductGroups.Contains("Ethicon"));
     }
 
     [Fact]
@@ -621,18 +691,20 @@ public sealed class SetupManagementServiceTests
     public void ImportResourcesCsv_AddsMachinesFromTemplateColumns()
     {
         var repository = new InMemorySpcRepository();
+        repository.Parts.Add(new Part { PartNum = "70305", Description = "Jaw assy", ProductGroup = "Schneider" });
+        repository.Parts.Add(new Part { PartNum = "61135", Description = "Needle blank", ProductGroup = "Ethicon Taperpoint - Needles" });
         var service = new SetupManagementService(repository);
 
         var result = service.ImportResourcesCsv(string.Join(Environment.NewLine, [
-            "Machine ID,Description,Device Profile,Baud Rate",
-            "ETH-1,Needle Maker #1,Serial text gauge,19200",
-            "GP-1,GRM 50 Hook Machine,Keyboard input,9600"
+            "Machine ID,Description,Device Profile,Baud Rate,Schneider,Ethicon Taperpoint - Needles",
+            "ETH-1,Needle Maker #1,Serial text gauge,19200,,X",
+            "GP-1,GRM 50 Hook Machine,Keyboard input,9600,X,"
         ]));
 
         Assert.True(result.Succeeded);
         Assert.Equal(2, result.Value!.Imported);
-        Assert.Contains(repository.Resources, resource => resource.ResourceId == "ETH-1" && resource.Description == "Needle Maker #1" && resource.DeviceProfile == "serial-text" && resource.SerialBaudRate == 19200);
-        Assert.Contains(repository.Resources, resource => resource.ResourceId == "GP-1" && resource.Description == "GRM 50 Hook Machine" && resource.DeviceProfile == "keyboard" && resource.SerialBaudRate == 9600);
+        Assert.Contains(repository.Resources, resource => resource.ResourceId == "ETH-1" && resource.Description == "Needle Maker #1" && resource.DeviceProfile == "serial-text" && resource.SerialBaudRate == 19200 && resource.ProductGroups.Contains("Ethicon Taperpoint - Needles"));
+        Assert.Contains(repository.Resources, resource => resource.ResourceId == "GP-1" && resource.Description == "GRM 50 Hook Machine" && resource.DeviceProfile == "keyboard" && resource.SerialBaudRate == 9600 && resource.ProductGroups.Contains("Schneider"));
     }
 
     [Fact]

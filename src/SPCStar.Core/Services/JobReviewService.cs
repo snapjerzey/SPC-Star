@@ -32,7 +32,8 @@ public sealed record UpdateInspectionMeasurementRequest(
     decimal Value,
     DateTimeOffset? Timestamp = null,
     string? InspectionPhase = null,
-    string? EditedByUserId = null);
+    string? EditedByUserId = null,
+    string? Reason = null);
 
 public sealed class JobReviewService(
     ISpcRepository repository,
@@ -95,6 +96,11 @@ public sealed class JobReviewService(
             return ServiceResult<JobInspectionMeasurementDto>.Fail("Inspection measurement was not found.");
         }
 
+        if (string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return ServiceResult<JobInspectionMeasurementDto>.Fail("A reason is required when editing inspection history.");
+        }
+
         var oldValue = measurement.Value;
         var oldPhase = measurement.InspectionPhase;
         var newPhase = string.IsNullOrWhiteSpace(request.InspectionPhase)
@@ -119,7 +125,8 @@ public sealed class JobReviewService(
             OldInspectionPhase = oldPhase,
             NewInspectionPhase = measurement.InspectionPhase,
             EditedByUserId = string.IsNullOrWhiteSpace(request.EditedByUserId) ? "unknown" : request.EditedByUserId.Trim(),
-            EditedAt = DateTimeOffset.UtcNow
+            EditedAt = DateTimeOffset.UtcNow,
+            Reason = request.Reason.Trim()
         });
 
         return ServiceResult<JobInspectionMeasurementDto>.Ok(ToDto(measurement));

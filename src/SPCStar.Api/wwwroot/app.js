@@ -12,6 +12,7 @@ const state = {
   editingSetup: null,
   selectedUserName: "",
   selectedResourceId: "",
+  machineProductGroupFilter: "",
   currentShift: "1st Half Days",
   setupSection: "Inspection",
   historyView: "Ledger",
@@ -37,7 +38,6 @@ const MAX_MEASUREMENT_DECIMAL_PLACES = 5;
 const SESSION_STORAGE_KEY = "spc-star-session";
 const WORK_CONTEXT_STORAGE_KEY = "spc-star-work-context";
 const INSPECTION_DRAFT_STORAGE_KEY = "spc-star-inspection-drafts";
-let machineCounterReloadTimer = null;
 
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -212,10 +212,6 @@ function planIsDueAtCurrentMachineCounter(plan) {
   const every = Math.max(Number(plan.frequencyValue || 0), 1);
   const firstDue = Math.max(Number(plan.firstDueValue || every), 1);
   return counter >= firstDue;
-}
-
-function plansDueAtCurrentMachineCounter(plans) {
-  return plans.filter(planIsDueAtCurrentMachineCounter);
 }
 
 function selectedSetNeedsMachineCounter(set) {
@@ -488,7 +484,7 @@ async function loadSnapshot(options = {}) {
   state.snapshot = await api("/sync/setup-snapshot");
   fillDatalist($("jobOptions"), state.snapshot.jobs, (job) => job.jobNum);
   $("jobNum").value = "";
-  fillSelect($("resourceId"), [{ resourceId: "", description: "Select machine" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
+  refreshMachineDropdowns();
   fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
   fillDatalist($("productGroupOptions"), productGroups(), (group) => group);
   $("partNum").value = "";
@@ -525,7 +521,8 @@ async function restoreWorkContext() {
 
   $("jobNum").value = saved.jobNum;
   $("partNum").value = saved.partNum;
-  $("resourceId").value = state.snapshot.resources.some((resource) => resource.resourceId === saved.resourceId)
+  refreshMachineDropdowns();
+  $("resourceId").value = machinesForSelectedPart().some((resource) => resource.resourceId === saved.resourceId)
     ? saved.resourceId
     : "";
   $("inspectionPhase").value = saved.inspectionPhase || "In Process";
@@ -562,7 +559,23 @@ function fillDatalist(list, rows, valueOf) {
 }
 
 function productGroups() {
-  return [...new Set((state.snapshot?.parts || []).map((part) => part.productGroup || "General"))].sort();
+  const groups = [
+    ...(state.snapshot?.productGroups || []),
+    ...(state.snapshot?.parts || []).map((part) => part.productGroup || "General"),
+    ...(state.snapshot?.resources || []).flatMap((resource) => resource.productGroups || []),
+    ...(state.users || []).flatMap((user) => user.productGroups || [])
+  ];
+  return [...new Set(groups.map(normalizeProductGroupName).filter(Boolean))].sort();
+}
+
+function normalizeProductGroupName(value) {
+  const group = String(value || "General").trim();
+  if (!group) return "General";
+  if (group === "Ethicon Cutting Edge - Driller") return "Ethicon Cutting Edge - Drilled";
+  if (group === "Ethicon Taperpoint - Driller") return "Ethicon Taperpoint - Drilled";
+  if (group === "Ethicon Ethalloy Cardio") return "Ethicon Ethalloy Cardio - Needles";
+  if (group === "Ethicon Everpoint") return "Ethicon Everpoint - Needles";
+  return group;
 }
 
 function normalizeInspectionPhase(value) {
@@ -582,6 +595,7 @@ function updatePartFromJob() {
   if (job && state.snapshot.parts.some((part) => part.partNum.toLowerCase() === job.partNum.toLowerCase())) {
     $("partNum").value = job.partNum;
     refreshOperationChoices({ preserve: false });
+    refreshMachineDropdowns();
   }
 }
 
@@ -619,10 +633,31 @@ async function loadContext(event) {
     return;
   }
 
-  state.selectedPlans = plansDueAtCurrentMachineCounter(set.plans);
-  state.contexts = await Promise.all(state.selectedPlans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
+  state.selectedPlans = set.plans;
+  state.contexts = state.selectedPlans.map(() => null);
   saveCurrentWorkContext();
   renderContext();
+  const contextKey = `${jobNum}|${resourceId}|${set.partNum}|${operationKeyFor(set)}|${set.activePhase || set.inspectionPhase}`;
+  try {
+    const contexts = await Promise.all(state.selectedPlans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
+    const current = selectedValues();
+    const currentKey = current.set
+      ? `${current.jobNum}|${current.resourceId}|${current.set.partNum}|${operationKeyFor(current.set)}|${current.set.activePhase || current.set.inspectionPhase}`
+      : "";
+    if (currentKey !== contextKey) {
+      return;
+    }
+
+    state.contexts = contexts;
+    state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
+    renderLock(state.activeLock);
+    renderVariables();
+    renderMeanSummary();
+    renderTrendChoices();
+    loadTrend();
+  } catch (error) {
+    showEntryMessage("Inspection plan loaded, but live status could not be refreshed. " + readableError(error), "error");
+  }
 }
 
 function renderEmptyContext(message = "") {
@@ -683,7 +718,7 @@ function renderContext() {
   $("tagsDivider").classList.toggle("hidden", !hasEditableTags && !hasPartFacts);
   $("tagsSection").classList.toggle("hidden", !hasEditableTags && !hasPartFacts);
   $("jobTagsForm").classList.toggle("hidden", !hasEditableTags);
-  state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
+  state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderVariables();
   renderMeanSummary();
@@ -891,6 +926,10 @@ function renderVariables() {
     const isAttribute = plan.characteristicType === "Attribute";
     const isRecordOnly = !isAttribute && !hasSpecLimits(plan, context);
     const status = inspectionItemStatus(plan, context, isAttribute, isRecordOnly);
+    const lowerSpecLimit = firstFiniteValue(context?.lowerSpecLimit, plan.lsl);
+    const upperSpecLimit = firstFiniteValue(context?.upperSpecLimit, plan.usl);
+    const lowerControlLimit = firstFiniteValue(context?.lowerControlLimit, plan.lcl);
+    const upperControlLimit = firstFiniteValue(context?.upperControlLimit, plan.ucl);
     card.className = `variable-card ${status.className}${isInactive ? " inactive-plan-card" : ""}`;
     card.innerHTML = `
       <div class="inspection-status-rail" aria-label="${escapeHtml(status.label)}" title="${escapeHtml(status.label)}">
@@ -904,10 +943,11 @@ function renderVariables() {
           </div>
           <div class="sample-meta">
             ${isInactive ? `
-              <span class="inactive-required-badge">Not required for ${escapeHtml(plan.selectedInspectionPhase || $("inspectionPhase").value)}</span>` : `
+              <span class="inactive-required-badge">${escapeHtml(plan.inactiveReason || `Not required for ${plan.selectedInspectionPhase || $("inspectionPhase").value}`)}</span>` : `
               <span>${plan.inspectionPhase || "In Process"}</span>
               <span>Sample size ${plan.sampleSize}</span>
-              <span>${formatFrequency(plan)}</span>`}
+              <span>${formatFrequency(plan)}</span>
+              ${dueStatusBadge(plan)}`}
           </div>
         </div>
         ${plan.inspectionMethod ? `
@@ -916,16 +956,16 @@ function renderVariables() {
           </div>` : ""}
         ${isAttribute || isRecordOnly ? "" : `
           <div class="limit-grid">
-            <div><span>LSL</span><strong>${formatNumber(context.lowerSpecLimit)}</strong></div>
+            <div><span>LSL</span><strong>${formatNumber(lowerSpecLimit)}</strong></div>
             <div><span>Target</span><strong>${formatNumber(plan.nominal)}</strong></div>
-            <div><span>USL</span><strong>${formatNumber(context.upperSpecLimit)}</strong></div>
-            <div><span>LCL</span><strong>${formatNumber(context.lowerControlLimit)}</strong></div>
+            <div><span>USL</span><strong>${formatNumber(upperSpecLimit)}</strong></div>
+            <div><span>LCL</span><strong>${formatNumber(lowerControlLimit)}</strong></div>
             <div><span>Center</span><strong>${formatNumber(plan.nominal)}</strong></div>
-            <div><span>UCL</span><strong>${formatNumber(context.upperControlLimit)}</strong></div>
+            <div><span>UCL</span><strong>${formatNumber(upperControlLimit)}</strong></div>
           </div>`}
       </div>
       ${isInactive ? `
-        <div class="inactive-plan-note">This item is part of the full inspection plan, but it is not entered during this inspection type.</div>` : `
+        <div class="inactive-plan-note">${escapeHtml(plan.inactiveReason || "This item is part of the full inspection plan, but it is not entered during this inspection type.")}</div>` : `
         <div class="sample-inputs">
           ${Array.from({ length: plan.sampleSize }, (_, sampleIndex) => `
             <label>
@@ -961,13 +1001,13 @@ function machineCounterDueMessage(set) {
 
   const duePlans = (set?.plans || []).filter(planUsesMachineCounterFrequency);
   const dueThreshold = nextMachineCounterDue(duePlans);
-  const dueText = dueThreshold ? ` Inspection becomes due at ${formatInteger(dueThreshold)} and remains due until submitted.` : "";
+  const dueText = dueThreshold ? ` First due item starts at ${formatInteger(dueThreshold)}.` : "";
 
   if (!machineCounterComplete()) {
-    return `Enter the Machine Counter to show inspection items due at that count.${dueText}`;
+    return `No inspection items are configured for this selection.${dueText}`;
   }
 
-  return `No inspection items are due yet at Machine Counter ${formatInteger(Number(machineCounterValue()))}.${dueText}`;
+  return `No inspection items are configured for this selection at Machine Counter ${formatInteger(Number(machineCounterValue()))}.${dueText}`;
 }
 
 function nextMachineCounterDue(plans) {
@@ -1292,6 +1332,55 @@ function formatFrequency(plan) {
   return `At ${unit}`;
 }
 
+function dueStatusBadge(plan) {
+  const status = dueStatusForPlan(plan);
+  return `<span class="due-status-badge ${status.className}" title="${escapeHtml(status.title)}">${escapeHtml(status.label)}</span>`;
+}
+
+function dueStatusForPlan(plan) {
+  if (plan.frequencyType === "Quantity" && planUsesMachineCounterFrequency(plan)) {
+    const unit = plan.frequencyUnit === "Pieces" ? "parts" : String(plan.frequencyUnit || "parts").toLowerCase();
+    const every = Math.max(Number(plan.frequencyValue || 0), 1);
+    const firstDue = Math.max(Number(plan.firstDueValue || every), 1);
+    if (!machineCounterComplete()) {
+      return {
+        className: "due-status-neutral",
+        label: "Enter counter",
+        title: `Enter Machine Counter to compare against first due at ${formatInteger(firstDue)} ${unit}.`
+      };
+    }
+
+    const counter = Number(machineCounterValue());
+    if (counter < firstDue) {
+      return {
+        className: "due-status-neutral",
+        label: "Not due yet",
+        title: `Machine Counter ${formatInteger(counter)} is before first due at ${formatInteger(firstDue)} ${unit}.`
+      };
+    }
+
+    return {
+      className: "due-status-due",
+      label: "Due now",
+      title: `Machine Counter ${formatInteger(counter)} is at or beyond first due. Frequency is every ${formatInteger(every)} ${unit}.`
+    };
+  }
+
+  if (plan.frequencyType === "Time") {
+    return {
+      className: "due-status-neutral",
+      label: "Timed",
+      title: formatFrequency(plan)
+    };
+  }
+
+  return {
+    className: "due-status-due",
+    label: "Event",
+    title: formatFrequency(plan)
+  };
+}
+
 async function submitMeasurement(event) {
   event.preventDefault();
   const activeInput = document.activeElement?.classList?.contains("measurement-input")
@@ -1493,10 +1582,26 @@ function capMeasurementDecimalPlaces(value) {
 }
 
 function inspectionEntryComplete() {
-  const inputs = [...document.querySelectorAll(".measurement-input:not(:disabled)")];
+  const inputs = completionRequiredInputs();
   return inputs.length > 0 && inputs.every((input) =>
     input.dataset.submitted === "true" &&
     input.value === input.dataset.lastSubmittedValue);
+}
+
+function completionRequiredInputs() {
+  const inputs = [...document.querySelectorAll(".measurement-input:not(:disabled)")];
+  const startedPlans = new Set(inputs
+    .filter((input) => input.value.trim() || input.dataset.submitted === "true")
+    .map((input) => Number(input.dataset.planIndex)));
+  return inputs.filter((input) => {
+    const planIndex = Number(input.dataset.planIndex);
+    const plan = state.selectedPlans[planIndex];
+    return planIsRequiredForCompletion(plan) || startedPlans.has(planIndex);
+  });
+}
+
+function planIsRequiredForCompletion(plan) {
+  return !planUsesMachineCounterFrequency(plan) || planIsDueAtCurrentMachineCounter(plan);
 }
 
 function machineCounterValue() {
@@ -1524,7 +1629,7 @@ function updateInspectionSubmitState() {
     return;
   }
 
-  const inputs = [...document.querySelectorAll(".measurement-input:not(:disabled)")];
+  const inputs = completionRequiredInputs();
   const hasInputs = inputs.length > 0;
   const isComplete = inspectionEntryComplete();
   button.classList.toggle("hidden", !hasInputs);
@@ -2444,7 +2549,8 @@ function measurementHistoryText(entry) {
 }
 
 function measurementEditHistoryText(entry) {
-  return `Edited from ${entry.oldInspectionPhase}: ${formatNumber(entry.oldValue)} to ${entry.newInspectionPhase}: ${formatNumber(entry.newValue)} by ${entry.operatorUserId}.`;
+  const reason = entry.reason ? ` Reason: ${entry.reason}.` : "";
+  return `Edited from ${entry.oldInspectionPhase}: ${formatNumber(entry.oldValue)} to ${entry.newInspectionPhase}: ${formatNumber(entry.newValue)} by ${entry.operatorUserId}.${reason}`;
 }
 
 function phaseCompletionHistoryText(entry) {
@@ -2613,7 +2719,7 @@ async function refreshContextDataWithoutClearingEntries() {
   }
 
   state.contexts = await Promise.all(state.selectedPlans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
-  state.activeLock = state.contexts.find((context) => context.activeLock)?.activeLock || null;
+  state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderMeanSummary();
   renderTrendChoices();
@@ -2835,6 +2941,7 @@ function applyHistoryFilters() {
   if (jobNum && (!summaryJobNum || !summaryJobNum.includes(","))) {
     $("summaryJobNum").value = jobNum;
   }
+  refreshReviewOperationChoices();
   refreshReportOperationChoices();
 }
 
@@ -2905,10 +3012,21 @@ function renderPartReviewControls() {
 }
 
 function renderReportControls() {
+  refreshReviewOperationChoices();
   refreshReportOperationChoices();
   fillSelect($("reportResourceId"), [{ resourceId: "", description: "All machines" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
   fillSelect($("topIssuesResourceId"), [{ resourceId: "", description: "All machines" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
   fillDatalist($("reportCharacteristicOptions"), state.snapshot.characteristics, (characteristic) => characteristic.name);
+}
+
+function refreshReviewOperationChoices() {
+  const partNum = $("partReviewFilter")?.value?.trim() || state.historyFilters.partNum || "";
+  const operations = partNum ? operationsForPart(partNum) : [];
+  fillSelect(
+    $("reviewOperationCode"),
+    [{ processCode: "", operationSeq: "", processDescription: "All operations" }, ...operations],
+    (operation) => operation.processCode ? operationKeyFor(operation) : "",
+    (operation) => operation.processCode ? operationLabelFor(operation) : operation.processDescription);
 }
 
 function refreshReportOperationChoices() {
@@ -2995,7 +3113,7 @@ async function renderPartReview() {
 function renderJobReview(review) {
   $("jobReviewPanel").classList.remove("hidden");
   renderReviewSummary(review.variableSummary || [], $("jobReviewSummary"), "No summary data for this job.");
-  renderReviewMeasurements(review.measurements || [], review.history || []);
+  renderReviewMeasurements(review.measurements || [], review.history || [], ledgerDateRange());
 }
 
 function renderReviewSummary(rows, container, emptyMessage) {
@@ -3038,10 +3156,17 @@ async function saveReviewMeasurement(id, item) {
     return;
   }
 
+  const reason = window.prompt("Enter the reason for changing this inspection entry:");
+  if (!reason || !reason.trim()) {
+    $("reviewMessage").textContent = "A reason is required when changing inspection history.";
+    $("reviewMessage").className = "message error";
+    return;
+  }
+
   try {
     await api(`/review/measurements/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ value, inspectionPhase, editedByUserId: state.user.userName })
+      body: JSON.stringify({ value, inspectionPhase, editedByUserId: state.user.userName, reason: reason.trim() })
     });
     $("reviewMessage").textContent = "Inspection entry updated.";
     $("reviewMessage").className = "message ok";
@@ -3052,20 +3177,22 @@ async function saveReviewMeasurement(id, item) {
   }
 }
 
-function renderReviewMeasurements(measurements, history) {
+function renderReviewMeasurements(measurements, history, dateRange = {}) {
   const container = $("jobReviewMeasurements");
-  const measurementById = new Map((measurements || []).map((measurement) => [String(measurement.id).toLowerCase(), measurement]));
-  const jobDataEntries = (history || []).filter((entry) => entry.entryType === "JobData");
-  const materialEntries = (history || []).filter((entry) => entry.entryType === "Material");
-  const phaseCompletions = (history || []).filter((entry) => entry.entryType === "PhaseComplete");
+  const filteredMeasurements = filterLedgerItemsByDate(measurements || [], dateRange, "timestamp");
+  const filteredHistory = filterLedgerItemsByDate(history || [], dateRange, "timestamp");
+  const measurementById = new Map((filteredMeasurements || []).map((measurement) => [String(measurement.id).toLowerCase(), measurement]));
+  const jobDataEntries = filteredHistory.filter((entry) => entry.entryType === "JobData");
+  const materialEntries = filteredHistory.filter((entry) => entry.entryType === "Material");
+  const phaseCompletions = filteredHistory.filter((entry) => entry.entryType === "PhaseComplete");
   const completedMeasurementIds = new Set(
     phaseCompletions
       .filter((entry) => Array.isArray(entry.measurementIds))
       .flatMap((entry) => entry.measurementIds.map((id) => String(id).toLowerCase()))
   );
-  const uncompletedMeasurements = (measurements || [])
+  const uncompletedMeasurements = filteredMeasurements
     .filter((measurement) => !completedMeasurementIds.has(String(measurement.id).toLowerCase()));
-  const historyRows = (history || [])
+  const historyRows = filteredHistory
     .filter((entry) => {
       if (entry.entryType === "JobData") {
         return !phaseCompletions.some((completion) => reviewJobDataBelongsToCompletion(entry, completion));
@@ -3117,6 +3244,53 @@ function reviewJobDataBelongsToCompletion(jobDataEntry, completionEntry) {
   }
 
   return new Date(jobDataEntry.timestamp) <= new Date(completionEntry.timestamp);
+}
+
+function ledgerDateRange() {
+  return {
+    from: dateTimeLocalValue("reviewFrom"),
+    to: dateTimeLocalValue("reviewTo"),
+    operation: $("reviewOperationCode").value,
+    inspectionPhase: $("reviewInspectionPhase").value
+  };
+}
+
+function filterLedgerItemsByDate(items, dateRange, fieldName) {
+  const from = dateRange.from ? new Date(dateRange.from) : null;
+  const to = dateRange.to ? new Date(dateRange.to) : null;
+  return items.filter((item) => {
+    const date = new Date(item[fieldName]);
+    if (Number.isNaN(date.getTime())) {
+      return true;
+    }
+
+    return (!from || date >= from) && (!to || date <= to) &&
+      ledgerItemMatchesOperation(item, dateRange.operation) &&
+      ledgerItemMatchesPhase(item, dateRange.inspectionPhase);
+  });
+}
+
+function ledgerItemMatchesOperation(item, operationFilter) {
+  if (!operationFilter) {
+    return true;
+  }
+  const operation = operationDisplayForLedgerItem(item);
+  return operation.toLowerCase().includes(operationFilter.toLowerCase());
+}
+
+function ledgerItemMatchesPhase(item, phaseFilter) {
+  if (!phaseFilter) {
+    return true;
+  }
+  const phase = normalizeInspectionPhase(item.inspectionPhase || item.newInspectionPhase || "");
+  return phase.toLowerCase() === normalizeInspectionPhase(phaseFilter).toLowerCase();
+}
+
+function operationDisplayForLedgerItem(item) {
+  if (item.processCode) {
+    return `${item.processCode} ${item.operationSeq || ""}`.trim();
+  }
+  return "";
 }
 
 function reviewTraceabilityEventBelongsToCompletion(traceabilityEntry, completionEntry) {
@@ -3453,6 +3627,7 @@ function renderJobSummary(rows) {
 async function loadTopIssues(event) {
   event?.preventDefault();
   try {
+    const selectedLimit = Number($("topIssuesLimit").value);
     const rows = await api("/history/top-issues", {
       method: "POST",
       body: JSON.stringify({
@@ -3463,7 +3638,7 @@ async function loadTopIssues(event) {
         characteristicName: $("topIssuesCharacteristicName").value.trim() || null,
         from: dateTimeLocalValue("topIssuesFrom"),
         to: dateTimeLocalValue("topIssuesTo"),
-        limit: Number($("topIssuesLimit").value) || 25
+        limit: Number.isFinite(selectedLimit) ? selectedLimit : 25
       })
     });
     const issueGroups = collapseTopIssueRows(rows);
@@ -3645,6 +3820,55 @@ function openJobSummaryCsv() {
     return;
   }
   window.open(`/qa/job-variable-means.csv?jobNums=${encodeURIComponent(jobNums.join(","))}`, "_blank");
+}
+
+async function exportLedgerXlsx() {
+  const partNum = $("partReviewFilter").value.trim();
+  const jobNum = $("reviewJobNum").value.trim();
+  if (!partNum && !jobNum) {
+    $("reviewMessage").textContent = "Enter a part or job before exporting ledger history.";
+    $("reviewMessage").className = "message error";
+    return;
+  }
+
+  try {
+    const response = await fetch("/exports/history-ledger.xlsx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        partNums: partNum ? [partNum] : [],
+        jobNums: jobNum ? [jobNum] : [],
+        from: dateTimeLocalValue("reviewFrom"),
+        to: dateTimeLocalValue("reviewTo"),
+        operation: $("reviewOperationCode").value || null,
+        inspectionPhase: $("reviewInspectionPhase").value || null
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = ledgerExportFileName(partNum, jobNum);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    $("reviewMessage").textContent = "Ledger export created.";
+    $("reviewMessage").className = "message ok";
+  } catch (error) {
+    $("reviewMessage").textContent = readableError(error);
+    $("reviewMessage").className = "message error";
+  }
+}
+
+function ledgerExportFileName(partNum, jobNum) {
+  const scope = jobNum || partNum || "History";
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+  return `SPC-Star Ledger ${scope} ${stamp}.xlsx`;
 }
 
 function parseJobNums() {
@@ -3952,11 +4176,17 @@ function drawMovingRangeDetails(ctx, points, padding, plotWidth, plotHeight) {
 
 function renderMachines() {
   const list = $("machineList");
-  const machines = state.snapshot?.resources || [];
+  const allMachines = state.snapshot?.resources || [];
+  refreshMachineProductGroupFilter();
+  const machines = filteredSetupMachines();
   if (!machines.length) {
     list.className = "setup-list empty";
-    list.textContent = "No machines configured.";
-    newMachine();
+    list.textContent = state.machineProductGroupFilter
+      ? "No machines assigned to this product group yet."
+      : "No machines configured.";
+    if (!allMachines.length) {
+      newMachine();
+    }
     return;
   }
 
@@ -3973,6 +4203,7 @@ function renderMachines() {
         <span>
           <strong>${escapeHtml(resource.resourceId)}</strong>
           <span>${escapeHtml(resource.description || "No description")}</span>
+          <small>${escapeHtml(machineProductGroupText(resource))}</small>
         </span>`;
       row.addEventListener("click", () => selectMachine(resource.resourceId));
       list.appendChild(row);
@@ -3981,6 +4212,7 @@ function renderMachines() {
   if (!state.selectedResourceId || !machines.some((resource) => resource.resourceId.toLowerCase() === state.selectedResourceId.toLowerCase())) {
     selectMachine(machines[0].resourceId);
   }
+  renderMachineFilterMessage(machines.length, allMachines.length);
 }
 
 function selectMachine(resourceId) {
@@ -3997,6 +4229,7 @@ function selectMachine(resourceId) {
   $("setupResourceDescription").value = resource.description || "";
   $("setupDeviceProfile").value = resource.deviceProfile || "keyboard";
   $("setupSerialBaudRate").value = String(resource.serialBaudRate || 9600);
+  renderMachineProductGroupPicker(resource.productGroups || []);
   $("deleteSelectedMachineButton").disabled = false;
   renderMachines();
 }
@@ -4009,6 +4242,7 @@ function newMachine() {
   $("setupResourceDescription").value = "";
   $("setupDeviceProfile").value = "keyboard";
   $("setupSerialBaudRate").value = "9600";
+  renderMachineProductGroupPicker([]);
   $("deleteSelectedMachineButton").disabled = true;
   renderMachinesWithoutSelection();
 }
@@ -4032,7 +4266,8 @@ async function saveMachine(event) {
         description: $("setupResourceDescription").value.trim(),
         originalResourceId: $("setupOriginalResourceId").value.trim() || null,
         deviceProfile: $("setupDeviceProfile").value,
-        serialBaudRate: Number($("setupSerialBaudRate").value)
+        serialBaudRate: Number($("setupSerialBaudRate").value),
+        productGroups: selectedMachineProductGroups()
       })
     });
     await refreshMachines(result.resourceId);
@@ -4069,13 +4304,96 @@ async function refreshMachines(selectedResourceId) {
   renderMachines();
 }
 
+function refreshMachineProductGroupFilter() {
+  const select = $("machineProductGroupFilter");
+  if (!select) return;
+  const previous = state.machineProductGroupFilter || select.value || "";
+  fillSelect(select, ["", ...productGroups()], (group) => group, (group) => group || "All product groups");
+  select.value = [...select.options].some((option) => option.value === previous) ? previous : "";
+  state.machineProductGroupFilter = select.value;
+}
+
+function filteredSetupMachines() {
+  const machines = state.snapshot?.resources || [];
+  if (!state.machineProductGroupFilter) {
+    return machines;
+  }
+
+  return machines.filter((resource) => machineAllowedForProductGroup(resource, state.machineProductGroupFilter));
+}
+
+function renderMachineFilterMessage(visibleCount, totalCount) {
+  const message = $("machineFilterMessage");
+  if (!message) return;
+  message.textContent = state.machineProductGroupFilter
+    ? `${visibleCount} of ${totalCount} machines available for ${state.machineProductGroupFilter}.`
+    : `${totalCount} machines loaded.`;
+  message.className = "message";
+}
+
+function renderMachineProductGroupPicker(selectedGroups = selectedMachineProductGroups()) {
+  const picker = $("setupMachineProductGroups");
+  const groups = productGroups();
+  if (!groups.length) {
+    picker.className = "product-group-picker empty";
+    picker.textContent = "No product groups loaded.";
+    return;
+  }
+
+  const selected = new Set(selectedGroups);
+  picker.className = "product-group-picker";
+  picker.innerHTML = "";
+  groups.forEach((group) => {
+    const option = document.createElement("label");
+    option.className = "product-group-option";
+    option.innerHTML = `
+      <input type="checkbox" value="${escapeHtml(group)}">
+      <span>${escapeHtml(group)}</span>`;
+    option.querySelector("input").checked = selected.has(group);
+    picker.appendChild(option);
+  });
+}
+
+function selectedMachineProductGroups() {
+  return [...$("setupMachineProductGroups").querySelectorAll("input[type='checkbox']:checked")]
+    .map((input) => input.value);
+}
+
+function machineProductGroupText(resource) {
+  return resource.productGroups?.length
+    ? `Allowed: ${resource.productGroups.join(", ")}`
+    : "Allowed: all product groups";
+}
+
 function refreshMachineDropdowns() {
   const currentMachine = $("resourceId").value;
-  fillSelect($("resourceId"), [{ resourceId: "", description: "Select machine" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
-  if (state.snapshot.resources.some((resource) => resource.resourceId === currentMachine)) {
+  const machines = machinesForSelectedPart();
+  fillSelect($("resourceId"), [{ resourceId: "", description: "Select machine" }, ...machines], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
+  if (machines.some((resource) => resource.resourceId === currentMachine)) {
     $("resourceId").value = currentMachine;
+  } else {
+    $("resourceId").value = "";
   }
   renderReportControls();
+}
+
+function machinesForSelectedPart() {
+  const part = findPart($("partNum").value.trim());
+  if (!part) {
+    return state.snapshot?.resources || [];
+  }
+
+  return machinesForProductGroup(part.productGroup || "General");
+}
+
+function machinesForProductGroup(productGroup) {
+  return (state.snapshot?.resources || []).filter((resource) => machineAllowedForProductGroup(resource, productGroup));
+}
+
+function machineAllowedForProductGroup(resource, productGroup) {
+  const group = String(productGroup || "General").trim().toLowerCase();
+  const groups = resource.productGroups || [];
+  return !groups.length || groups.some((item) => String(item || "").trim().toLowerCase() === group);
 }
 
 function renderUsers() {
@@ -4620,8 +4938,7 @@ function loadSelectedPartSetup() {
   $("setupMaterialRows").innerHTML = "";
   (state.snapshot.partMaterialFields || [])
     .filter((field) =>
-      field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
-      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(firstPlan.inspectionPhase))
+      field.partNum.toLowerCase() === set.partNum.toLowerCase())
     .forEach((field) => addSetupMaterialRow(field));
   $("inspectionSetupMessage").textContent = `${set.partNum} loaded for editing.`;
   $("inspectionSetupMessage").className = "message ok";
@@ -5150,7 +5467,7 @@ function exportSetupTemplate() {
 }
 
 function exportMachineTemplate() {
-  window.open("/setup/resources/export.csv", "_blank");
+  window.open("/setup/resources/export.xlsx", "_blank");
 }
 
 function exportUserTemplate() {
@@ -5447,6 +5764,7 @@ $("jobNum").addEventListener("input", () => {
 });
 $("partNum").addEventListener("input", () => {
   refreshOperationChoices({ preserve: false });
+  refreshMachineDropdowns();
   clearSelectedWorkContext();
 });
 $("operationCode").addEventListener("change", clearSelectedWorkContext);
@@ -5456,13 +5774,7 @@ $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("machineCounter").addEventListener("input", () => {
   normalizeMachineCounterInput();
-  window.clearTimeout(machineCounterReloadTimer);
-  machineCounterReloadTimer = window.setTimeout(() => {
-    const { jobNum, resourceId, set } = selectedValues();
-    if (jobNum && resourceId && set && selectedSetNeedsMachineCounter(set)) {
-      loadContext();
-    }
-  }, 200);
+  renderVariables();
   updateInspectionSubmitState();
 });
 $("jobTagsForm").addEventListener("submit", saveJobTags);
@@ -5500,6 +5812,10 @@ $("historyExportTab").addEventListener("click", () => showHistoryView("Export"))
 $("machineSetupForm").addEventListener("submit", saveMachine);
 $("newMachineButton").addEventListener("click", newMachine);
 $("deleteSelectedMachineButton").addEventListener("click", deleteSelectedMachine);
+$("machineProductGroupFilter").addEventListener("change", () => {
+  state.machineProductGroupFilter = $("machineProductGroupFilter").value;
+  renderMachines();
+});
 $("machineImportForm").addEventListener("submit", importMachinesXlsx);
 $("exportMachineTemplateButton").addEventListener("click", exportMachineTemplate);
 $("userSetupForm").addEventListener("submit", saveUser);
@@ -5548,6 +5864,7 @@ $("exportSetupTemplateButton").addEventListener("click", exportSetupTemplate);
 $("partReviewFilter").addEventListener("input", () => {
   syncHistoryFiltersFrom("Ledger");
   applyHistoryFilters();
+  refreshReviewOperationChoices();
 });
 $("reviewJobNum").addEventListener("input", () => {
   syncHistoryFiltersFrom("Ledger");
@@ -5561,6 +5878,11 @@ $("partReviewFilter").addEventListener("keydown", (event) => {
   }
 });
 $("reviewLoadButton").addEventListener("click", loadReview);
+$("ledgerExportXlsxButton").addEventListener("click", exportLedgerXlsx);
+$("reviewOperationCode").addEventListener("change", loadReview);
+$("reviewInspectionPhase").addEventListener("change", loadReview);
+$("reviewFrom").addEventListener("change", loadReview);
+$("reviewTo").addEventListener("change", loadReview);
 $("reviewJobNum").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();

@@ -769,6 +769,16 @@ textarea {
   gap: 18px;
   align-items: start;
 }
+.machine-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: end;
+  margin: 14px 0;
+}
+.machine-filter-bar .message {
+  margin: 0 0 8px;
+}
 .user-list-panel,
 .user-detail-panel {
   border: 1px solid var(--line);
@@ -1579,6 +1589,24 @@ textarea {
   color: #475467;
   font-weight: 850;
   text-transform: uppercase;
+}
+.sample-meta .due-status-badge {
+  font-weight: 900;
+}
+.sample-meta .due-status-due {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+.sample-meta .due-status-neutral {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+.sample-meta .due-status-overdue {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
 }
 .inactive-plan-note {
   background: #eef2f6;

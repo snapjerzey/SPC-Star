@@ -258,6 +258,14 @@ app.MapGet("/setup/resources/export.csv", (SetupManagementService service) =>
         $"spc-star-machines-export-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
 });
 
+app.MapGet("/setup/resources/export.xlsx", (SetupManagementService service) =>
+{
+    return Results.File(
+        service.ExportResourcesXlsx(),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        $"spc-star-machines-import-{DateTime.UtcNow:yyyyMMdd-HHmm}.xlsx");
+});
+
 app.MapGet("/setup/roles", (SetupManagementService service) =>
 {
     return Results.Ok(service.GetRoles());
@@ -743,6 +751,15 @@ app.MapPost("/exports/drift-alerts.csv", (AlertHistoryExportRequest request, His
 app.MapPost("/exports/material-changes.csv", (MaterialHistoryExportRequest request, HistoryExportService service) =>
 {
     return Results.Text(service.ExportMaterialChangeHistoryCsv(request), "text/csv");
+});
+
+app.MapPost("/exports/history-ledger.xlsx", (LedgerHistoryExportRequest request, HistoryExportService service) =>
+{
+    var bytes = service.ExportLedgerXlsx(request);
+    return Results.File(
+        bytes,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        $"SPC-Star-History-Ledger-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.xlsx");
 });
 
 app.MapPost("/history/top-issues", (HistoryIssueSummaryRequest request, HistoryIssueSummaryService service) =>

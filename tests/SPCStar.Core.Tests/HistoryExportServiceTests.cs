@@ -1,6 +1,7 @@
 using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
 using SPCStar.Core.Services;
+using System.IO.Compression;
 using Xunit;
 
 namespace SPCStar.Core.Tests;
@@ -42,6 +43,32 @@ public sealed class HistoryExportServiceTests
 
         Assert.Contains("MaterialPartNum,OldLotNum,NewLotNum", csv);
         Assert.Contains("RESIN-A,LOT1,LOT2", csv);
+    }
+
+    [Fact]
+    public void ExportLedgerXlsx_WritesWorkbookPackage()
+    {
+        var repository = RepositoryWithHistory();
+        var service = new HistoryExportService(repository);
+
+        var bytes = service.ExportLedgerXlsx(new LedgerHistoryExportRequest(["P100"], ["J100"], null, null));
+
+        Assert.True(bytes.Length > 0);
+        Assert.Equal((byte)'P', bytes[0]);
+        Assert.Equal((byte)'K', bytes[1]);
+        using var archive = new ZipArchive(new MemoryStream(bytes));
+        var workbookXml = ReadZipEntry(archive, "xl/workbook.xml");
+        Assert.Contains("Summary", workbookXml);
+        Assert.Contains("Ledger", workbookXml);
+        Assert.Contains("Lockouts", workbookXml);
+        Assert.Contains("Edit Audit", workbookXml);
+    }
+
+    private static string ReadZipEntry(ZipArchive archive, string path)
+    {
+        var entry = archive.GetEntry(path) ?? throw new InvalidOperationException($"Missing workbook entry {path}.");
+        using var reader = new StreamReader(entry.Open());
+        return reader.ReadToEnd();
     }
 
     private static InMemorySpcRepository RepositoryWithHistory()

@@ -91,7 +91,6 @@ public sealed class InspectionMeasurementService(
 
         repository.Measurements.Add(measurement);
         CreateAlertsForViolations(measurement, entry);
-        TryRecordPhaseCompletion(measurement);
         return ServiceResult<InspectionMeasurement>.Ok(measurement);
     }
 
@@ -108,7 +107,7 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Ok(measurement);
         }
 
-        if (HasActiveAlertForMeasurement(measurement.Id))
+        if (HasActiveAlertForMeasurement(measurement.Id) && !ClearDraftAlertsForMeasurement(measurement.Id))
         {
             return ServiceResult<InspectionMeasurement>.Fail("This sample has an active lock. Clear the lock before changing the measurement.");
         }
@@ -126,7 +125,6 @@ public sealed class InspectionMeasurementService(
         measurement.SubmittedAt = entry.SubmittedAt ?? entry.Timestamp;
         measurement.SyncedAt = DateTimeOffset.UtcNow;
         CreateAlertsForViolations(measurement, entry);
-        TryRecordPhaseCompletion(measurement);
         return ServiceResult<InspectionMeasurement>.Ok(measurement);
     }
 
@@ -217,8 +215,8 @@ public sealed class InspectionMeasurementService(
         var partNum = request.PartNum.Trim();
         var processCode = request.ProcessCode.Trim();
         var resourceId = request.ResourceId.Trim();
-        var plans = DuePlansForCompletion(PlansForPhase(partNum, processCode, request.OperationSeq, phase), request.MachineCounter);
-        if (plans.Count == 0)
+        var phasePlans = PlansForPhase(partNum, processCode, request.OperationSeq, phase);
+        if (phasePlans.Count == 0)
         {
             return null;
         }
@@ -262,6 +260,12 @@ public sealed class InspectionMeasurementService(
                 item.Timestamp > (previousCompletionAt ?? new DateTimeOffset(latestMeasurement.Timestamp.Date, latestMeasurement.Timestamp.Offset)) &&
                 item.Timestamp <= latestMeasurement.Timestamp)
             .ToArray();
+        var plans = PlansRequiredOrEnteredForCompletion(phasePlans, candidates, request.MachineCounter);
+        if (plans.Count == 0)
+        {
+            return null;
+        }
+
         var completionMeasurementIds = BuildLatestCompletionSet(plans, candidates);
         if (completionMeasurementIds.Count == 0)
         {
@@ -370,6 +374,27 @@ public sealed class InspectionMeasurementService(
         var every = Math.Max(plan.Frequency.Value, 1);
         var firstDue = Math.Max(plan.Frequency.FirstDueValue ?? every, 1);
         return machineCounter.Value >= firstDue;
+    }
+
+    private static IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansRequiredOrEnteredForCompletion(
+        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
+        IReadOnlyList<InspectionMeasurement> candidates,
+        long? machineCounter)
+    {
+        return plans
+            .Where(item =>
+                IsPlanDueAtMachineCounter(item.Plan, machineCounter) ||
+                HasEnoughMeasurementsForPlan(item, candidates))
+            .ToArray();
+    }
+
+    private static bool HasEnoughMeasurementsForPlan(
+        (InspectionPlan Plan, Characteristic Characteristic) plan,
+        IReadOnlyList<InspectionMeasurement> candidates)
+    {
+        var required = Math.Max(plan.Plan.SampleSize, 1);
+        return candidates.Count(measurement =>
+            measurement.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase)) >= required;
     }
 
     private IReadOnlyList<Guid> MeasurementIdsForCompletionWindow(
@@ -552,6 +577,36 @@ public sealed class InspectionMeasurementService(
                 alert => alert.Id,
                 (_, _) => true)
             .Any();
+    }
+
+    private bool ClearDraftAlertsForMeasurement(Guid measurementId)
+    {
+        var alertIds = repository.RuleViolations
+            .Where(violation => violation.MeasurementIds.Contains(measurementId))
+            .Select(violation => violation.AlertId)
+            .ToHashSet();
+        if (alertIds.Count == 0)
+        {
+            return true;
+        }
+
+        var affectedMeasurementIds = repository.RuleViolations
+            .Where(violation => alertIds.Contains(violation.AlertId))
+            .SelectMany(violation => violation.MeasurementIds)
+            .ToHashSet();
+        if (affectedMeasurementIds.Any(IsCompletedMeasurement))
+        {
+            return false;
+        }
+
+        repository.RuleViolations.RemoveAll(violation => alertIds.Contains(violation.AlertId));
+        repository.Alerts.RemoveAll(alert => alertIds.Contains(alert.Id) && alert.Status == AlertStatus.Active);
+        return true;
+    }
+
+    private bool IsCompletedMeasurement(Guid measurementId)
+    {
+        return repository.JobPhaseCompletions.Any(completion => completion.MeasurementIds.Contains(measurementId));
     }
 
     private ProcessAlert? FindActiveLock(InspectionMeasurementEntry entry)

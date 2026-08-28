@@ -276,10 +276,14 @@ public sealed class SetupImportService(ISpcRepository repository)
                     ? "MaterialChange"
                     : phase.Equals("Setup", StringComparison.OrdinalIgnoreCase)
                         ? "ToolChange"
-                        : "StartOfJob";
+                        : phase.Equals("Spool", StringComparison.OrdinalIgnoreCase) ||
+                            phase.Equals("End of Spool", StringComparison.OrdinalIgnoreCase)
+                            ? "Spool"
+                            : "StartOfJob";
         }
 
         NormalizeTimingFields(row);
+        NormalizeRuleSet(row);
     }
 
     private static Dictionary<string, string> NormalizeRow(Dictionary<string, string> row)
@@ -369,6 +373,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         normalized["AlertRuleSet"] = string.IsNullOrWhiteSpace(normalized.GetValueOrDefault("AlertRuleSet")) ? "GlobalDefault" : normalized["AlertRuleSet"].Trim();
+        NormalizeRuleSet(normalized);
         ApplySpecDefaults(normalized);
         NormalizeTimingFields(normalized);
 
@@ -407,6 +412,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         NormalizeLeadingInt(row, "SampleSize");
         NormalizeLeadingInt(row, "FrequencyValue");
         NormalizeLeadingInt(row, "FirstDueValue");
+        NormalizeFrequencyType(row);
 
         var unit = row.GetValueOrDefault("FrequencyUnit");
         if (string.IsNullOrWhiteSpace(unit))
@@ -415,7 +421,9 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         var clean = unit.Trim().Replace(" ", "", StringComparison.OrdinalIgnoreCase).Replace("/", "", StringComparison.OrdinalIgnoreCase);
-        if (clean.Contains("pc", StringComparison.OrdinalIgnoreCase) || clean.Contains("piece", StringComparison.OrdinalIgnoreCase))
+        if (clean.Contains("pc", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("piece", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("part", StringComparison.OrdinalIgnoreCase))
         {
             row["FrequencyUnit"] = "Pieces";
         }
@@ -434,15 +442,80 @@ public sealed class SetupImportService(ISpcRepository repository)
         else if (clean.Contains("material", StringComparison.OrdinalIgnoreCase) || clean.Contains("coil", StringComparison.OrdinalIgnoreCase))
         {
             row["FrequencyUnit"] = "MaterialChange";
+            row["FrequencyType"] = "Event";
         }
         else if (clean.Contains("tool", StringComparison.OrdinalIgnoreCase) || clean.Contains("setup", StringComparison.OrdinalIgnoreCase))
         {
             row["FrequencyUnit"] = "ToolChange";
+            row["FrequencyType"] = "Event";
+        }
+        else if (clean.Contains("start", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "StartOfJob";
+            row["FrequencyType"] = "Event";
         }
         else if (clean.Contains("shift", StringComparison.OrdinalIgnoreCase))
         {
             row["FrequencyUnit"] = "Shift";
             row["FrequencyType"] = "Event";
+        }
+        else if (clean.Contains("spool", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyUnit"] = "Spool";
+            row["FrequencyType"] = "Event";
+        }
+    }
+
+    private static void NormalizeFrequencyType(Dictionary<string, string> row)
+    {
+        var type = row.GetValueOrDefault("FrequencyType");
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return;
+        }
+
+        var clean = type.Trim().Replace(" ", "", StringComparison.OrdinalIgnoreCase).Replace("/", "", StringComparison.OrdinalIgnoreCase);
+        if (clean.Equals("every", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("quantity", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("piece", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("part", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("box", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyType"] = "Quantity";
+        }
+        else if (clean.Contains("time", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("minute", StringComparison.OrdinalIgnoreCase) ||
+            clean.Equals("min", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("hour", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyType"] = "Time";
+        }
+        else if (clean.Contains("event", StringComparison.OrdinalIgnoreCase) ||
+            clean.StartsWith("at", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("change", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("start", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("setup", StringComparison.OrdinalIgnoreCase) ||
+            clean.Contains("shift", StringComparison.OrdinalIgnoreCase))
+        {
+            row["FrequencyType"] = "Event";
+        }
+    }
+
+    private static void NormalizeRuleSet(Dictionary<string, string> row)
+    {
+        var ruleSet = row.GetValueOrDefault("AlertRuleSet");
+        if (string.IsNullOrWhiteSpace(ruleSet))
+        {
+            row["AlertRuleSet"] = "GlobalDefault";
+            return;
+        }
+
+        var clean = ruleSet.Trim().Replace(" ", "", StringComparison.OrdinalIgnoreCase);
+        if (clean.Equals("Default", StringComparison.OrdinalIgnoreCase) ||
+            clean.Equals("Global", StringComparison.OrdinalIgnoreCase) ||
+            clean.Equals("SystemDefault", StringComparison.OrdinalIgnoreCase))
+        {
+            row["AlertRuleSet"] = "GlobalDefault";
         }
     }
 
@@ -588,7 +661,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             }
 
             var duplicateKey = DuplicateKey(row, rowType);
-            if (!seenRows.Add(duplicateKey))
+            if (rowType != "Material" && !seenRows.Add(duplicateKey))
             {
                 errors.Add($"Row {rowNumber}: Duplicate {rowType} definition in import.");
             }
@@ -599,6 +672,8 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static void ValidateCharacteristicRow(Dictionary<string, string> row, int rowNumber, string rowType, List<string> errors)
     {
+        ApplySpecDefaults(row);
+
         foreach (var field in CharacteristicRequiredFields)
         {
             Required(row, field, rowNumber, errors);
@@ -946,7 +1021,6 @@ public sealed class SetupImportService(ISpcRepository repository)
         RemoveJobDataFieldsForMaterial(part, materialName);
         var field = repository.PartMaterialFields.FirstOrDefault(item =>
             item.PartId == part.Id &&
-            item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
             item.MaterialName.Equals(materialName, StringComparison.OrdinalIgnoreCase));
         if (field is null)
         {
@@ -964,7 +1038,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         field.MaterialPartNum = row["MaterialPartNum"].Trim();
         field.MaterialDescription = row["MaterialDescription"].Trim();
         field.IsRequired = OptionalBool(row, "IsRequired", true);
-        field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartMaterialFields.Count(item => item.PartId == part.Id && item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)));
+        field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartMaterialFields.Count(item => item.PartId == part.Id));
     }
 
     private void RemoveJobDataFieldsForMaterial(Part part, string materialName)
@@ -1002,7 +1076,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             FrequencyType.Time => unit is FrequencyUnit.Minutes or FrequencyUnit.Hours,
             FrequencyType.Quantity => unit is FrequencyUnit.Pieces or FrequencyUnit.Box,
-            FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart or FrequencyUnit.Shift,
+            FrequencyType.Event => unit is FrequencyUnit.StartOfJob or FrequencyUnit.MaterialChange or FrequencyUnit.ToolChange or FrequencyUnit.Restart or FrequencyUnit.Shift or FrequencyUnit.Spool,
             _ => false
         };
     }
@@ -1131,8 +1205,7 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static bool HasAnySpecValue(Dictionary<string, string> row)
     {
-        return !string.IsNullOrWhiteSpace(row.GetValueOrDefault("Nominal")) ||
-            !string.IsNullOrWhiteSpace(row.GetValueOrDefault("LSL")) ||
+        return !string.IsNullOrWhiteSpace(row.GetValueOrDefault("LSL")) ||
             !string.IsNullOrWhiteSpace(row.GetValueOrDefault("USL"));
     }
 

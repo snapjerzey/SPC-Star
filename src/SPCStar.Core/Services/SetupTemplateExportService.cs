@@ -250,7 +250,7 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
         var row = Headers.ToDictionary(header => header, _ => "", StringComparer.OrdinalIgnoreCase);
         row["Part Number"] = part.PartNum;
         row["Part Description"] = part.Description;
-        row["Product Group"] = string.IsNullOrWhiteSpace(part.ProductGroup) ? "General" : part.ProductGroup;
+        row["Product Group"] = string.IsNullOrWhiteSpace(part.ProductGroup) ? "General Production" : part.ProductGroup;
         row["Blank Code"] = part.BlankCode;
         row["Hole Size"] = part.HoleSize;
         return row;

@@ -378,7 +378,7 @@ public sealed class SetupManagementServiceTests
 
         Assert.True(result.Succeeded);
         Assert.Single(repository.Parts);
-        Assert.Equal("General", repository.Parts.Single().ProductGroup);
+        Assert.Equal("General Production", repository.Parts.Single().ProductGroup);
         Assert.Equal("61046", repository.Parts.Single().BlankCode);
         Assert.Equal(".0145", repository.Parts.Single().HoleSize);
         Assert.Single(repository.Operations);

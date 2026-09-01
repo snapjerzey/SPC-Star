@@ -95,6 +95,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         "Ethicon Everpoint - Needles",
         "Ethicon Taperpoint - Drilled",
         "Ethicon Taperpoint - Needles",
+        "General Production",
         "Schneider"
     ];
 
@@ -946,9 +947,15 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
         var inspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
         var originalName = string.IsNullOrWhiteSpace(request.OriginalMaterialName) ? request.MaterialName.Trim() : request.OriginalMaterialName.Trim();
-        var field = repository.PartMaterialFields.FirstOrDefault(item =>
-            item.PartId == part.Id &&
-            item.MaterialName.Equals(originalName, StringComparison.OrdinalIgnoreCase));
+        var materialPartNum = request.MaterialPartNum.Trim();
+        var matchingMaterialNameFields = repository.PartMaterialFields
+            .Where(item =>
+                item.PartId == part.Id &&
+                item.MaterialName.Equals(originalName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var field = matchingMaterialNameFields.FirstOrDefault(item =>
+            item.MaterialPartNum.Equals(materialPartNum, StringComparison.OrdinalIgnoreCase)) ??
+            (matchingMaterialNameFields.Length == 1 ? matchingMaterialNameFields[0] : null);
         if (field is null)
         {
             field = new PartMaterialField
@@ -956,7 +963,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 PartId = part.Id,
                 InspectionPhase = inspectionPhase,
                 MaterialName = request.MaterialName.Trim(),
-                MaterialPartNum = request.MaterialPartNum.Trim(),
+                MaterialPartNum = materialPartNum,
                 MaterialDescription = request.MaterialDescription.Trim(),
                 IsRequired = request.IsRequired,
                 DisplayOrder = request.DisplayOrder
@@ -966,7 +973,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         else
         {
             field.MaterialName = request.MaterialName.Trim();
-            field.MaterialPartNum = request.MaterialPartNum.Trim();
+            field.MaterialPartNum = materialPartNum;
             field.MaterialDescription = request.MaterialDescription.Trim();
             field.IsRequired = request.IsRequired;
             field.DisplayOrder = request.DisplayOrder;
@@ -1429,12 +1436,13 @@ public sealed class SetupManagementService(ISpcRepository repository)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return "General";
+            return "General Production";
         }
 
         var trimmed = value.Trim();
         return trimmed switch
         {
+            "General" => "General Production",
             "Ethicon Cutting Edge - Driller" => "Ethicon Cutting Edge - Drilled",
             "Ethicon Taperpoint - Driller" => "Ethicon Taperpoint - Drilled",
             "Ethicon Ethalloy Cardio" => "Ethicon Ethalloy Cardio - Needles",

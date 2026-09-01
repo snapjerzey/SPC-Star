@@ -49,7 +49,7 @@ public static class SeedData
             return;
         }
 
-        var part = new Part { PartNum = "P100", Description = "Sample molded widget", ProductGroup = "General" };
+        var part = new Part { PartNum = "P100", Description = "Sample molded widget", ProductGroup = "General Production" };
         var process = new ManufacturingProcess { ProcessCode = "MOLD", Description = "Injection molding" };
         var operation = new Operation { PartId = part.Id, ProcessId = process.Id, OperationSeq = 10 };
         var diameter = new Characteristic
@@ -202,12 +202,13 @@ public static class SeedData
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return "General";
+            return "General Production";
         }
 
         var trimmed = value.Trim();
         return trimmed switch
         {
+            "General" => "General Production",
             "Ethicon Cutting Edge - Driller" => "Ethicon Cutting Edge - Drilled",
             "Ethicon Taperpoint - Driller" => "Ethicon Taperpoint - Drilled",
             "Ethicon Ethalloy Cardio" => "Ethicon Ethalloy Cardio - Needles",

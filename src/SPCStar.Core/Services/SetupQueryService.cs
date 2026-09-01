@@ -119,6 +119,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
         "Ethicon Everpoint - Needles",
         "Ethicon Taperpoint - Drilled",
         "Ethicon Taperpoint - Needles",
+        "General Production",
         "Schneider"
     ];
 
@@ -297,12 +298,13 @@ public sealed class SetupQueryService(ISpcRepository repository)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return "General";
+            return "General Production";
         }
 
         var trimmed = value.Trim();
         return trimmed switch
         {
+            "General" => "General Production",
             "Ethicon Cutting Edge - Driller" => "Ethicon Cutting Edge - Drilled",
             "Ethicon Taperpoint - Driller" => "Ethicon Taperpoint - Drilled",
             "Ethicon Ethalloy Cardio" => "Ethicon Ethalloy Cardio - Needles",

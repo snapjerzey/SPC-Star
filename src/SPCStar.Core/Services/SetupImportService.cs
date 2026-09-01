@@ -5,6 +5,8 @@ namespace SPCStar.Core.Services;
 
 public sealed class SetupImportService(ISpcRepository repository)
 {
+    private readonly HashSet<string> materialNamesSeenInCurrentImport = new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly string[] BaseRequiredFields =
     [
         "PartNum",
@@ -23,6 +25,7 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     public ServiceResult ImportCsv(string csv)
     {
+        materialNamesSeenInCurrentImport.Clear();
         var normalizedRows = CsvSupport.ReadRows(csv).Select(NormalizeRow).ToArray();
         var rows = normalizedRows.SelectMany(ExpandPhaseMatrixRow).ToArray();
         var errors = ValidateRows(rows);
@@ -1019,9 +1022,18 @@ public sealed class SetupImportService(ISpcRepository repository)
         var inspectionPhase = NormalizeInspectionPhase(row.GetValueOrDefault("InspectionPhase"));
         var materialName = row["MaterialName"].Trim();
         RemoveJobDataFieldsForMaterial(part, materialName);
-        var field = repository.PartMaterialFields.FirstOrDefault(item =>
-            item.PartId == part.Id &&
-            item.MaterialName.Equals(materialName, StringComparison.OrdinalIgnoreCase));
+        var materialPartNum = row["MaterialPartNum"].Trim();
+        var materialNameImportKey = $"{part.Id}|{inspectionPhase}|{materialName}";
+        var alreadySawSameMaterialNameThisImport = !materialNamesSeenInCurrentImport.Add(materialNameImportKey);
+        var matchingMaterialNameFields = repository.PartMaterialFields
+            .Where(item =>
+                item.PartId == part.Id &&
+                item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
+                item.MaterialName.Equals(materialName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var field = matchingMaterialNameFields.FirstOrDefault(item =>
+            item.MaterialPartNum.Equals(materialPartNum, StringComparison.OrdinalIgnoreCase)) ??
+            (!alreadySawSameMaterialNameThisImport && matchingMaterialNameFields.Length == 1 ? matchingMaterialNameFields[0] : null);
         if (field is null)
         {
             field = new PartMaterialField
@@ -1029,13 +1041,13 @@ public sealed class SetupImportService(ISpcRepository repository)
                 PartId = part.Id,
                 InspectionPhase = inspectionPhase,
                 MaterialName = materialName,
-                MaterialPartNum = row["MaterialPartNum"].Trim(),
+                MaterialPartNum = materialPartNum,
                 MaterialDescription = row["MaterialDescription"].Trim()
             };
             repository.PartMaterialFields.Add(field);
         }
 
-        field.MaterialPartNum = row["MaterialPartNum"].Trim();
+        field.MaterialPartNum = materialPartNum;
         field.MaterialDescription = row["MaterialDescription"].Trim();
         field.IsRequired = OptionalBool(row, "IsRequired", true);
         field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartMaterialFields.Count(item => item.PartId == part.Id));
@@ -1304,7 +1316,16 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static bool IsValidRowType(string rowType) => rowType is "Part" or "Variable" or "Attribute" or "JobData" or "Material";
 
-    private static string CleanProductGroup(string? value) => string.IsNullOrWhiteSpace(value) ? "General" : value.Trim();
+    private static string CleanProductGroup(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "General Production";
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Equals("General", StringComparison.OrdinalIgnoreCase) ? "General Production" : trimmed;
+    }
 }
 
 internal sealed record PhaseMatrixDefinition(string CanonicalName, IReadOnlyList<string> Prefixes);

@@ -23,7 +23,7 @@ public sealed class Part
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string PartNum { get; set; }
     public required string Description { get; set; }
-    public string ProductGroup { get; set; } = "General";
+    public string ProductGroup { get; set; } = "General Production";
     public string BlankCode { get; set; } = "";
     public string HoleSize { get; set; } = "";
 }

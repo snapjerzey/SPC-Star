@@ -663,7 +663,11 @@ public sealed class InspectionMeasurementService(
         var productGroup = repository.Parts
             .FirstOrDefault(part => part.PartNum.Equals(partNum.Trim(), StringComparison.OrdinalIgnoreCase))
             ?.ProductGroup;
-        productGroup = string.IsNullOrWhiteSpace(productGroup) ? "General" : productGroup.Trim();
+        productGroup = string.IsNullOrWhiteSpace(productGroup) ? "General Production" : productGroup.Trim();
+        if (productGroup.Equals("General", StringComparison.OrdinalIgnoreCase))
+        {
+            productGroup = "General Production";
+        }
         return user.ProductGroups.Any(group => group.Equals(productGroup, StringComparison.OrdinalIgnoreCase));
     }
 

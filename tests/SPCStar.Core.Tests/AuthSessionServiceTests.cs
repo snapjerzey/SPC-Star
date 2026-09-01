@@ -27,7 +27,7 @@ public sealed class AuthSessionServiceTests
         Assert.Contains("CanManageUsers", result.Value.Permissions);
         Assert.DoesNotContain("CanImportSetupData", result.Value.Permissions);
         Assert.DoesNotContain("CanUseGodMode", result.Value.Permissions);
-        Assert.Contains("General", result.Value.ProductGroups);
+        Assert.Contains("General Production", result.Value.ProductGroups);
         Assert.False(string.IsNullOrWhiteSpace(result.Value.SessionToken));
         Assert.True(service.ValidateSession("qa1", result.Value.SessionToken));
         Assert.False(service.ValidateSession("god1", result.Value.SessionToken));
@@ -88,7 +88,7 @@ public sealed class AuthSessionServiceTests
         Assert.Contains("LineTech", result.Value!.Roles);
         Assert.Contains("CanEnterInspections", result.Value.Permissions);
         Assert.Contains("CanOverrideDriftLock", result.Value.Permissions);
-        Assert.Contains("General", result.Value.ProductGroups);
+        Assert.Contains("General Production", result.Value.ProductGroups);
     }
 
     [Fact]

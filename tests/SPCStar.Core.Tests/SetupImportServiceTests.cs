@@ -209,6 +209,25 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_KeepsMultipleMaterialPartNumbersWithSameMaterialName()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "Material,P200,Needle,Needles,Startup,,,Raw Material,51481,Material Part # 51481,,,,,,,,,,,,,,,,true,2",
+            "Material,P200,Needle,Needles,Startup,,,Raw Material,51482,Material Part # 51482,,,,,,,,,,,,,,,,true,3",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(2, repository.PartMaterialFields.Count);
+        Assert.Contains(repository.PartMaterialFields, field => field.MaterialName == "Raw Material" && field.MaterialPartNum == "51481");
+        Assert.Contains(repository.PartMaterialFields, field => field.MaterialName == "Raw Material" && field.MaterialPartNum == "51482");
+    }
+
+    [Fact]
     public void ImportCsv_EndCountJobDataIsOptionalEvenWhenTemplateMarksRequired()
     {
         var repository = new InMemorySpcRepository();

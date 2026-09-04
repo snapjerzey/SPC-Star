@@ -746,6 +746,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
             {
                 CharacteristicId = characteristic.Id,
                 InspectionPhase = inspectionPhase,
+                Nominal = request.CharacteristicType == CharacteristicType.Variable ? request.Nominal : null,
+                Lsl = request.CharacteristicType == CharacteristicType.Variable ? request.Lsl : null,
+                Usl = request.CharacteristicType == CharacteristicType.Variable ? request.Usl : null,
                 SampleSize = request.SampleSize,
                 DisplayOrder = request.DisplayOrder.GetValueOrDefault(NextInspectionDisplayOrder(operation.Id, inspectionPhase)),
                 AlertRuleSet = request.AlertRuleSet.Trim()
@@ -754,6 +757,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         plan.InspectionPhase = inspectionPhase;
+        plan.Nominal = request.CharacteristicType == CharacteristicType.Variable ? request.Nominal : null;
+        plan.Lsl = request.CharacteristicType == CharacteristicType.Variable ? request.Lsl : null;
+        plan.Usl = request.CharacteristicType == CharacteristicType.Variable ? request.Usl : null;
         plan.SampleSize = request.SampleSize;
         plan.DisplayOrder = request.DisplayOrder.GetValueOrDefault(plan.DisplayOrder);
         plan.AlertRuleSet = request.AlertRuleSet.Trim();

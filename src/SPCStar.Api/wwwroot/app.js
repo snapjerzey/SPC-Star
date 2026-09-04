@@ -1268,11 +1268,8 @@ function renderMeanSummary() {
 }
 
 function hasSpecLimits(plan, context) {
-  return isFiniteValue(plan?.lsl) ||
-    isFiniteValue(plan?.usl) ||
-    isFiniteValue(plan?.nominal) ||
-    isFiniteValue(context?.lowerSpecLimit) ||
-    isFiniteValue(context?.upperSpecLimit);
+  return (isFiniteValue(context?.lowerSpecLimit) && isFiniteValue(context?.upperSpecLimit)) ||
+    (isFiniteValue(plan?.lsl) && isFiniteValue(plan?.usl));
 }
 
 function isFiniteValue(value) {

@@ -42,6 +42,32 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_UsesSelectedPhasePlanSpecs_ForSpecLimitValidation()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var characteristic = repository.Characteristics.Single(item => item.Name == "Diameter");
+        repository.InspectionPlans.Add(new InspectionPlan
+        {
+            CharacteristicId = characteristic.Id,
+            InspectionPhase = "Setup",
+            Nominal = 2m,
+            Lsl = 1m,
+            Usl = 3m,
+            SampleSize = 1,
+            DisplayOrder = 1,
+            AlertRuleSet = "SpecLimitOnly",
+            Frequency = new InspectionFrequency { Type = FrequencyType.Event, Value = 1, Unit = FrequencyUnit.StartOfJob }
+        });
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(2m) with { InspectionPhase = "Setup" });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Empty(repository.Alerts);
+        Assert.Empty(repository.RuleViolations);
+    }
+
+    [Fact]
     public void EnterMeasurement_AllowsDraftSampleCorrection_WhenAlertWasCreatedBeforeCompletion()
     {
         var repository = RepositoryWithSecurityAndLimits();

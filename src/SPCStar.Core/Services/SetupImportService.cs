@@ -976,6 +976,9 @@ public sealed class SetupImportService(ISpcRepository repository)
             {
                 CharacteristicId = characteristic.Id,
                 InspectionPhase = inspectionPhase,
+                Nominal = PlanNominal(row, characteristic),
+                Lsl = PlanLsl(row, characteristic),
+                Usl = PlanUsl(row, characteristic),
                 SampleSize = int.Parse(row["SampleSize"]),
                 DisplayOrder = OptionalInt(row, "DisplayOrder", repository.InspectionPlans.Count(item => item.CharacteristicId == characteristic.Id)),
                 AlertRuleSet = row["AlertRuleSet"].Trim(),
@@ -985,10 +988,60 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         plan.InspectionPhase = inspectionPhase;
+        plan.Nominal = PlanNominal(row, characteristic);
+        plan.Lsl = PlanLsl(row, characteristic);
+        plan.Usl = PlanUsl(row, characteristic);
         plan.SampleSize = int.Parse(row["SampleSize"]);
         plan.DisplayOrder = OptionalInt(row, "DisplayOrder", plan.DisplayOrder);
         plan.AlertRuleSet = row["AlertRuleSet"].Trim();
         plan.Frequency = BuildFrequency(row);
+    }
+
+    private static decimal? PlanNominal(IReadOnlyDictionary<string, string> row, Characteristic characteristic)
+    {
+        if (characteristic.Type != CharacteristicType.Variable || !TryPlanSpec(row, out var nominal, out _, out _))
+        {
+            return null;
+        }
+
+        return nominal;
+    }
+
+    private static decimal? PlanLsl(IReadOnlyDictionary<string, string> row, Characteristic characteristic)
+    {
+        if (characteristic.Type != CharacteristicType.Variable || !TryPlanSpec(row, out _, out var lsl, out _))
+        {
+            return null;
+        }
+
+        return lsl;
+    }
+
+    private static decimal? PlanUsl(IReadOnlyDictionary<string, string> row, Characteristic characteristic)
+    {
+        if (characteristic.Type != CharacteristicType.Variable || !TryPlanSpec(row, out _, out _, out var usl))
+        {
+            return null;
+        }
+
+        return usl;
+    }
+
+    private static bool TryPlanSpec(IReadOnlyDictionary<string, string> row, out decimal nominal, out decimal lsl, out decimal usl)
+    {
+        nominal = 0m;
+        lsl = 0m;
+        usl = 0m;
+        if (!decimal.TryParse(row.GetValueOrDefault("LSL"), out lsl) ||
+            !decimal.TryParse(row.GetValueOrDefault("USL"), out usl))
+        {
+            return false;
+        }
+
+        nominal = decimal.TryParse(row.GetValueOrDefault("Nominal"), out var parsedNominal)
+            ? parsedNominal
+            : (lsl + usl) / 2m;
+        return true;
     }
 
     private void UpsertJobDataField(Dictionary<string, string> row, Part part)

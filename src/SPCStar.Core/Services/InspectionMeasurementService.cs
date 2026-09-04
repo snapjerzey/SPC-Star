@@ -27,6 +27,8 @@ public sealed record CompleteInspectionRequest(
     string InspectionPhase,
     long? MachineCounter);
 
+internal sealed record ResolvedSpecLimit(decimal Nominal, decimal Lsl, decimal Usl);
+
 public sealed class InspectionMeasurementService(
     ISpcRepository repository,
     WesternElectricRuleService westernElectricRuleService)
@@ -680,7 +682,7 @@ public sealed class InspectionMeasurementService(
             return;
         }
 
-        var plan = FindInspectionPlan(characteristic);
+        var plan = FindInspectionPlan(characteristic, entry.InspectionPhase);
         var ruleSet = ResolveRuleSet(plan);
         if (plan is null || string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase))
         {
@@ -1007,11 +1009,13 @@ public sealed class InspectionMeasurementService(
         return limits.Lcl < limits.CenterLine && limits.CenterLine < limits.Ucl;
     }
 
-    private InspectionPlan? FindInspectionPlan(Characteristic? characteristic)
+    private InspectionPlan? FindInspectionPlan(Characteristic? characteristic, string? inspectionPhase)
     {
         return characteristic is null
             ? null
-            : repository.InspectionPlans.FirstOrDefault(plan => plan.CharacteristicId == characteristic.Id);
+            : repository.InspectionPlans.FirstOrDefault(plan =>
+                plan.CharacteristicId == characteristic.Id &&
+                NormalizeInspectionPhase(plan.InspectionPhase).Equals(NormalizeInspectionPhase(inspectionPhase), StringComparison.OrdinalIgnoreCase));
     }
 
     private string ResolveRuleSet(InspectionPlan? plan)
@@ -1053,7 +1057,7 @@ public sealed class InspectionMeasurementService(
         repository.RuleViolations.Add(ruleViolation);
     }
 
-    private SpecLimit? FindSpecLimit(InspectionMeasurement measurement)
+    private ResolvedSpecLimit? FindSpecLimit(InspectionMeasurement measurement)
     {
         var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase));
         var process = repository.Processes.FirstOrDefault(item => item.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase));
@@ -1075,9 +1079,22 @@ public sealed class InspectionMeasurementService(
             item.OperationId == operation.Id &&
             item.Name.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase));
 
-        return characteristic is null
-            ? null
-            : repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
+        if (characteristic is null)
+        {
+            return null;
+        }
+
+        var inspectionPhase = NormalizeInspectionPhase(measurement.InspectionPhase);
+        var plan = repository.InspectionPlans.FirstOrDefault(item =>
+            item.CharacteristicId == characteristic.Id &&
+            NormalizeInspectionPhase(item.InspectionPhase).Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase));
+        if (plan?.Lsl is not null && plan.Usl is not null)
+        {
+            return new ResolvedSpecLimit(plan.Nominal ?? (plan.Lsl.Value + plan.Usl.Value) / 2m, plan.Lsl.Value, plan.Usl.Value);
+        }
+
+        var spec = repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
+        return spec is null ? null : new ResolvedSpecLimit(spec.Nominal, spec.Lsl, spec.Usl);
     }
 
     private Characteristic? FindCharacteristic(InspectionMeasurementEntry entry)
@@ -1222,7 +1239,7 @@ public sealed class InspectionMeasurementService(
         return $"{alert.CharacteristicName} is locked for job {alert.JobNum} on {alert.ResourceId} due to {RuleText(alert.RuleTriggered)} at {alert.LockedAt:MM/dd/yyyy HH:mm}.{detail} Clear that lock before entering more {alert.CharacteristicName} measurements.";
     }
 
-    private static string SpecLimitDetail(InspectionMeasurement measurement, SpecLimit spec)
+    private static string SpecLimitDetail(InspectionMeasurement measurement, ResolvedSpecLimit spec)
     {
         if (measurement.Value > spec.Usl)
         {

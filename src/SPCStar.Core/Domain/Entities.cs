@@ -67,6 +67,9 @@ public sealed class InspectionPlan
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid CharacteristicId { get; set; }
     public string InspectionPhase { get; set; } = "In Process";
+    public decimal? Nominal { get; set; }
+    public decimal? Lsl { get; set; }
+    public decimal? Usl { get; set; }
     public int SampleSize { get; set; }
     public int DisplayOrder { get; set; }
     public required string AlertRuleSet { get; set; }

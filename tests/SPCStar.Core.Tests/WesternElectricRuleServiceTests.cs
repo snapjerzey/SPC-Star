@@ -29,36 +29,36 @@ public sealed class WesternElectricRuleServiceTests
     }
 
     [Fact]
-    public void Detect_FindsTwoOfThreeNearControlLimit()
+    public void Detect_DoesNotHardLockTwoOfThreeNearControlLimit()
     {
         var service = new WesternElectricRuleService();
         var points = Points([10m, 12.2m, 12.4m]);
 
         var result = service.Detect(points, centerLine: 10m, lcl: 7m, ucl: 13m);
 
-        Assert.Contains(result, violation => violation.RuleTriggered == RuleTriggered.TwoOfThreeNearControlLimit);
+        Assert.DoesNotContain(result, violation => violation.RuleTriggered == RuleTriggered.TwoOfThreeNearControlLimit);
     }
 
     [Fact]
-    public void Detect_FindsEightConsecutiveOnSameSide()
+    public void Detect_DoesNotHardLockEightConsecutiveOnSameSide()
     {
         var service = new WesternElectricRuleService();
         var points = Points([10.1m, 10.2m, 10.3m, 10.1m, 10.2m, 10.4m, 10.2m, 10.1m]);
 
         var result = service.Detect(points, centerLine: 10m, lcl: 7m, ucl: 13m);
 
-        Assert.Contains(result, violation => violation.RuleTriggered == RuleTriggered.EightConsecutiveOneSideOfCenterline);
+        Assert.DoesNotContain(result, violation => violation.RuleTriggered == RuleTriggered.EightConsecutiveOneSideOfCenterline);
     }
 
     [Fact]
-    public void Detect_FindsFourOfFiveApproachingLimit()
+    public void Detect_DoesNotHardLockFourOfFiveApproachingLimit()
     {
         var service = new WesternElectricRuleService();
         var points = Points([10m, 11.2m, 11.4m, 11.1m, 10.9m, 11.3m]);
 
         var result = service.Detect(points, centerLine: 10m, lcl: 7m, ucl: 13m);
 
-        Assert.Contains(result, violation => violation.RuleTriggered == RuleTriggered.FourOfFiveApproachingLimit);
+        Assert.DoesNotContain(result, violation => violation.RuleTriggered == RuleTriggered.FourOfFiveApproachingLimit);
     }
 
     private static IReadOnlyList<WesternElectricPoint> Points(IReadOnlyList<decimal> values)

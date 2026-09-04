@@ -31,9 +31,6 @@ public sealed class WesternElectricRuleService
 
         var violations = new List<WesternElectricViolation>();
         DetectOnePointBeyondLimits(ordered, lcl, ucl, violations);
-        DetectTwoOfThreeNearLimit(ordered, centerLine, sigma, violations);
-        DetectFourOfFiveApproachingLimit(ordered, centerLine, sigma, violations);
-        DetectEightConsecutiveSameSide(ordered, centerLine, violations);
         return violations;
     }
 

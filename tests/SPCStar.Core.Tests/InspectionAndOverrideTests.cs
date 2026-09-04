@@ -155,6 +155,7 @@ public sealed class InspectionAndOverrideTests
     {
         var repository = RepositoryWithSecurityAndLimits();
         SetRuleSet(repository, "Diameter", "NelsonRules");
+        AddCompletedMeasurement(repository, "Diameter", 5m, -10);
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         foreach (var (value, index) in new[] { 5.01m, 5.02m, 5.03m, 5.04m, 5.05m, 5.06m }.Select((value, index) => (value, index)))
@@ -177,6 +178,7 @@ public sealed class InspectionAndOverrideTests
         limit.CenterLine = 5m;
         limit.Lcl = 4.7m;
         limit.Ucl = 5.3m;
+        AddCompletedMeasurement(repository, "Diameter", 5m, -10);
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         service.EnterMeasurement(Entry(5.2m));
@@ -190,6 +192,31 @@ public sealed class InspectionAndOverrideTests
         Assert.Contains("5.24", alert.Detail);
     }
 
+    [Fact]
+    public void EnterMeasurement_DoesNotCreateMultiPointDriftAlert_DuringFirstInspectionRun()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var limit = repository.ControlLimits.First(item =>
+            item.PartNum == "P100" &&
+            item.ProcessCode == "MOLD" &&
+            item.OperationSeq == 10 &&
+            item.CharacteristicName == "Diameter");
+        limit.CenterLine = 5m;
+        limit.Lcl = 4.7m;
+        limit.Ucl = 5.3m;
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var first = service.EnterMeasurement(Entry(5.24m));
+        var second = service.EnterMeasurement(Entry(5.24m, 1));
+        var third = service.EnterMeasurement(Entry(5.24m, 2));
+
+        Assert.True(first.Succeeded, string.Join(" | ", first.Errors));
+        Assert.True(second.Succeeded, string.Join(" | ", second.Errors));
+        Assert.True(third.Succeeded, string.Join(" | ", third.Errors));
+        Assert.Empty(repository.Alerts);
+        Assert.Empty(repository.RuleViolations);
+    }
+
     [Theory]
     [InlineData("Cusum", RuleTriggered.CusumShift, new[] { "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30", "5.30" })]
     [InlineData("Ewma", RuleTriggered.EwmaShift, new[] { "5.80", "5.80", "5.80" })]
@@ -200,6 +227,7 @@ public sealed class InspectionAndOverrideTests
     {
         var repository = RepositoryWithSecurityAndLimits();
         SetRuleSet(repository, "Diameter", ruleSet);
+        AddCompletedMeasurement(repository, "Diameter", 5m, -10);
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         foreach (var (text, index) in values.Select((text, index) => (text, index)))
@@ -616,6 +644,22 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void Override_AllowsArchonSystemManagerWithoutGodBypassReason()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var service = OverrideService(repository);
+
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "Setup issue", "Corrected setup", null, DateTimeOffset.UtcNow));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(AlertStatus.Overridden, alert.Status);
+        Assert.Equal("System Manager", result.Value!.OverrideRole);
+        Assert.Equal("Unspecified", result.Value.CauseCategory);
+        Assert.Null(result.Value.WhyStandardProcessWasBypassed);
+    }
+
+    [Fact]
     public void Override_RejectsInvalidCredentials()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -757,6 +801,25 @@ public sealed class InspectionAndOverrideTests
             CompletionNumber = 1,
             CompletedByUserId = "operator1",
             CompletedAt = DateTimeOffset.Parse("2026-01-01T00:02:00Z")
+        });
+    }
+
+    private static void AddCompletedMeasurement(InMemorySpcRepository repository, string characteristicName, decimal value, int minutes)
+    {
+        var measurement = SavedMeasurement(characteristicName, value, minutes);
+        repository.Measurements.Add(measurement);
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = measurement.JobNum,
+            PartNum = measurement.PartNum,
+            ProcessCode = measurement.ProcessCode,
+            OperationSeq = measurement.OperationSeq,
+            ResourceId = measurement.ResourceId,
+            InspectionPhase = measurement.InspectionPhase,
+            CompletionNumber = 1,
+            CompletedByUserId = measurement.OperatorUserId,
+            CompletedAt = measurement.Timestamp.AddMinutes(1),
+            MeasurementIds = { measurement.Id }
         });
     }
 

@@ -40,7 +40,9 @@ public sealed class AlertOverrideService(
             return ServiceResult<AlertOverride>.Fail("Alert is not active.");
         }
 
-        if (!permissionService.UserHasPermission(request.OverrideUserName, PermissionNames.CanOverrideDriftLock))
+        var hasOverrideAccess = permissionService.UserHasPermission(request.OverrideUserName, PermissionNames.CanOverrideDriftLock) ||
+            IsArchonSystemManager(request.OverrideUserName);
+        if (!hasOverrideAccess)
         {
             return ServiceResult<AlertOverride>.Fail("User is not authorized to override drift locks.");
         }
@@ -50,8 +52,9 @@ public sealed class AlertOverrideService(
             return ServiceResult<AlertOverride>.Fail("Invalid override credentials.");
         }
 
-        var overrideRole = permissionService.HighestOverrideRole(request.OverrideUserName);
-        var isGodOverride = overrideRole == RoleNames.GOD;
+        var isArchonOverride = IsArchonSystemManager(request.OverrideUserName);
+        var overrideRole = isArchonOverride ? "System Manager" : permissionService.HighestOverrideRole(request.OverrideUserName);
+        var isGodOverride = IsGodBypassUser(request.OverrideUserName);
         if (!IsSupportedCauseCategory(request.CauseCategory))
         {
             return ServiceResult<AlertOverride>.Fail("CauseCategory is not supported.");
@@ -115,6 +118,16 @@ public sealed class AlertOverrideService(
     private static string? CleanOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static bool IsArchonSystemManager(string userName)
+    {
+        return userName.Equals("Archon", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsGodBypassUser(string userName)
+    {
+        return userName.Equals("god1", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeCauseCategory(string? value)

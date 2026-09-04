@@ -722,8 +722,11 @@ public sealed class InspectionMeasurementService(
             .Select(item => new WesternElectricPoint(item.Id, item.Value, item.Timestamp))
             .ToArray();
 
+        var hasCompletedHistory = HasCompletedHistoryForDrift(measurement);
         var violations = DetectRuleViolations(ruleSet, points, limits.CenterLine, limits.Lcl, limits.Ucl);
-        foreach (var violation in violations.Where(violation => violation.MeasurementIds.Contains(measurement.Id)))
+        foreach (var violation in violations.Where(violation =>
+            violation.MeasurementIds.Contains(measurement.Id) &&
+            (violation.RuleTriggered == RuleTriggered.OnePointBeyondControlLimit || hasCompletedHistory)))
         {
             var alertExists = repository.RuleViolations.Any(existing =>
                 existing.RuleTriggered == violation.RuleTriggered &&
@@ -756,6 +759,27 @@ public sealed class InspectionMeasurementService(
             ruleViolation.MeasurementIds.AddRange(violation.MeasurementIds);
             repository.RuleViolations.Add(ruleViolation);
         }
+    }
+
+    private bool HasCompletedHistoryForDrift(InspectionMeasurement measurement)
+    {
+        var phase = NormalizeInspectionPhase(measurement.InspectionPhase);
+        var completedMeasurementIds = repository.JobPhaseCompletions
+            .Where(completion =>
+                completion.JobNum.Equals(measurement.JobNum, StringComparison.OrdinalIgnoreCase) &&
+                completion.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                completion.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                completion.OperationSeq == measurement.OperationSeq &&
+                completion.ResourceId.Equals(measurement.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(completion.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase) &&
+                completion.CompletedAt < measurement.Timestamp)
+            .SelectMany(completion => completion.MeasurementIds)
+            .ToHashSet();
+
+        return completedMeasurementIds.Count > 0 &&
+            repository.Measurements.Any(item =>
+                completedMeasurementIds.Contains(item.Id) &&
+                item.CharacteristicName.Equals(measurement.CharacteristicName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string DriftViolationDetail(WesternElectricViolation violation, IReadOnlyList<WesternElectricPoint> points, ControlLimitSet limits)

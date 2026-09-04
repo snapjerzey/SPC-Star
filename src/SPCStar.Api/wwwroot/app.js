@@ -2761,7 +2761,11 @@ function resetLockForm() {
 }
 
 function canCurrentUserOverride() {
-  return state.user?.permissions?.includes("CanOverrideDriftLock") === true;
+  return state.user?.permissions?.includes("CanOverrideDriftLock") === true || isArchonSystemManager(state.user);
+}
+
+function isArchonSystemManager(user) {
+  return (user?.userName || "").toLowerCase() === "archon";
 }
 
 function hasPermission(permission) {

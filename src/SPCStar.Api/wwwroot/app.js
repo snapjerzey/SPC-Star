@@ -38,6 +38,7 @@ const MAX_MEASUREMENT_DECIMAL_PLACES = 5;
 const SESSION_STORAGE_KEY = "spc-star-session";
 const WORK_CONTEXT_STORAGE_KEY = "spc-star-work-context";
 const INSPECTION_DRAFT_STORAGE_KEY = "spc-star-inspection-drafts";
+const PENDING_COMPLETIONS_STORAGE_KEY = "spc-star-pending-completions";
 
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -47,7 +48,9 @@ async function api(path, options = {}) {
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `${response.status} ${response.statusText}`);
+    const error = new Error(text || `${response.status} ${response.statusText}`);
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) {
     return null;
@@ -365,6 +368,7 @@ async function startAuthenticatedSession(options = {}) {
     await loadSetupAdmin();
   }
   await loadSnapshot({ restoreWorkContext: true });
+  await syncPendingCompletions({ silent: true });
 }
 
 function saveCurrentSession() {
@@ -442,6 +446,65 @@ function readSavedInspectionDrafts() {
 
 function clearSavedInspectionDrafts() {
   window.localStorage.removeItem(INSPECTION_DRAFT_STORAGE_KEY);
+}
+
+function readPendingCompletions() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PENDING_COMPLETIONS_STORAGE_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingCompletions(items) {
+  window.localStorage.setItem(PENDING_COMPLETIONS_STORAGE_KEY, JSON.stringify(items));
+}
+
+function queuePendingCompletion(item) {
+  const pending = readPendingCompletions();
+  pending.push(item);
+  savePendingCompletions(pending);
+  setStatus($("syncStatus"), `${pending.length} pending sync`, "warn");
+}
+
+function isLikelyConnectionError(error) {
+  return !navigator.onLine ||
+    error instanceof TypeError ||
+    /failed to fetch|networkerror|load failed|temporarily unavailable/i.test(error?.message || "");
+}
+
+async function syncPendingCompletions(options = {}) {
+  const pending = readPendingCompletions();
+  if (!pending.length) {
+    return;
+  }
+
+  const remaining = [];
+  let synced = 0;
+  for (const item of pending) {
+    try {
+      await submitCompletionPayload(item);
+      synced += 1;
+    } catch (error) {
+      remaining.push(item);
+      if (isLikelyConnectionError(error)) {
+        remaining.push(...pending.slice(pending.indexOf(item) + 1));
+        break;
+      }
+    }
+  }
+
+  savePendingCompletions(remaining);
+  if (remaining.length) {
+    setStatus($("syncStatus"), `${remaining.length} pending sync`, "warn");
+  } else {
+    setStatus($("syncStatus"), "Online", "ok");
+  }
+
+  if (!options.silent && synced > 0) {
+    showEntryMessage(`${synced} pending inspection${synced === 1 ? "" : "s"} synced.`, "ok");
+  }
 }
 
 function clearLoginFields() {
@@ -1654,6 +1717,18 @@ async function resetCompletedInspectionEntry() {
   try {
     await saveCompletedInspection();
   } catch (error) {
+    if (isLikelyConnectionError(error)) {
+      queuePendingCompletion(buildCompletionPayload());
+      state.preserveInspectionEntriesUntil = 0;
+      clearMeasurementDraftsForCurrentInspection();
+      clearVisibleMeasurementInputs();
+      clearPerInspectionJobDataInputs();
+      $("machineCounter").value = "";
+      updateInspectionSubmitState();
+      showEntryMessage("Server is unavailable. Inspection saved locally for sync; continue with the next inspection.", "warn");
+      return;
+    }
+
     showEntryMessage("Inspection could not be submitted. " + readableError(error), "error");
     return;
   }
@@ -1679,23 +1754,57 @@ async function saveCompletedInspection() {
     throw new Error(phaseGate.message);
   }
 
-  await savePerInspectionJobDataForCompletion(jobNum, resourceId, set);
+  await submitCompletionPayload(buildCompletionPayload());
+}
 
-  await api("/inspections/complete", {
-    method: "POST",
-    body: JSON.stringify({
+function buildCompletionPayload() {
+  const { jobNum, resourceId, set } = selectedValues();
+  if (!set) {
+    throw new Error("No inspection plan is loaded.");
+  }
+
+  const tags = perInspectionJobDataPayload();
+  return {
+    id: newClientRecordId(),
+    queuedAt: new Date().toISOString(),
+    jobTagsRequest: tags && {
+      jobNum,
+      partNum: set.partNum,
+      resourceId,
+      operatorUserId: state.user.userName,
+      tags,
+      updatedAt: new Date().toISOString()
+    },
+    completionRequest: {
       jobNum,
       partNum: set.partNum,
       processCode: set.processCode,
       operationSeq: set.operationSeq,
       resourceId,
       inspectionPhase: set.activePhase || set.inspectionPhase || $("inspectionPhase").value,
-      machineCounter: Number(machineCounterValue())
-    })
+      machineCounter: Number(machineCounterValue()),
+      measurementClientRecordIds: completionRequiredInputs()
+        .map((input) => input.dataset.clientRecordId)
+        .filter(Boolean)
+    }
+  };
+}
+
+async function submitCompletionPayload(payload) {
+  if (payload.jobTagsRequest) {
+    await api(`/jobs/${encodeURIComponent(payload.jobTagsRequest.jobNum)}/tags`, {
+      method: "POST",
+      body: JSON.stringify(payload.jobTagsRequest)
+    });
+  }
+
+  await api("/inspections/complete", {
+    method: "POST",
+    body: JSON.stringify(payload.completionRequest)
   });
 }
 
-async function savePerInspectionJobDataForCompletion(jobNum, resourceId, set) {
+function perInspectionJobDataPayload() {
   const tags = {};
   document.querySelectorAll(".job-tag-input[data-per-inspection='true']").forEach((input) => {
     const value = input.value.trim();
@@ -1705,6 +1814,15 @@ async function savePerInspectionJobDataForCompletion(jobNum, resourceId, set) {
   });
 
   if (!Object.keys(tags).length) {
+    return null;
+  }
+
+  return tags;
+}
+
+async function savePerInspectionJobDataForCompletion(jobNum, resourceId, set) {
+  const tags = perInspectionJobDataPayload();
+  if (!tags) {
     return;
   }
 
@@ -5752,7 +5870,10 @@ function ruleLabel(rule) {
   }[rule] || rule;
 }
 
-window.addEventListener("online", () => setStatus($("syncStatus"), "Online", "ok"));
+window.addEventListener("online", async () => {
+  setStatus($("syncStatus"), "Online", "ok");
+  await syncPendingCompletions();
+});
 window.addEventListener("offline", () => setStatus($("syncStatus"), "Offline", "warn"));
 $("loginForm").addEventListener("submit", login);
 $("showChangePasswordButton").addEventListener("click", toggleChangePassword);

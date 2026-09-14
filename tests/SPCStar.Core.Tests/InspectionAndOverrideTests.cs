@@ -358,6 +358,40 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void CompleteInspection_UsesMeasurementClientRecordIds_WhenQueuedCompletionSyncsLater()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        var firstMeasurements = new[]
+        {
+            SavedMeasurementWithClientId("Diameter", 10m, 1, "first-diameter"),
+            SavedMeasurementWithClientId("Length", 42m, 2, "first-length"),
+            SavedMeasurementWithClientId("Weight", 18m, 3, "first-weight")
+        };
+        var secondMeasurements = new[]
+        {
+            SavedMeasurementWithClientId("Diameter", 10m, 11, "second-diameter"),
+            SavedMeasurementWithClientId("Length", 42m, 12, "second-length"),
+            SavedMeasurementWithClientId("Weight", 18m, 13, "second-weight")
+        };
+        repository.Measurements.AddRange(firstMeasurements);
+        repository.Measurements.AddRange(secondMeasurements);
+        var firstCompletion = AddCompletion(repository, firstMeasurements, 1);
+        var secondCompletion = AddCompletion(repository, secondMeasurements, 2);
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(11111) with
+        {
+            MeasurementClientRecordIds = ["first-diameter", "first-length", "first-weight"]
+        });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(firstCompletion.Id, result.Value!.Id);
+        Assert.Equal(11111, firstCompletion.MachineCounter);
+        Assert.Null(secondCompletion.MachineCounter);
+    }
+
+    [Fact]
     public void CompleteInspection_RequiresSelectedPhasePlansRegardlessOfMachineCounter()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -827,6 +861,27 @@ public sealed class InspectionAndOverrideTests
         });
     }
 
+    private static JobPhaseCompletion AddCompletion(InMemorySpcRepository repository, IReadOnlyList<InspectionMeasurement> measurements, int completionNumber)
+    {
+        var latestMeasurement = measurements.OrderByDescending(item => item.Timestamp).First();
+        var completion = new JobPhaseCompletion
+        {
+            JobNum = latestMeasurement.JobNum,
+            PartNum = latestMeasurement.PartNum,
+            ProcessCode = latestMeasurement.ProcessCode,
+            OperationSeq = latestMeasurement.OperationSeq,
+            ResourceId = latestMeasurement.ResourceId,
+            InspectionPhase = latestMeasurement.InspectionPhase,
+            CompletionNumber = completionNumber,
+            CompletedByUserId = latestMeasurement.OperatorUserId,
+            OperatorShift = latestMeasurement.OperatorShift,
+            CompletedAt = latestMeasurement.Timestamp
+        };
+        completion.MeasurementIds.AddRange(measurements.Select(item => item.Id));
+        repository.JobPhaseCompletions.Add(completion);
+        return completion;
+    }
+
     private static void AddCompletedMeasurement(InMemorySpcRepository repository, string characteristicName, decimal value, int minutes)
     {
         var measurement = SavedMeasurement(characteristicName, value, minutes);
@@ -863,6 +918,14 @@ public sealed class InspectionAndOverrideTests
             OperatorShift = "1st Half Days",
             SubmittedAt = DateTimeOffset.Parse("2026-01-01T00:00:00Z").AddMinutes(minutes)
         };
+    }
+
+    private static InspectionMeasurement SavedMeasurementWithClientId(string characteristicName, decimal value, int minutes, string clientRecordId)
+    {
+        var measurement = SavedMeasurement(characteristicName, value, minutes);
+        measurement.DeviceId = "browser-dev";
+        measurement.ClientRecordId = clientRecordId;
+        return measurement;
     }
 
     private static void AddAttributeCharacteristic(InMemorySpcRepository repository)

@@ -5,7 +5,8 @@ namespace SPCStar.Core.Services;
 public sealed record OfflineSyncRequest(
     IReadOnlyList<InspectionMeasurementEntry>? Measurements,
     IReadOnlyList<MaterialChangeLogEntry>? MaterialChanges,
-    IReadOnlyList<AlertOverrideRequest>? AlertOverrides);
+    IReadOnlyList<AlertOverrideRequest>? AlertOverrides,
+    IReadOnlyList<CompleteInspectionRequest>? CompletedInspections = null);
 
 public sealed record OfflineSyncAcceptedRecord(
     string EntityType,
@@ -69,6 +70,17 @@ public sealed class OfflineSyncService(
                 rejected);
         }
 
+        foreach (var completedInspection in request.CompletedInspections ?? [])
+        {
+            AddResult(
+                "CompletedInspection",
+                null,
+                null,
+                inspectionMeasurementService.CompleteInspection(completedInspection),
+                accepted,
+                rejected);
+        }
+
         return new OfflineSyncResponse(accepted, rejected);
     }
 
@@ -96,6 +108,7 @@ public sealed class OfflineSyncService(
             InspectionMeasurement measurement => measurement.Id,
             MaterialChangeLog materialChange => materialChange.Id,
             AlertOverride alertOverride => alertOverride.Id,
+            JobPhaseCompletion completion => completion.Id,
             _ => throw new InvalidOperationException($"Unsupported synced entity type {typeof(T).Name}.")
         };
     }

@@ -25,7 +25,8 @@ public sealed record CompleteInspectionRequest(
     int OperationSeq,
     string ResourceId,
     string InspectionPhase,
-    long? MachineCounter);
+    long? MachineCounter,
+    IReadOnlyList<string>? MeasurementClientRecordIds = null);
 
 internal sealed record ResolvedSpecLimit(decimal Nominal, decimal Lsl, decimal Usl);
 
@@ -188,7 +189,7 @@ public sealed class InspectionMeasurementService(
         }
 
         var phase = NormalizeInspectionPhase(request.InspectionPhase);
-        var completion = repository.JobPhaseCompletions
+        var completion = FindCompletionForClientRecords(request, phase) ?? repository.JobPhaseCompletions
             .Where(item =>
                 item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
                 item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
@@ -200,7 +201,7 @@ public sealed class InspectionMeasurementService(
             .FirstOrDefault();
         if (completion is null)
         {
-            completion = TryCreateCompletionFromSavedMeasurements(request, phase);
+            completion = TryCreateCompletionFromClientRecords(request, phase) ?? TryCreateCompletionFromSavedMeasurements(request, phase);
             if (completion is null)
             {
                 return ServiceResult<JobPhaseCompletion>.Fail("No completed inspection was found for this job, part, machine, operation, and phase.");
@@ -209,6 +210,107 @@ public sealed class InspectionMeasurementService(
 
         completion.MachineCounter = request.MachineCounter!.Value;
         return ServiceResult<JobPhaseCompletion>.Ok(completion);
+    }
+
+    private JobPhaseCompletion? FindCompletionForClientRecords(CompleteInspectionRequest request, string phase)
+    {
+        var measurementIds = MeasurementIdsForClientRecords(request, phase);
+        if (measurementIds.Count == 0)
+        {
+            return null;
+        }
+
+        return repository.JobPhaseCompletions
+            .Where(item =>
+                item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == request.OperationSeq &&
+                item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase) &&
+                item.MeasurementIds.Any(measurementIds.Contains))
+            .OrderByDescending(item => item.MeasurementIds.Count(measurementIds.Contains))
+            .ThenByDescending(item => item.CompletedAt)
+            .FirstOrDefault();
+    }
+
+    private JobPhaseCompletion? TryCreateCompletionFromClientRecords(CompleteInspectionRequest request, string phase)
+    {
+        var measurementIds = MeasurementIdsForClientRecords(request, phase);
+        if (measurementIds.Count == 0)
+        {
+            return null;
+        }
+
+        var measurements = repository.Measurements
+            .Where(item => measurementIds.Contains(item.Id))
+            .OrderBy(item => item.Timestamp)
+            .ToArray();
+        if (measurements.Length == 0)
+        {
+            return null;
+        }
+
+        var phasePlans = PlansForPhase(request.PartNum.Trim(), request.ProcessCode.Trim(), request.OperationSeq, phase);
+        var plans = PlansRequiredOrEnteredForCompletion(phasePlans, measurements, request.MachineCounter);
+        var completionMeasurementIds = BuildLatestCompletionSet(plans, measurements);
+        if (completionMeasurementIds.Count == 0)
+        {
+            return null;
+        }
+
+        var latestMeasurement = measurements.OrderByDescending(item => item.Timestamp).First();
+        var completion = new JobPhaseCompletion
+        {
+            JobNum = request.JobNum.Trim(),
+            PartNum = request.PartNum.Trim(),
+            ProcessCode = request.ProcessCode.Trim(),
+            OperationSeq = request.OperationSeq,
+            ResourceId = request.ResourceId.Trim(),
+            InspectionPhase = phase,
+            CompletionNumber = repository.JobPhaseCompletions
+                .Where(item =>
+                    item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.OperationSeq == request.OperationSeq &&
+                    item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+                .Select(item => Math.Max(item.CompletionNumber, 1))
+                .DefaultIfEmpty(0)
+                .Max() + 1,
+            CompletedByUserId = latestMeasurement.OperatorUserId,
+            OperatorShift = latestMeasurement.OperatorShift,
+            CompletedAt = latestMeasurement.Timestamp
+        };
+        completion.MeasurementIds.AddRange(completionMeasurementIds);
+        repository.JobPhaseCompletions.Add(completion);
+        return completion;
+    }
+
+    private HashSet<Guid> MeasurementIdsForClientRecords(CompleteInspectionRequest request, string phase)
+    {
+        var clientRecordIds = (request.MeasurementClientRecordIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (clientRecordIds.Count == 0)
+        {
+            return [];
+        }
+
+        return repository.Measurements
+            .Where(item =>
+                item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == request.OperationSeq &&
+                item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase) &&
+                item.ClientRecordId is not null &&
+                clientRecordIds.Contains(item.ClientRecordId))
+            .Select(item => item.Id)
+            .ToHashSet();
     }
 
     private JobPhaseCompletion? TryCreateCompletionFromSavedMeasurements(CompleteInspectionRequest request, string phase)

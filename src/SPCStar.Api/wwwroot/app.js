@@ -244,8 +244,8 @@ async function requiredPhaseGate(jobNum, resourceId, set) {
   }
 
   const history = await jobHistoryForPhaseGate(jobNum);
-  const hasSetup = !required.setup || phaseCompletionExists(history, set, resourceId, "Setup");
-  const hasStartup = !required.startup || phaseCompletionExists(history, set, resourceId, "Startup");
+  const hasSetup = !required.setup || phaseCompletionExists(history, set, "Setup");
+  const hasStartup = !required.startup || phaseCompletionExists(history, set, "Startup");
   if (phase === "Startup" && !hasSetup) {
     return {
       allowed: false,
@@ -280,11 +280,10 @@ async function jobHistoryForPhaseGate(jobNum) {
   return api(`/jobs/${encodeURIComponent(jobNum)}/history`);
 }
 
-function phaseCompletionExists(history, set, resourceId, phase) {
+function phaseCompletionExists(history, set, phase) {
   return (history || []).some((entry) =>
     entry.entryType === "PhaseComplete" &&
     String(entry.partNum || "").toLowerCase() === String(set.partNum || "").toLowerCase() &&
-    String(entry.resourceId || "").toLowerCase() === String(resourceId || "").toLowerCase() &&
     String(entry.processCode || "").toLowerCase() === String(set.processCode || "").toLowerCase() &&
     Number(entry.operationSeq || 0) === Number(set.operationSeq || 0) &&
     normalizeInspectionPhase(entry.inspectionPhase) === normalizeInspectionPhase(phase));

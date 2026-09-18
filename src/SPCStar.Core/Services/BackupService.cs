@@ -172,8 +172,10 @@ public sealed class BackupService(
         repository.Jobs.Clear();
         repository.Measurements.Clear();
         repository.MeasurementEditAudits.Clear();
+        repository.MachineCounterEditAudits.Clear();
         repository.JobNotes.Clear();
         repository.JobPhaseCompletions.Clear();
+        repository.FailedInspections.Clear();
         repository.JobTags.Clear();
         repository.Alerts.Clear();
         repository.RuleViolations.Clear();

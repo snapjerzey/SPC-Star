@@ -144,6 +144,25 @@ public sealed class JobPhaseCompletion
     public List<Guid> MeasurementIds { get; } = [];
 }
 
+public sealed class FailedInspection
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string JobNum { get; set; }
+    public required string PartNum { get; set; }
+    public required string ProcessCode { get; set; }
+    public int OperationSeq { get; set; }
+    public required string ResourceId { get; set; }
+    public required string InspectionPhase { get; set; }
+    public int FailureNumber { get; set; } = 1;
+    public required string FailedByUserId { get; set; }
+    public string OperatorShift { get; set; } = "";
+    public DateTimeOffset FailedAt { get; set; }
+    public long? MachineCounter { get; set; }
+    public string Reason { get; set; } = "";
+    public Guid? AlertId { get; set; }
+    public List<Guid> MeasurementIds { get; } = [];
+}
+
 public sealed class JobTag
 {
     public Guid Id { get; init; } = Guid.NewGuid();
@@ -228,6 +247,23 @@ public sealed class MeasurementEditAudit
     public decimal NewValue { get; set; }
     public required string OldInspectionPhase { get; set; }
     public required string NewInspectionPhase { get; set; }
+    public required string EditedByUserId { get; set; }
+    public DateTimeOffset EditedAt { get; set; }
+    public string Reason { get; set; } = "";
+}
+
+public sealed class MachineCounterEditAudit
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public Guid CompletionId { get; set; }
+    public required string JobNum { get; set; }
+    public required string PartNum { get; set; }
+    public required string ResourceId { get; set; }
+    public required string ProcessCode { get; set; }
+    public int OperationSeq { get; set; }
+    public required string InspectionPhase { get; set; }
+    public long? OldMachineCounter { get; set; }
+    public long? NewMachineCounter { get; set; }
     public required string EditedByUserId { get; set; }
     public DateTimeOffset EditedAt { get; set; }
     public string Reason { get; set; } = "";

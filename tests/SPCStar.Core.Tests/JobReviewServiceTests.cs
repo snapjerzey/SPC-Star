@@ -51,6 +51,48 @@ public sealed class JobReviewServiceTests
     }
 
     [Fact]
+    public void UpdateMachineCounter_ChangesCounterAndAudits()
+    {
+        var repository = RepositoryWithMeasurement();
+        var completion = Completion(repository);
+        repository.JobPhaseCompletions.Add(completion);
+        var service = new JobReviewService(
+            repository,
+            new QaSummaryExportService(repository),
+            new JobHistoryService(repository));
+
+        var result = service.UpdateMachineCounter(completion.Id, new UpdateMachineCounterRequest(23456, "Archon", "Corrected machine counter entry"));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(23456, completion.MachineCounter);
+        var audit = Assert.Single(repository.MachineCounterEditAudits);
+        Assert.Equal(completion.Id, audit.CompletionId);
+        Assert.Equal(12345, audit.OldMachineCounter);
+        Assert.Equal(23456, audit.NewMachineCounter);
+        Assert.Equal("Archon", audit.EditedByUserId);
+        Assert.Equal("Corrected machine counter entry", audit.Reason);
+    }
+
+    [Fact]
+    public void UpdateMachineCounter_RequiresReason()
+    {
+        var repository = RepositoryWithMeasurement();
+        var completion = Completion(repository);
+        repository.JobPhaseCompletions.Add(completion);
+        var service = new JobReviewService(
+            repository,
+            new QaSummaryExportService(repository),
+            new JobHistoryService(repository));
+
+        var result = service.UpdateMachineCounter(completion.Id, new UpdateMachineCounterRequest(23456));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("A reason is required when editing inspection history.", result.Errors);
+        Assert.Equal(12345, completion.MachineCounter);
+        Assert.Empty(repository.MachineCounterEditAudits);
+    }
+
+    [Fact]
     public void Build_FlagsOutOfSpecAndOutOfControlMeasurements()
     {
         var repository = RepositoryWithMeasurement();
@@ -117,5 +159,25 @@ public sealed class JobReviewServiceTests
             Timestamp = DateTimeOffset.Parse("2026-01-01T08:05:00Z"),
             OperatorUserId = "operator1"
         };
+    }
+
+    private static JobPhaseCompletion Completion(InMemorySpcRepository repository)
+    {
+        var measurement = repository.Measurements.Single();
+        var completion = new JobPhaseCompletion
+        {
+            JobNum = measurement.JobNum,
+            PartNum = measurement.PartNum,
+            ProcessCode = measurement.ProcessCode,
+            OperationSeq = measurement.OperationSeq,
+            ResourceId = measurement.ResourceId,
+            InspectionPhase = measurement.InspectionPhase,
+            CompletionNumber = 1,
+            CompletedByUserId = measurement.OperatorUserId,
+            CompletedAt = measurement.Timestamp,
+            MachineCounter = 12345
+        };
+        completion.MeasurementIds.Add(measurement.Id);
+        return completion;
     }
 }

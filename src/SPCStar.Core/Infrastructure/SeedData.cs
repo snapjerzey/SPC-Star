@@ -8,6 +8,7 @@ public static class SeedData
     {
         SeedSecurity(repository);
         NormalizeLegacyProductGroups(repository);
+        NormalizeGeneratedOneSidedSpecLimits(repository);
     }
 
     public static void SeedSecurity(ISpcRepository repository)
@@ -183,6 +184,71 @@ public static class SeedData
             NormalizeProductGroupList(resource.ProductGroups);
         }
     }
+
+    private static void NormalizeGeneratedOneSidedSpecLimits(ISpcRepository repository)
+    {
+        foreach (var spec in repository.SpecLimits.Where(spec => IsGeneratedOneSidedSpec(spec.Nominal, spec.Lsl, spec.Usl)).ToArray())
+        {
+            foreach (var plan in repository.InspectionPlans.Where(plan => plan.CharacteristicId == spec.CharacteristicId))
+            {
+                if (HasAnyPlanSpec(plan) && !IsGeneratedOneSidedSpec(plan.Nominal, plan.Lsl, plan.Usl))
+                {
+                    continue;
+                }
+
+                plan.Nominal = null;
+                if (IsGeneratedMinimumOnlySpec(spec.Nominal, spec.Lsl, spec.Usl))
+                {
+                    plan.Lsl = spec.Lsl;
+                    plan.Usl = null;
+                }
+                else
+                {
+                    plan.Lsl = null;
+                    plan.Usl = spec.Usl;
+                }
+            }
+        }
+
+        foreach (var plan in repository.InspectionPlans)
+        {
+            if (IsGeneratedMinimumOnlySpec(plan.Nominal, plan.Lsl, plan.Usl))
+            {
+                plan.Nominal = null;
+                plan.Usl = null;
+            }
+            else if (IsGeneratedMaximumOnlySpec(plan.Nominal, plan.Lsl, plan.Usl))
+            {
+                plan.Nominal = null;
+                plan.Lsl = null;
+            }
+        }
+
+        repository.SpecLimits.RemoveAll(spec => IsGeneratedOneSidedSpec(spec.Nominal, spec.Lsl, spec.Usl));
+        repository.ControlLimits.RemoveAll(limit => IsGeneratedOneSidedSpec(limit.CenterLine, limit.Lcl, limit.Ucl));
+    }
+
+    private static bool HasAnyPlanSpec(InspectionPlan plan) =>
+        plan.Nominal.HasValue || plan.Lsl.HasValue || plan.Usl.HasValue;
+
+    private static bool IsGeneratedOneSidedSpec(decimal nominal, decimal lsl, decimal usl) =>
+        IsGeneratedOneSidedSpec(nominal, (decimal?)lsl, usl);
+
+    private static bool IsGeneratedOneSidedSpec(decimal? nominal, decimal? lsl, decimal? usl) =>
+        IsGeneratedMinimumOnlySpec(nominal, lsl, usl) ||
+        IsGeneratedMaximumOnlySpec(nominal, lsl, usl);
+
+    private static bool IsGeneratedMinimumOnlySpec(decimal? nominal, decimal? lsl, decimal? usl) =>
+        nominal.HasValue &&
+        lsl.HasValue &&
+        usl == 9999m &&
+        nominal.Value == (lsl.Value + usl.Value) / 2m;
+
+    private static bool IsGeneratedMaximumOnlySpec(decimal? nominal, decimal? lsl, decimal? usl) =>
+        nominal.HasValue &&
+        lsl == 0m &&
+        usl.HasValue &&
+        nominal.Value == usl.Value / 2m;
 
     private static bool ContainsDrill(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Contains("Drill", StringComparison.OrdinalIgnoreCase);

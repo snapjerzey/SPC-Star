@@ -176,7 +176,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
 
         var rows = repository.Alerts
             .Where(alert =>
-                (request.IncludeOverridden || alert.Status == AlertStatus.Active) &&
+                (request.IncludeOverridden || alert.Status != AlertStatus.Overridden) &&
                 Matches(partNums, alert.PartNum) &&
                 Matches(jobNums, alert.JobNum) &&
                 Matches(resourceIds, alert.ResourceId) &&
@@ -352,6 +352,25 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 ["Reason"] = edit.Reason
             };
         }
+
+        foreach (var edit in FilterLedgerMachineCounterEdits(request))
+        {
+            yield return new Dictionary<string, string>
+            {
+                ["Edited At"] = edit.EditedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                ["Job"] = edit.JobNum,
+                ["Part"] = edit.PartNum,
+                ["Phase"] = edit.InspectionPhase,
+                ["Operation"] = $"{edit.ProcessCode} {edit.OperationSeq}",
+                ["Machine"] = edit.ResourceId,
+                ["Inspection Item"] = "Machine Counter",
+                ["Original Value"] = edit.OldMachineCounter?.ToString() ?? "",
+                ["Corrected Value"] = edit.NewMachineCounter?.ToString() ?? "",
+                ["Edited By"] = edit.EditedByUserId,
+                ["Shift"] = UserShift(edit.EditedByUserId),
+                ["Reason"] = edit.Reason
+            };
+        }
     }
 
     private static Dictionary<string, string> SummaryRow(string item, string value)
@@ -454,6 +473,42 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 "Complete",
                 $"{completion.MeasurementIds.Count} inspection entries");
         }
+
+        foreach (var failure in FilterLedgerFailures(request))
+        {
+            yield return LedgerRow(
+                failure.FailedAt,
+                "Inspection Failed",
+                failure.JobNum,
+                failure.PartNum,
+                failure.InspectionPhase,
+                $"{failure.InspectionPhase} inspection {failure.FailureNumber} failed",
+                failure.MachineCounter.HasValue ? $"Machine Counter: {failure.MachineCounter}" : "",
+                failure.ResourceId,
+                $"{failure.ProcessCode} {failure.OperationSeq}",
+                failure.FailedByUserId,
+                UserShift(failure.FailedByUserId),
+                "Failed",
+                string.IsNullOrWhiteSpace(failure.Reason) ? $"{failure.MeasurementIds.Count} inspection entries" : failure.Reason);
+        }
+
+        foreach (var edit in FilterLedgerMachineCounterEdits(request))
+        {
+            yield return LedgerRow(
+                edit.EditedAt,
+                "Machine Counter Edit",
+                edit.JobNum,
+                edit.PartNum,
+                edit.InspectionPhase,
+                "Machine Counter",
+                $"{edit.OldMachineCounter?.ToString() ?? "blank"} -> {edit.NewMachineCounter?.ToString() ?? "blank"}",
+                edit.ResourceId,
+                $"{edit.ProcessCode} {edit.OperationSeq}",
+                edit.EditedByUserId,
+                UserShift(edit.EditedByUserId),
+                "Edited",
+                edit.Reason);
+        }
     }
 
     private IEnumerable<InspectionMeasurement> FilterLedgerMeasurements(LedgerHistoryExportRequest request)
@@ -481,6 +536,16 @@ public sealed class HistoryExportService(ISpcRepository repository)
         var partNums = request.PartNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var jobNums = request.JobNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
         return repository.MeasurementEditAudits.Where(item =>
+            Matches(partNums, item.PartNum) &&
+            Matches(jobNums, item.JobNum) &&
+            InRange(item.EditedAt, request.From, request.To));
+    }
+
+    private IEnumerable<MachineCounterEditAudit> FilterLedgerMachineCounterEdits(LedgerHistoryExportRequest request)
+    {
+        var partNums = request.PartNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var jobNums = request.JobNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return repository.MachineCounterEditAudits.Where(item =>
             Matches(partNums, item.PartNum) &&
             Matches(jobNums, item.JobNum) &&
             InRange(item.EditedAt, request.From, request.To));
@@ -524,6 +589,16 @@ public sealed class HistoryExportService(ISpcRepository repository)
             Matches(partNums, item.PartNum) &&
             Matches(jobNums, item.JobNum) &&
             InRange(item.CompletedAt, request.From, request.To));
+    }
+
+    private IEnumerable<FailedInspection> FilterLedgerFailures(LedgerHistoryExportRequest request)
+    {
+        var partNums = request.PartNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var jobNums = request.JobNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return repository.FailedInspections.Where(item =>
+            Matches(partNums, item.PartNum) &&
+            Matches(jobNums, item.JobNum) &&
+            InRange(item.FailedAt, request.From, request.To));
     }
 
     private IEnumerable<InspectionMeasurement> FilterMeasurements(InspectionHistoryExportRequest request)

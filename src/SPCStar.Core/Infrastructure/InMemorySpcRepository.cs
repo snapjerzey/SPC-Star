@@ -18,8 +18,10 @@ public class InMemorySpcRepository : ISpcRepository
     public List<Device> Devices { get; } = [];
     public List<InspectionMeasurement> Measurements { get; } = [];
     public List<MeasurementEditAudit> MeasurementEditAudits { get; } = [];
+    public List<MachineCounterEditAudit> MachineCounterEditAudits { get; } = [];
     public List<JobNote> JobNotes { get; } = [];
     public List<JobPhaseCompletion> JobPhaseCompletions { get; } = [];
+    public List<FailedInspection> FailedInspections { get; } = [];
     public List<JobTag> JobTags { get; } = [];
     public List<PartJobDataField> PartJobDataFields { get; } = [];
     public List<PartMaterialField> PartMaterialFields { get; } = [];

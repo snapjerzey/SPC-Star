@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $appPath = Join-Path $InstallRoot "app\SPCStar.Api.exe"
+$appRoot = Split-Path -Parent $appPath
 $databasePath = Join-Path $InstallRoot "data\spcstar.db"
 $legacyJsonPath = Join-Path $InstallRoot "data\spcstar-data.json"
 $archivePath = Join-Path $InstallRoot "data\archives"
@@ -32,4 +33,5 @@ if (-not (Test-Path $appPath)) {
     throw "SPC-Star app was not found at $appPath. Run deploy\install-server.ps1 first."
 }
 
+Set-Location -LiteralPath $appRoot
 & $appPath *>> $logPath

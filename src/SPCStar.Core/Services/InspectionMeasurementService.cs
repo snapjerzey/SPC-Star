@@ -28,7 +28,20 @@ public sealed record CompleteInspectionRequest(
     long? MachineCounter,
     IReadOnlyList<string>? MeasurementClientRecordIds = null);
 
-internal sealed record ResolvedSpecLimit(decimal Nominal, decimal Lsl, decimal Usl);
+public sealed record FailInspectionRequest(
+    string JobNum,
+    string PartNum,
+    string ProcessCode,
+    int OperationSeq,
+    string ResourceId,
+    string InspectionPhase,
+    string FailedByUserId,
+    long? MachineCounter,
+    IReadOnlyList<string>? MeasurementClientRecordIds = null,
+    Guid? ActiveAlertId = null,
+    string? Reason = null);
+
+internal sealed record ResolvedSpecLimit(decimal? Nominal, decimal? Lsl, decimal? Usl);
 
 public sealed class InspectionMeasurementService(
     ISpcRepository repository,
@@ -212,6 +225,76 @@ public sealed class InspectionMeasurementService(
         return ServiceResult<JobPhaseCompletion>.Ok(completion);
     }
 
+    public ServiceResult<FailedInspection> FailInspection(FailInspectionRequest request)
+    {
+        var errors = ValidateFailure(request);
+        if (errors.Count > 0)
+        {
+            return ServiceResult<FailedInspection>.Fail(errors);
+        }
+
+        var phase = NormalizeInspectionPhase(request.InspectionPhase);
+        var measurementIds = MeasurementIdsForFailure(request, phase);
+        var failedAt = DateTimeOffset.UtcNow;
+        var alert = FindFailureAlert(request);
+        var failure = new FailedInspection
+        {
+            JobNum = request.JobNum.Trim(),
+            PartNum = request.PartNum.Trim(),
+            ProcessCode = request.ProcessCode.Trim(),
+            OperationSeq = request.OperationSeq,
+            ResourceId = request.ResourceId.Trim(),
+            InspectionPhase = phase,
+            FailureNumber = repository.FailedInspections
+                .Where(item =>
+                    item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.OperationSeq == request.OperationSeq &&
+                    item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+                .Select(item => Math.Max(item.FailureNumber, 1))
+                .DefaultIfEmpty(0)
+                .Max() + 1,
+            FailedByUserId = request.FailedByUserId.Trim(),
+            OperatorShift = OperatorShift(request.FailedByUserId),
+            FailedAt = failedAt,
+            MachineCounter = request.MachineCounter,
+            Reason = string.IsNullOrWhiteSpace(request.Reason)
+                ? "Inspection ended after lockout."
+                : request.Reason.Trim(),
+            AlertId = alert?.Id
+        };
+        failure.MeasurementIds.AddRange(measurementIds);
+        repository.FailedInspections.Add(failure);
+
+        if (alert is not null && alert.Status == AlertStatus.Active)
+        {
+            alert.Status = AlertStatus.Overridden;
+            repository.AlertOverrides.Add(new AlertOverride
+            {
+                AlertId = alert.Id,
+                OperatorUserId = alert.OperatorUserId,
+                OverrideUserId = request.FailedByUserId.Trim(),
+                OverrideRole = "Failed Inspection",
+                JobNum = alert.JobNum,
+                PartNum = alert.PartNum,
+                ResourceId = alert.ResourceId,
+                CharacteristicName = alert.CharacteristicName,
+                RuleTriggered = alert.RuleTriggered,
+                CauseCategory = "Failed Inspection",
+                CauseText = alert.Detail ?? "Inspection failed before completion.",
+                SolutionText = "Current inspection ended as failed. New inspection started.",
+                LockedAt = alert.LockedAt,
+                UnlockedAt = failedAt,
+                SubmittedAt = failedAt,
+                SyncedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        return ServiceResult<FailedInspection>.Ok(failure);
+    }
+
     private JobPhaseCompletion? FindCompletionForClientRecords(CompleteInspectionRequest request, string phase)
     {
         var measurementIds = MeasurementIdsForClientRecords(request, phase);
@@ -311,6 +394,55 @@ public sealed class InspectionMeasurementService(
                 clientRecordIds.Contains(item.ClientRecordId))
             .Select(item => item.Id)
             .ToHashSet();
+    }
+
+    private HashSet<Guid> MeasurementIdsForFailure(FailInspectionRequest request, string phase)
+    {
+        var clientRecordIds = (request.MeasurementClientRecordIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var measurementIds = repository.Measurements
+            .Where(item =>
+                item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == request.OperationSeq &&
+                item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase) &&
+                item.ClientRecordId is not null &&
+                clientRecordIds.Contains(item.ClientRecordId))
+            .Select(item => item.Id)
+            .ToHashSet();
+
+        if (request.ActiveAlertId.HasValue)
+        {
+            foreach (var id in repository.RuleViolations
+                .Where(violation => violation.AlertId == request.ActiveAlertId.Value)
+                .SelectMany(violation => violation.MeasurementIds))
+            {
+                measurementIds.Add(id);
+            }
+        }
+
+        return measurementIds;
+    }
+
+    private ProcessAlert? FindFailureAlert(FailInspectionRequest request)
+    {
+        if (request.ActiveAlertId.HasValue)
+        {
+            return repository.Alerts.FirstOrDefault(alert => alert.Id == request.ActiveAlertId.Value);
+        }
+
+        return repository.Alerts
+            .Where(alert =>
+                alert.Status == AlertStatus.Active &&
+                alert.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                alert.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                alert.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(alert => alert.LockedAt)
+            .FirstOrDefault();
     }
 
     private JobPhaseCompletion? TryCreateCompletionFromSavedMeasurements(CompleteInspectionRequest request, string phase)
@@ -496,7 +628,7 @@ public sealed class InspectionMeasurementService(
         (InspectionPlan Plan, Characteristic Characteristic) plan,
         IReadOnlyList<InspectionMeasurement> candidates)
     {
-        var required = Math.Max(plan.Plan.SampleSize, 1);
+        var required = RequiredMeasurementCount(plan);
         return candidates.Count(measurement =>
             measurement.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase)) >= required;
     }
@@ -553,9 +685,9 @@ public sealed class InspectionMeasurementService(
                 .OrderByDescending(measurement => measurement.Timestamp)
                 .ThenByDescending(measurement => measurement.SubmittedAt)
                 .ThenByDescending(measurement => measurement.Id)
-                .Take(Math.Max(plan.Plan.SampleSize, 1))
+                .Take(RequiredMeasurementCount(plan))
                 .ToArray();
-            if (matches.Length < Math.Max(plan.Plan.SampleSize, 1))
+            if (matches.Length < RequiredMeasurementCount(plan))
             {
                 return [];
             }
@@ -579,7 +711,7 @@ public sealed class InspectionMeasurementService(
         var selected = new List<InspectionMeasurement>();
         foreach (var plan in plans)
         {
-            var required = Math.Max(plan.Plan.SampleSize, 1);
+            var required = RequiredMeasurementCount(plan);
             var matches = measurements
                 .Where(measurement => measurement.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(measurement => measurement.Timestamp)
@@ -602,6 +734,13 @@ public sealed class InspectionMeasurementService(
             .ThenBy(measurement => measurement.Id)
             .Select(measurement => measurement.Id)
             .ToArray();
+    }
+
+    private static int RequiredMeasurementCount((InspectionPlan Plan, Characteristic Characteristic) plan)
+    {
+        return plan.Characteristic.Type == CharacteristicType.Attribute
+            ? 1
+            : Math.Max(plan.Plan.SampleSize, 1);
     }
 
     private ServiceResult UpsertJob(InspectionMeasurementEntry entry)
@@ -671,6 +810,28 @@ public sealed class InspectionMeasurementService(
         return errors;
     }
 
+    private static List<string> ValidateFailure(FailInspectionRequest request)
+    {
+        var errors = new List<string>();
+        Required(request.JobNum, nameof(request.JobNum), errors);
+        Required(request.PartNum, nameof(request.PartNum), errors);
+        Required(request.ProcessCode, nameof(request.ProcessCode), errors);
+        Required(request.ResourceId, nameof(request.ResourceId), errors);
+        Required(request.InspectionPhase, nameof(request.InspectionPhase), errors);
+        Required(request.FailedByUserId, nameof(request.FailedByUserId), errors);
+        if (request.OperationSeq <= 0)
+        {
+            errors.Add($"{nameof(request.OperationSeq)} is required.");
+        }
+
+        if (request.MachineCounter < 0)
+        {
+            errors.Add("Machine Counter cannot be negative.");
+        }
+
+        return errors;
+    }
+
     private bool HasActiveAlertForMeasurement(Guid measurementId)
     {
         return repository.RuleViolations
@@ -704,7 +865,7 @@ public sealed class InspectionMeasurementService(
         }
 
         repository.RuleViolations.RemoveAll(violation => alertIds.Contains(violation.AlertId));
-        repository.Alerts.RemoveAll(alert => alertIds.Contains(alert.Id) && alert.Status == AlertStatus.Active);
+        repository.Alerts.RemoveAll(alert => alertIds.Contains(alert.Id) && alert.Status != AlertStatus.Overridden);
         return true;
     }
 
@@ -791,6 +952,12 @@ public sealed class InspectionMeasurementService(
             return;
         }
 
+        if (CreateSpecLimitAlert(measurement) ||
+            string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         var limits = repository.ControlLimits.FirstOrDefault(limit =>
             limit.PartNum.Equals(measurement.PartNum, StringComparison.OrdinalIgnoreCase) &&
             limit.ProcessCode.Equals(measurement.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
@@ -799,12 +966,6 @@ public sealed class InspectionMeasurementService(
 
         if (limits is null)
         {
-            return;
-        }
-
-        if (string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase))
-        {
-            CreateSpecLimitAlert(measurement);
             return;
         }
 
@@ -850,7 +1011,8 @@ public sealed class InspectionMeasurementService(
                 OperatorShift = measurement.OperatorShift,
                 RuleTriggered = violation.RuleTriggered,
                 Detail = DriftViolationDetail(violation, points, limits),
-                LockedAt = violation.DetectedAt
+                LockedAt = violation.DetectedAt,
+                Status = AlertStatus.Warning
             };
 
             repository.Alerts.Add(alert);
@@ -1127,12 +1289,14 @@ public sealed class InspectionMeasurementService(
             : plan?.AlertRuleSet ?? "None";
     }
 
-    private void CreateSpecLimitAlert(InspectionMeasurement measurement)
+    private bool CreateSpecLimitAlert(InspectionMeasurement measurement)
     {
         var spec = FindSpecLimit(measurement);
-        if (spec is null || measurement.Value >= spec.Lsl && measurement.Value <= spec.Usl)
+        if (spec is null ||
+            (!spec.Lsl.HasValue && !spec.Usl.HasValue) ||
+            (!IsBelowLowerSpec(measurement.Value, spec) && !IsAboveUpperSpec(measurement.Value, spec)))
         {
-            return;
+            return false;
         }
 
         var alert = new ProcessAlert
@@ -1157,6 +1321,7 @@ public sealed class InspectionMeasurementService(
         };
         ruleViolation.MeasurementIds.Add(measurement.Id);
         repository.RuleViolations.Add(ruleViolation);
+        return true;
     }
 
     private ResolvedSpecLimit? FindSpecLimit(InspectionMeasurement measurement)
@@ -1190,9 +1355,9 @@ public sealed class InspectionMeasurementService(
         var plan = repository.InspectionPlans.FirstOrDefault(item =>
             item.CharacteristicId == characteristic.Id &&
             NormalizeInspectionPhase(item.InspectionPhase).Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase));
-        if (plan?.Lsl is not null && plan.Usl is not null)
+        if (plan is not null && (plan.Lsl is not null || plan.Usl is not null))
         {
-            return new ResolvedSpecLimit(plan.Nominal ?? (plan.Lsl.Value + plan.Usl.Value) / 2m, plan.Lsl.Value, plan.Usl.Value);
+            return new ResolvedSpecLimit(plan.Nominal, plan.Lsl, plan.Usl);
         }
 
         var spec = repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
@@ -1343,17 +1508,27 @@ public sealed class InspectionMeasurementService(
 
     private static string SpecLimitDetail(InspectionMeasurement measurement, ResolvedSpecLimit spec)
     {
-        if (measurement.Value > spec.Usl)
+        if (IsAboveUpperSpec(measurement.Value, spec))
         {
-            return $"Entered value {measurement.Value:0.#####} is above the upper specification limit {spec.Usl:0.#####}.";
+            return $"Entered value {measurement.Value:0.#####} is above the upper specification limit {spec.Usl!.Value:0.#####}.";
         }
 
-        if (measurement.Value < spec.Lsl)
+        if (IsBelowLowerSpec(measurement.Value, spec))
         {
-            return $"Entered value {measurement.Value:0.#####} is below the lower specification limit {spec.Lsl:0.#####}.";
+            return $"Entered value {measurement.Value:0.#####} is below the lower specification limit {spec.Lsl!.Value:0.#####}.";
         }
 
         return string.Empty;
+    }
+
+    private static bool IsAboveUpperSpec(decimal value, ResolvedSpecLimit spec)
+    {
+        return spec.Usl.HasValue && value > spec.Usl.Value;
+    }
+
+    private static bool IsBelowLowerSpec(decimal value, ResolvedSpecLimit spec)
+    {
+        return spec.Lsl.HasValue && value < spec.Lsl.Value;
     }
 
     private static string RuleText(RuleTriggered rule)

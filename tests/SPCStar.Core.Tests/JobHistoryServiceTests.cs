@@ -130,6 +130,48 @@ public sealed class JobHistoryServiceTests
     }
 
     [Fact]
+    public void GetForJob_ReturnsMachineCounterEditHistory()
+    {
+        var repository = new InMemorySpcRepository();
+        var completion = new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "General Production",
+            OperationSeq = 10,
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-05-12T08:10:00Z"),
+            MachineCounter = 23456
+        };
+        repository.JobPhaseCompletions.Add(completion);
+        repository.MachineCounterEditAudits.Add(new MachineCounterEditAudit
+        {
+            CompletionId = completion.Id,
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "General Production",
+            OperationSeq = 10,
+            InspectionPhase = "In Process",
+            OldMachineCounter = 12345,
+            NewMachineCounter = 23456,
+            EditedByUserId = "Archon",
+            EditedAt = DateTimeOffset.Parse("2026-05-12T08:15:00Z"),
+            Reason = "Corrected machine counter entry"
+        });
+
+        var history = new JobHistoryService(repository).GetForJob("J100");
+
+        var edit = Assert.Single(history, entry => entry.EntryType == "MachineCounterEdit");
+        Assert.Equal(12345, edit.OldMachineCounter);
+        Assert.Equal(23456, edit.NewMachineCounter);
+        Assert.Equal("Corrected machine counter entry", edit.Reason);
+    }
+
+    [Fact]
     public void GetForJob_CarriesPersistentJobDataButNotBoxNumberForwardToLaterCompletedInspections()
     {
         var repository = new InMemorySpcRepository();

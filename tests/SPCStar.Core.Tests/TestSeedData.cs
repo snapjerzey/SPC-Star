@@ -11,7 +11,6 @@ internal static class TestSeedData
         AddUser(repository, "operator1", "operator1", RoleNames.Operator, "General Production");
         AddUser(repository, "linetech1", "linetech1", RoleNames.LineTech, "General Production");
         AddUser(repository, "qa1", "qa1", RoleNames.QA, "General Production");
-        AddUser(repository, "god1", "god1", RoleNames.GOD, "General Production");
     }
 
     private static void AddUser(ISpcRepository repository, string userName, string password, string roleName, params string[] productGroups)

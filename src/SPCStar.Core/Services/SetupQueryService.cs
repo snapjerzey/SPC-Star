@@ -142,6 +142,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
             from spec in specLimits.DefaultIfEmpty()
             join plan in repository.InspectionPlans on characteristic.Id equals plan.CharacteristicId
             where string.IsNullOrWhiteSpace(partNum) || part.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase)
+            where !IsRedundantInspectionArtifact(characteristic.Name)
             orderby part.PartNum, operation.OperationSeq, plan.InspectionPhase, plan.DisplayOrder, characteristic.Name
             select new InspectionPlanSetupDto(
                 part.PartNum,
@@ -152,7 +153,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 operation.OperationSeq,
                 characteristic.Name,
                 characteristic.Type,
-                plan.Nominal ?? spec?.Nominal,
+                plan.Nominal,
                 plan.Lsl ?? spec?.Lsl,
                 plan.Usl ?? spec?.Usl,
                 characteristic.UnitOfMeasure,
@@ -184,6 +185,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
             .Select(operation => new OperationSetupDto(operation.Id, operation.PartId, operation.ProcessId, operation.OperationSeq))
             .ToArray();
         var characteristics = repository.Characteristics
+            .Where(characteristic => !IsRedundantInspectionArtifact(characteristic.Name))
             .OrderBy(characteristic => characteristic.OperationId)
             .ThenBy(characteristic => characteristic.Name)
             .Select(characteristic => new CharacteristicSetupDto(
@@ -232,6 +234,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
         var jobDataFields =
             (from field in repository.PartJobDataFields
              join part in repository.Parts on field.PartId equals part.Id
+             where !IsRedundantJobDataField(field.FieldName)
              orderby part.PartNum, field.InspectionPhase, field.DisplayOrder, field.FieldName
              select new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder))
             .ToArray();
@@ -353,5 +356,30 @@ public sealed class SetupQueryService(ISpcRepository repository)
         {
             builder.Append(typeof(T).Name).Append('|').Append(row).AppendLine();
         }
+    }
+
+    private static bool IsRedundantJobDataField(string fieldName)
+    {
+        return IsPaperCountField(fieldName) || IsRedundantInspectionArtifact(fieldName);
+    }
+
+    private static bool IsPaperCountField(string fieldName)
+    {
+        var normalized = new string((fieldName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
+        return normalized.Equals("StartCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("StartingCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("InitialCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("EndCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("EndingCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("FinalCount", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRedundantInspectionArtifact(string? fieldName)
+    {
+        var normalized = new string((fieldName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
+        return normalized.Equals("NMJobSpool", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMJobSpoolNumber", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMSpool", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMSpoolNumber", StringComparison.OrdinalIgnoreCase);
     }
 }

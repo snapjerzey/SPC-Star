@@ -53,7 +53,7 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
-    public void Create_RejectsNonGodCredentials()
+    public void Create_RejectsNonSystemManagerCredentials()
     {
         var repository = BuildRepository();
         TestSeedData.SeedUsers(repository);
@@ -66,7 +66,7 @@ public sealed class ArchiveServiceTests
             "ARCHIVE"));
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("GOD credentials", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("System Manager credentials", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(repository.Measurements, item => item.JobNum == "JOLD");
     }
 

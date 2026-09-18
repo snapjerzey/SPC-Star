@@ -30,6 +30,7 @@ public enum FrequencyUnit
 public enum AlertStatus
 {
     Active,
+    Warning,
     Overridden
 }
 

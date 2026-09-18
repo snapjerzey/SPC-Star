@@ -17,8 +17,10 @@ internal sealed record RepositorySnapshot(
     List<Device> Devices,
     List<InspectionMeasurement> Measurements,
     List<MeasurementEditAudit>? MeasurementEditAudits,
+    List<MachineCounterEditAudit>? MachineCounterEditAudits,
     List<JobNote>? JobNotes,
     List<JobPhaseCompletion>? JobPhaseCompletions,
+    List<FailedInspection>? FailedInspections,
     List<JobTag>? JobTags,
     List<PartJobDataField>? PartJobDataFields,
     List<PartMaterialField>? PartMaterialFields,
@@ -45,8 +47,10 @@ internal sealed record RepositorySnapshot(
             [.. repository.Devices],
             [.. repository.Measurements],
             [.. repository.MeasurementEditAudits],
+            [.. repository.MachineCounterEditAudits],
             [.. repository.JobNotes],
             [.. repository.JobPhaseCompletions],
+            [.. repository.FailedInspections],
             [.. repository.JobTags],
             [.. repository.PartJobDataFields],
             [.. repository.PartMaterialFields],
@@ -72,8 +76,10 @@ internal sealed record RepositorySnapshot(
         repository.Devices.Clear();
         repository.Measurements.Clear();
         repository.MeasurementEditAudits.Clear();
+        repository.MachineCounterEditAudits.Clear();
         repository.JobNotes.Clear();
         repository.JobPhaseCompletions.Clear();
+        repository.FailedInspections.Clear();
         repository.JobTags.Clear();
         repository.PartJobDataFields.Clear();
         repository.PartMaterialFields.Clear();
@@ -103,8 +109,10 @@ internal sealed record RepositorySnapshot(
         repository.Devices.AddRange(Devices);
         repository.Measurements.AddRange(Measurements);
         repository.MeasurementEditAudits.AddRange(MeasurementEditAudits ?? []);
+        repository.MachineCounterEditAudits.AddRange(MachineCounterEditAudits ?? []);
         repository.JobNotes.AddRange(JobNotes ?? []);
         repository.JobPhaseCompletions.AddRange(JobPhaseCompletions ?? []);
+        repository.FailedInspections.AddRange(FailedInspections ?? []);
         repository.JobTags.AddRange(JobTags ?? []);
         repository.PartJobDataFields.AddRange(PartJobDataFields ?? []);
         repository.PartMaterialFields.AddRange(PartMaterialFields ?? []);

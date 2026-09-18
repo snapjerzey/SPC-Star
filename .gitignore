@@ -10,3 +10,4 @@ TestResults/
 .localappdata/
 .dotnet-cli/
 .nuget-packages/
+.tmp/

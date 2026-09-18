@@ -20,8 +20,10 @@ const state = {
     partNum: "",
     jobNum: ""
   },
+  phaseGateHistoryCache: new Map(),
   inspectionDrafts: new Map(),
   preserveInspectionEntriesUntil: 0,
+  inspectionSubmitting: false,
   device: {
     serialPort: null,
     serialReader: null,
@@ -280,7 +282,22 @@ async function jobHistoryForPhaseGate(jobNum) {
     return [];
   }
 
-  return api(`/jobs/${encodeURIComponent(jobNum)}/history`);
+  const cacheKey = jobNum.trim().toLowerCase();
+  if (state.phaseGateHistoryCache.has(cacheKey)) {
+    return state.phaseGateHistoryCache.get(cacheKey);
+  }
+
+  const history = await api(`/jobs/${encodeURIComponent(jobNum)}/history`);
+  state.phaseGateHistoryCache.set(cacheKey, history);
+  return history;
+}
+
+function invalidatePhaseGateHistory(jobNum) {
+  if (!jobNum) {
+    return;
+  }
+
+  state.phaseGateHistoryCache.delete(jobNum.trim().toLowerCase());
 }
 
 function phaseCompletionExists(history, set, phase) {
@@ -353,7 +370,7 @@ async function restoreAuthenticatedSession() {
 
 async function startAuthenticatedSession(options = {}) {
   $("loginMessage").textContent = "Loading inspection data...";
-  setStatus($("userBadge"), `${state.user.userName} (${state.user.roles.join(", ")}) / ${state.currentShift}`, "ok");
+  setStatus($("userBadge"), `${state.user.userName} (${formatRoleList(state.user.roles)}) / ${state.currentShift}`, "ok");
   document.body.classList.remove("login-active");
   $("logoutButton").classList.remove("hidden");
   $("loginPanel").classList.add("hidden");
@@ -676,7 +693,7 @@ async function loadContext(event) {
   if (!set) {
     state.selectedPlans = [];
     state.contexts = [];
-    renderEmptyContext(`Part ${partNum} is not set up. Ask QA or GOD to add the inspection plan before inspecting.`);
+    renderEmptyContext(`Part ${partNum} is not set up. Ask QA or Archon to add the inspection plan before inspecting.`);
     return;
   }
 
@@ -701,7 +718,7 @@ async function loadContext(event) {
   renderContext();
   const contextKey = `${jobNum}|${resourceId}|${set.partNum}|${operationKeyFor(set)}|${set.activePhase || set.inspectionPhase}`;
   try {
-    const contexts = await Promise.all(state.selectedPlans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
+    const contexts = await loadVariableContexts(jobNum, resourceId, state.selectedPlans);
     const current = selectedValues();
     const currentKey = current.set
       ? `${current.jobNum}|${current.resourceId}|${current.set.partNum}|${operationKeyFor(current.set)}|${current.set.activePhase || current.set.inspectionPhase}`
@@ -764,6 +781,26 @@ async function loadVariableContext(jobNum, resourceId, plan) {
   return api(`/work-context?${params}`);
 }
 
+async function loadVariableContexts(jobNum, resourceId, plans) {
+  if (!plans.length) {
+    return [];
+  }
+
+  const firstPlan = plans[0];
+  return api("/work-context/batch", {
+    method: "POST",
+    body: JSON.stringify({
+      jobNum,
+      partNum: firstPlan.partNum,
+      processCode: firstPlan.processCode,
+      operationSeq: firstPlan.operationSeq,
+      resourceId,
+      inspectionPhase: firstPlan.inspectionPhase || $("inspectionPhase").value,
+      characteristicNames: plans.map((plan) => plan.characteristicName)
+    })
+  });
+}
+
 function renderContext() {
   const { jobNum, resourceId, set } = selectedValues();
   $("contextTitle").textContent = "Inspection Items";
@@ -796,6 +833,7 @@ function renderConfiguredJobDataFields(set) {
       field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
       normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase) &&
       !isBuiltInOrPartStandardJobData(field.fieldName) &&
+      !isRedundantJobDataField(field.fieldName) &&
       !isMaterialLotJobDataField(field.fieldName))
     .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   const form = $("jobTagsForm");
@@ -804,10 +842,10 @@ function renderConfiguredJobDataFields(set) {
       <span>${escapeHtml(fact.label)}</span>
       <strong>${escapeHtml(fact.value)}</strong>
     </div>`).join("");
-  form.innerHTML = fields.map((field) => `
+  form.innerHTML = fields.map((field, index) => `
     <label>
       ${escapeHtml(field.fieldName)}
-      <input class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" data-per-inspection="${isPerInspectionJobDataField(field.fieldName) ? "true" : "false"}" autocomplete="off" ${jobDataFieldIsRequiredAtLoad(field) ? "required" : ""}>
+      <input id="job-tag-${index}" name="job-tag-${index}" class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" data-per-inspection="${isPerInspectionJobDataField(field.fieldName) ? "true" : "false"}" autocomplete="off" ${jobDataFieldIsRequiredAtLoad(field) ? "required" : ""}>
     </label>`).join("") + (fields.length ? `<button type="submit" class="secondary">Save Job Data</button>` : "");
   form.querySelectorAll(".job-tag-input[data-per-inspection='true']").forEach((input) => {
     input.addEventListener("input", updateInspectionSubmitState);
@@ -824,12 +862,29 @@ function isBuiltInOrPartStandardJobData(fieldName) {
 }
 
 function jobDataFieldIsRequiredAtLoad(field) {
-  return Boolean(field?.isRequired) && !isEndCountJobDataField(field.fieldName);
+  return Boolean(field?.isRequired) && !isRedundantJobDataField(field.fieldName);
 }
 
-function isEndCountJobDataField(fieldName) {
+function isRedundantJobDataField(fieldName) {
+  return isPaperCountJobDataField(fieldName) || isNmSpoolJobDataField(fieldName);
+}
+
+function isPaperCountJobDataField(fieldName) {
   const normalized = String(fieldName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-  return normalized === "endcount" || normalized === "endingcount" || normalized === "finalcount";
+  return normalized === "startcount" ||
+    normalized === "startingcount" ||
+    normalized === "initialcount" ||
+    normalized === "endcount" ||
+    normalized === "endingcount" ||
+    normalized === "finalcount";
+}
+
+function isNmSpoolJobDataField(fieldName) {
+  const normalized = String(fieldName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  return normalized === "nmjobspool" ||
+    normalized === "nmjobspoolnumber" ||
+    normalized === "nmspool" ||
+    normalized === "nmspoolnumber";
 }
 
 function isMaterialLotJobDataField(fieldName) {
@@ -876,15 +931,15 @@ function renderConfiguredMaterialFields(set) {
       <h3>${escapeHtml(field.materialName)}${field.materialDescription ? ` - ${escapeHtml(field.materialDescription)}` : ""}</h3>
       <label>
         Material part number
-        <input class="material-part-input" data-material-index="${index}" autocomplete="off" inputmode="text" value="${escapeHtml(field.materialPartNum || "")}" ${field.isRequired ? "required" : ""}>
+        <input id="material-part-${index}" name="material-part-${index}" class="material-part-input" data-material-index="${index}" autocomplete="off" inputmode="text" value="${escapeHtml(field.materialPartNum || "")}" ${field.isRequired ? "required" : ""}>
       </label>
       <label>
         New lot number
-        <input class="material-lot-input" data-material-index="${index}" autocomplete="off" inputmode="text" maxlength="${MAX_LOT_NUMBER_LENGTH}" ${field.isRequired ? "required" : ""}>
+        <input id="material-lot-${index}" name="material-lot-${index}" class="material-lot-input" data-material-index="${index}" autocomplete="off" inputmode="text" maxlength="${MAX_LOT_NUMBER_LENGTH}" ${field.isRequired ? "required" : ""}>
       </label>
       <label>
         Reason
-        <select class="material-reason-input" data-material-index="${index}" required>
+        <select id="material-reason-${index}" name="material-reason-${index}" class="material-reason-input" data-material-index="${index}" required>
           <option value="Material change">Material change</option>
           <option value="Material issue at job start">Material issue at job start</option>
         </select>
@@ -895,11 +950,11 @@ function renderConfiguredMaterialFields(set) {
       <h3>${escapeHtml(field.fieldName)}</h3>
       <label>
         New lot number
-        <input class="material-lot-input" data-material-index="tag-${index}" autocomplete="off" inputmode="text" maxlength="${MAX_LOT_NUMBER_LENGTH}" ${field.isRequired ? "required" : ""}>
+        <input id="material-lot-tag-${index}" name="material-lot-tag-${index}" class="material-lot-input" data-material-index="tag-${index}" autocomplete="off" inputmode="text" maxlength="${MAX_LOT_NUMBER_LENGTH}" ${field.isRequired ? "required" : ""}>
       </label>
       <label>
         Reason
-        <select class="material-reason-input" data-material-index="tag-${index}" required>
+        <select id="material-reason-tag-${index}" name="material-reason-tag-${index}" class="material-reason-input" data-material-index="tag-${index}" required>
           <option value="Material change">Material change</option>
           <option value="Material issue at job start">Material issue at job start</option>
         </select>
@@ -937,39 +992,30 @@ function renderLock(activeLock) {
   detail.textContent = lockText;
   panel.querySelector(".panel-heading").appendChild(detail);
   $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
-  updateGodReasonVisibility();
+  $("failInspectionButton").disabled = false;
+  updateSystemManagerReasonVisibility();
 }
 
-function overrideUserHasGodRole() {
+function overrideUserIsSystemManager() {
   const userName = $("overrideUserName").value.trim();
   if (!userName) {
     return false;
   }
 
-  if (state.user?.userName?.toLowerCase() === userName.toLowerCase() && userHasGodAccess(state.user)) {
-    return true;
-  }
-
-  return (state.users || []).some((user) =>
-    user.userName.toLowerCase() === userName.toLowerCase() &&
-    userHasGodAccess(user));
+  return userName.toLowerCase() === "archon";
 }
 
-function userHasGodAccess(user) {
-  return (user?.roles || []).some((role) => role.toLowerCase() === "god") ||
-    (user?.permissions || []).some((permission) => permission === "CanUseGodMode");
-}
-
-function updateGodReasonVisibility() {
-  const isGodOverride = overrideUserHasGodRole();
-  $("godReasonLabel").classList.toggle("hidden", !isGodOverride);
-  $("causeCategoryLabel").classList.toggle("hidden", isGodOverride);
-  $("causeTextLabel").classList.toggle("hidden", isGodOverride);
-  $("solutionTextLabel").classList.toggle("hidden", isGodOverride);
+function updateSystemManagerReasonVisibility() {
+  const isSystemManagerOverride = overrideUserIsSystemManager();
+  $("systemManagerReasonLabel").classList.toggle("hidden", !isSystemManagerOverride);
+  $("causeCategoryLabel").classList.toggle("hidden", isSystemManagerOverride);
+  $("causeTextLabel").classList.toggle("hidden", isSystemManagerOverride);
+  $("solutionTextLabel").classList.toggle("hidden", isSystemManagerOverride);
 }
 
 function renderVariables() {
   const measurementList = $("measurementVariableList");
+  const currentEntryStatuses = currentEntryStatusByPlan();
   measurementList.innerHTML = "";
   const set = selectedInspectionSet();
   if (!state.selectedPlans.length) {
@@ -987,12 +1033,15 @@ function renderVariables() {
     const isInactive = plan.isActiveForSelectedPhase === false;
     const isAttribute = plan.characteristicType === "Attribute";
     const isRecordOnly = !isAttribute && !hasSpecLimits(plan, context);
-    const status = inspectionItemStatus(plan, context, isAttribute, isRecordOnly);
+    const entryCount = inspectionEntryCount(plan);
+    const status = inspectionItemStatus(plan, context, isAttribute, isRecordOnly, currentEntryStatuses.get(index));
     const lowerSpecLimit = firstFiniteValue(context?.lowerSpecLimit, plan.lsl);
     const upperSpecLimit = firstFiniteValue(context?.upperSpecLimit, plan.usl);
     const lowerControlLimit = firstFiniteValue(context?.lowerControlLimit, plan.lcl);
     const upperControlLimit = firstFiniteValue(context?.upperControlLimit, plan.ucl);
+    const processWarning = context?.processWarning;
     card.className = `variable-card ${status.className}${isInactive ? " inactive-plan-card" : ""}`;
+    card.dataset.planIndex = String(index);
     card.innerHTML = `
       <div class="inspection-status-rail" aria-label="${escapeHtml(status.label)}" title="${escapeHtml(status.label)}">
         <span>${escapeHtml(status.shortLabel)}</span>
@@ -1001,17 +1050,22 @@ function renderVariables() {
         <div class="variable-header">
           <div class="variable-title">
             <strong>${plan.characteristicName}</strong>
-            <span>${isAttribute ? "Accept / Reject" : isRecordOnly ? `Record only${plan.unitOfMeasure ? ` (${plan.unitOfMeasure})` : ""}` : plan.unitOfMeasure}</span>
+            <span>${isAttribute ? "Accept / Reject" : isRecordOnly ? `No spec limits${plan.unitOfMeasure ? ` (${plan.unitOfMeasure})` : ""}` : plan.unitOfMeasure}</span>
           </div>
           <div class="sample-meta">
             ${isInactive ? `
               <span class="inactive-required-badge">${escapeHtml(plan.inactiveReason || `Not required for ${plan.selectedInspectionPhase || $("inspectionPhase").value}`)}</span>` : `
               <span>${plan.inspectionPhase || "In Process"}</span>
-              <span>Sample size ${plan.sampleSize}</span>
+              <span>${isAttribute ? "Lot disposition" : `Sample size ${plan.sampleSize}`}</span>
               <span>${formatFrequency(plan)}</span>
-              ${dueStatusBadge(plan)}`}
+              ${dueStatusBadge(plan, index)}`}
           </div>
         </div>
+        ${processWarning ? `
+          <div class="process-warning-pill" title="${escapeHtml(processWarning.detail || "")}">
+            <strong>Process drift</strong>
+            <span>${escapeHtml(ruleLabel(processWarning.ruleTriggered))}${processWarning.detectedAt ? ` at ${escapeHtml(formatTime(processWarning.detectedAt))}` : ""}</span>
+          </div>` : ""}
         ${plan.inspectionMethod ? `
           <div class="inspection-item-context">
             <span class="inspection-tool">${escapeHtml(plan.inspectionMethod)}</span>
@@ -1029,16 +1083,16 @@ function renderVariables() {
       ${isInactive ? `
         <div class="inactive-plan-note">${escapeHtml(plan.inactiveReason || "This item is part of the full inspection plan, but it is not entered during this inspection type.")}</div>` : `
         <div class="sample-inputs">
-          ${Array.from({ length: plan.sampleSize }, (_, sampleIndex) => `
+          ${Array.from({ length: entryCount }, (_, sampleIndex) => `
             <label>
-              Sample ${sampleIndex + 1}
+              ${isAttribute ? "Disposition" : `Sample ${sampleIndex + 1}`}
               ${isAttribute ? `
-                <select class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Attribute">
+                <select id="measurement-${index}-${sampleIndex}" name="measurement-${index}-${sampleIndex}" class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Attribute">
                   <option value="">Select</option>
                   <option value="1">Accept</option>
                   <option value="0">Reject</option>
                 </select>` : `
-                <input class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0000">`}
+                <input id="measurement-${index}-${sampleIndex}" name="measurement-${index}-${sampleIndex}" class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0000">`}
             </label>`).join("")}
         </div>`}`;
     if (isInactive) {
@@ -1052,8 +1106,54 @@ function renderVariables() {
   document.querySelectorAll(".measurement-input").forEach((input) => {
     restoreMeasurementDraft(input);
   });
+  applyMachineCounterDueState();
   wireMeasurementDeviceInputs();
   updateInspectionSubmitState();
+}
+
+function currentEntryStatusByPlan() {
+  const statuses = new Map();
+  document.querySelectorAll(".measurement-input:not(:disabled)").forEach((input) => {
+    const planIndex = Number(input.dataset.planIndex);
+    const plan = state.selectedPlans[planIndex];
+    if (!plan || !inputHasValue(input)) {
+      return;
+    }
+
+    const context = state.contexts[planIndex];
+    const isAttribute = input.dataset.entryType === "Attribute";
+    const isSubmitted = input.dataset.submitted === "true" && input.value === input.dataset.lastSubmittedValue;
+    const status = statuses.get(planIndex) || {
+      hasValue: false,
+      hasUnsavedValue: false,
+      hasBadValue: false,
+      hasGoodValue: false,
+      isAttribute,
+      isRecordOnly: !isAttribute && !hasSpecLimits(plan, context)
+    };
+    status.hasValue = true;
+    status.hasUnsavedValue = status.hasUnsavedValue || !isSubmitted;
+
+    const value = Number(input.value);
+    if (isAttribute) {
+      status.hasBadValue = status.hasBadValue || value === 0;
+      status.hasGoodValue = status.hasGoodValue || value === 1;
+    } else if (Number.isFinite(value)) {
+      const lsl = firstFiniteValue(context?.lowerSpecLimit, plan?.lsl);
+      const usl = firstFiniteValue(context?.upperSpecLimit, plan?.usl);
+      status.hasBadValue = status.hasBadValue ||
+        (lsl !== null && value < lsl) ||
+        (usl !== null && value > usl);
+      status.hasGoodValue = status.hasGoodValue || !status.hasBadValue;
+    }
+
+    statuses.set(planIndex, status);
+  });
+  return statuses;
+}
+
+function inspectionEntryCount(plan) {
+  return plan?.characteristicType === "Attribute" ? 1 : Math.max(Number(plan?.sampleSize || 1), 1);
 }
 
 function machineCounterDueMessage(set) {
@@ -1091,7 +1191,7 @@ function formatInteger(value) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
-function inspectionItemStatus(plan, context, isAttribute, isRecordOnly) {
+function inspectionItemStatus(plan, context, isAttribute, isRecordOnly, currentEntryStatus = null) {
   if (context?.activeLock) {
     return {
       className: "inspection-status-bad",
@@ -1100,12 +1200,46 @@ function inspectionItemStatus(plan, context, isAttribute, isRecordOnly) {
     };
   }
 
+  if (currentEntryStatus?.hasValue) {
+    if (currentEntryStatus.hasBadValue) {
+      return {
+        className: "inspection-status-bad",
+        shortLabel: isAttribute ? "Reject" : "Spec",
+        label: isAttribute ? "Current entry is rejected" : "Current entry is outside specification"
+      };
+    }
+
+    if (currentEntryStatus.hasUnsavedValue) {
+      return {
+        className: "inspection-status-neutral",
+        shortLabel: "Edit",
+        label: "Current entry has not been saved yet"
+      };
+    }
+  }
+
+  if (context?.processWarning) {
+    return {
+      className: "inspection-status-warn",
+      shortLabel: "Watch",
+      label: `Process drift: ${context.processWarning.detail || ruleLabel(context.processWarning.ruleTriggered)}`
+    };
+  }
+
+  if (currentEntryStatus?.hasValue) {
+    return {
+      className: currentEntryStatus.isRecordOnly ? "inspection-status-record" : "inspection-status-good",
+      shortLabel: currentEntryStatus.isRecordOnly ? "No spec" : "OK",
+      label: currentEntryStatus.isRecordOnly ? "Current entry saved without spec limits" : "Current entry is within specification"
+    };
+  }
+
   const points = context?.recentMeasurements || [];
   if (!points.length) {
     return {
       className: isRecordOnly ? "inspection-status-record" : "inspection-status-neutral",
-      shortLabel: isRecordOnly ? "Record" : "New",
-      label: isRecordOnly ? "Record only item" : "No measurements recorded yet"
+      shortLabel: isRecordOnly ? "No spec" : "New",
+      label: isRecordOnly ? "Required entry without spec limits" : "No measurements recorded yet"
     };
   }
 
@@ -1117,7 +1251,7 @@ function inspectionItemStatus(plan, context, isAttribute, isRecordOnly) {
   }
 
   if (isRecordOnly) {
-    return { className: "inspection-status-record", shortLabel: "Record", label: "Record only item" };
+    return { className: "inspection-status-record", shortLabel: "No spec", label: "Required entry without spec limits" };
   }
 
   const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
@@ -1317,10 +1451,10 @@ function renderMeanSummary() {
       <span>${plan.characteristicName}</span>
       <span>${formatNumber(values.length ? Math.min(...values) : null)}</span>
       <span>${formatNumber(values.length ? Math.max(...values) : null)}</span>
-      <span>${formatNumber(mean)}</span>
-      <span>${formatNumber(standardDeviation(values))}</span>
+      <span>${formatStatisticNumber(mean)}</span>
+      <span>${formatStatisticNumber(standardDeviation(values))}</span>
       ${isRecordOnly ? `
-      <span class="record-only-cell">Record only</span>` : `
+      <span class="record-only-cell">No spec limits</span>` : `
       <span>${capabilityBadge(capability.cp)}</span>
       <span>${capabilityBadge(capability.cpk)}</span>
       <span>${capabilityBadge(capability.pp)}</span>
@@ -1330,8 +1464,10 @@ function renderMeanSummary() {
 }
 
 function hasSpecLimits(plan, context) {
-  return (isFiniteValue(context?.lowerSpecLimit) && isFiniteValue(context?.upperSpecLimit)) ||
-    (isFiniteValue(plan?.lsl) && isFiniteValue(plan?.usl));
+  return isFiniteValue(context?.lowerSpecLimit) ||
+    isFiniteValue(context?.upperSpecLimit) ||
+    isFiniteValue(plan?.lsl) ||
+    isFiniteValue(plan?.usl);
 }
 
 function isFiniteValue(value) {
@@ -1339,7 +1475,38 @@ function isFiniteValue(value) {
 }
 
 function capabilityBadge(value) {
-  return `<span class="capability-chip ${capabilityClass(value)}">${formatNumber(value)}</span>`;
+  return `<span class="capability-chip ${capabilityClass(value)}">${formatCapabilityNumber(value)}</span>`;
+}
+
+function formatCapabilityNumber(value) {
+  if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) {
+    return "-";
+  }
+
+  const numericValue = Number(value);
+  if (numericValue > 10) {
+    return ">10.00";
+  }
+
+  if (numericValue < -10) {
+    return "<-10.00";
+  }
+
+  return numericValue.toFixed(2);
+}
+
+function formatStatisticNumber(value) {
+  if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) {
+    return "-";
+  }
+
+  const numericValue = Number(value);
+  const rounded = numericValue.toFixed(5).replace(/\.?0+$/, "");
+  if (rounded === "0" && numericValue !== 0) {
+    return numericValue > 0 ? "<0.00001" : ">-0.00001";
+  }
+
+  return rounded;
 }
 
 function standardDeviation(values) {
@@ -1391,9 +1558,24 @@ function formatFrequency(plan) {
   return `At ${unit}`;
 }
 
-function dueStatusBadge(plan) {
+function dueStatusBadge(plan, planIndex) {
   const status = dueStatusForPlan(plan);
-  return `<span class="due-status-badge ${status.className}" title="${escapeHtml(status.title)}">${escapeHtml(status.label)}</span>`;
+  return `<span class="due-status-badge ${status.className}" data-plan-index="${planIndex}" title="${escapeHtml(status.title)}">${escapeHtml(status.label)}</span>`;
+}
+
+function refreshDueStatusBadges() {
+  document.querySelectorAll(".due-status-badge[data-plan-index]").forEach((badge) => {
+    const plan = state.selectedPlans[Number(badge.dataset.planIndex)];
+    if (!plan) {
+      return;
+    }
+
+    const status = dueStatusForPlan(plan);
+    badge.classList.remove("due-status-neutral", "due-status-due", "due-status-overdue");
+    badge.classList.add(status.className);
+    badge.title = status.title;
+    badge.textContent = status.label;
+  });
 }
 
 function dueStatusForPlan(plan) {
@@ -1442,6 +1624,10 @@ function dueStatusForPlan(plan) {
 
 async function submitMeasurement(event) {
   event.preventDefault();
+  if (state.inspectionSubmitting) {
+    return;
+  }
+
   const activeInput = document.activeElement?.classList?.contains("measurement-input")
     ? document.activeElement
     : null;
@@ -1458,7 +1644,9 @@ async function submitMeasurement(event) {
     return;
   }
 
-  await resetCompletedInspectionEntry();
+  await withInspectionSubmitFeedback(async () => {
+    await resetCompletedInspectionEntry();
+  });
 }
 
 function inputHasValue(input) {
@@ -1507,6 +1695,7 @@ function wireMeasurementDeviceInputs() {
         input.dataset.submitted = "false";
       }
       updateMeasurementDraft(input);
+      updateCurrentPlanStatus(input);
       updateInspectionSubmitState();
     });
     input.addEventListener("blur", async () => {
@@ -1536,9 +1725,64 @@ function wireMeasurementDeviceInputs() {
       window.setTimeout(() => {
         normalizeMeasurementInput(input);
         updateMeasurementDraft(input);
+        updateCurrentPlanStatus(input);
       }, 0);
     });
   });
+}
+
+function updateCurrentPlanStatus(input) {
+  updatePlanStatus(Number(input.dataset.planIndex));
+}
+
+function updatePlanStatus(planIndex) {
+  planIndex = Number(planIndex);
+  const plan = state.selectedPlans[planIndex];
+  if (!plan) {
+    return;
+  }
+
+  const card = document.querySelector(`.variable-card[data-plan-index="${planIndex}"]`);
+  if (!card || card.classList.contains("inactive-plan-card")) {
+    return;
+  }
+
+  const context = state.contexts[planIndex];
+  const isAttribute = plan.characteristicType === "Attribute";
+  const isRecordOnly = !isAttribute && !hasSpecLimits(plan, context);
+  const status = inspectionItemStatus(plan, context, isAttribute, isRecordOnly, currentEntryStatusByPlan().get(planIndex));
+  card.classList.remove("inspection-status-good", "inspection-status-warn", "inspection-status-bad", "inspection-status-record", "inspection-status-neutral");
+  card.classList.add(status.className);
+  const rail = card.querySelector(".inspection-status-rail");
+  const railText = rail?.querySelector("span");
+  if (rail) {
+    rail.setAttribute("aria-label", status.label);
+    rail.title = status.label;
+  }
+  if (railText) {
+    railText.textContent = status.shortLabel;
+  }
+  updateProcessWarningPill(card, context?.processWarning);
+}
+
+function updateProcessWarningPill(card, warning) {
+  let pill = card.querySelector(".process-warning-pill");
+  if (!warning) {
+    pill?.remove();
+    return;
+  }
+
+  if (!pill) {
+    pill = document.createElement("div");
+    pill.className = "process-warning-pill";
+    const header = card.querySelector(".variable-header");
+    header?.insertAdjacentElement("afterend", pill);
+  }
+
+  pill.title = warning.detail || "";
+  pill.innerHTML = `
+    <strong>Process drift</strong>
+    <span>${escapeHtml(ruleLabel(warning.ruleTriggered))}${warning.detectedAt ? ` at ${escapeHtml(formatTime(warning.detectedAt))}` : ""}</span>`;
 }
 
 async function submitMeasurementInput(input, options = {}) {
@@ -1564,6 +1808,8 @@ async function submitMeasurementInput(input, options = {}) {
 
   input.dataset.submitting = "true";
   try {
+    const planIndex = Number(input.dataset.planIndex);
+    const needsImmediateLockCheck = measurementInputWouldLock(input, plan, state.contexts[planIndex]);
     await api("/inspections/measurements", {
       method: "POST",
       body: JSON.stringify({
@@ -1584,33 +1830,72 @@ async function submitMeasurementInput(input, options = {}) {
     });
     markAcceptedMeasurementInput(input, value);
     showEntryMessage(`${sampleLabel(input)} saved.`, "ok");
-    const planIndex = Number(input.dataset.planIndex);
-    state.contexts[planIndex] = await loadVariableContext(jobNum, resourceId, plan);
-    renderMeanSummary();
-    if (state.contexts[planIndex]?.activeLock) {
-      await loadJobNotes(jobNum);
-      state.activeLock = state.contexts[planIndex].activeLock;
-      renderLock(state.activeLock);
-      showEntryMessage(`${sampleLabel(input)} saved. Lock detected.`, "error");
-      return "locked";
-    }
+    updateCurrentPlanStatus(input);
     if (inspectionEntryComplete()) {
       updateInspectionSubmitState();
       showEntryMessage("Inspection entries saved. Review them, then click Submit Inspection.", "ok");
-      return "complete";
     }
-    await loadJobNotes(jobNum);
     updateInspectionSubmitState();
+    const refresh = refreshPlanContextAfterMeasurement(jobNum, resourceId, plan, planIndex, input);
+    if (needsImmediateLockCheck) {
+      const refreshResult = await refresh;
+      if (refreshResult === "locked" || refreshResult === "warning") {
+        return refreshResult;
+      }
+    } else {
+      refresh.catch(() => {});
+    }
     if (options.reloadOnSuccess === true) {
       await loadContext();
     }
-    return "submitted";
+    return inspectionEntryComplete() ? "complete" : "submitted";
   } catch (error) {
     showEntryMessage("Measurement rejected. " + readableError(error), "error");
     throw error;
   } finally {
     input.dataset.submitting = "false";
   }
+}
+
+function measurementInputWouldLock(input, plan, context) {
+  const value = Number(input.value);
+  if (!Number.isFinite(value)) {
+    return false;
+  }
+
+  if (input.dataset.entryType === "Attribute") {
+    return value === 0;
+  }
+
+  const lowerSpecLimit = firstFiniteValue(context?.lowerSpecLimit, plan?.lsl);
+  const upperSpecLimit = firstFiniteValue(context?.upperSpecLimit, plan?.usl);
+  return (lowerSpecLimit !== null && value < lowerSpecLimit) ||
+    (upperSpecLimit !== null && value > upperSpecLimit);
+}
+
+async function refreshPlanContextAfterMeasurement(jobNum, resourceId, plan, planIndex, input) {
+  const latestContext = await loadVariableContext(jobNum, resourceId, plan);
+  state.contexts[planIndex] = latestContext;
+  renderMeanSummary();
+  updatePlanStatus(planIndex);
+  updateInspectionSubmitState();
+
+  if (latestContext?.activeLock) {
+    await loadJobNotes(jobNum);
+    state.activeLock = latestContext.activeLock;
+    renderLock(state.activeLock);
+    showEntryMessage(`${sampleLabel(input)} saved. Lock detected.`, "error");
+    return "locked";
+  }
+
+  if (latestContext?.processWarning) {
+    loadJobNotes(jobNum).catch(() => {});
+    showEntryMessage(`${sampleLabel(input)} saved. Process drift warning: ${ruleLabel(latestContext.processWarning.ruleTriggered)}.`, "warn");
+    return "warning";
+  }
+
+  loadJobNotes(jobNum).catch(() => {});
+  return "submitted";
 }
 
 function markAcceptedMeasurementInput(input, value) {
@@ -1659,8 +1944,28 @@ function completionRequiredInputs() {
   });
 }
 
+function planHasStartedEntries(planIndex) {
+  return [...document.querySelectorAll(`.measurement-input[data-plan-index="${planIndex}"]`)]
+    .some((input) => input.value.trim() || input.dataset.submitted === "true");
+}
+
 function planIsRequiredForCompletion(plan) {
   return !planUsesMachineCounterFrequency(plan) || planIsDueAtCurrentMachineCounter(plan);
+}
+
+function applyMachineCounterDueState() {
+  state.selectedPlans.forEach((plan, planIndex) => {
+    const inputs = [...document.querySelectorAll(`.measurement-input[data-plan-index="${planIndex}"]`)];
+    if (!inputs.length) {
+      return;
+    }
+
+    const dueOrStarted = planIsRequiredForCompletion(plan) || planHasStartedEntries(planIndex);
+    inputs.forEach((input) => {
+      input.disabled = !dueOrStarted;
+      input.title = dueOrStarted ? "" : "Not due at this Machine Counter.";
+    });
+  });
 }
 
 function machineCounterValue() {
@@ -1693,7 +1998,28 @@ function updateInspectionSubmitState() {
   const isComplete = inspectionEntryComplete();
   button.classList.toggle("hidden", !hasInputs);
   $("machineCounter").disabled = false;
-  button.disabled = !isComplete || !machineCounterComplete() || !perInspectionJobDataComplete() || Boolean(state.activeLock);
+  button.disabled = state.inspectionSubmitting || !isComplete || !machineCounterComplete() || !perInspectionJobDataComplete() || Boolean(state.activeLock);
+}
+
+async function withInspectionSubmitFeedback(action) {
+  const button = $("completeInspectionButton");
+  const originalText = button?.textContent || "Submit Inspection";
+  state.inspectionSubmitting = true;
+  if (button) {
+    button.classList.add("is-submitting");
+    button.textContent = "Submitting...";
+  }
+  updateInspectionSubmitState();
+  try {
+    await action();
+  } finally {
+    state.inspectionSubmitting = false;
+    if (button) {
+      button.classList.remove("is-submitting");
+      button.textContent = originalText;
+    }
+    updateInspectionSubmitState();
+  }
 }
 
 async function resetCompletedInspectionEntry() {
@@ -1733,6 +2059,7 @@ async function resetCompletedInspectionEntry() {
     return;
   }
 
+  invalidatePhaseGateHistory($("jobNum").value.trim());
   state.preserveInspectionEntriesUntil = 0;
   clearMeasurementDraftsForCurrentInspection();
   clearVisibleMeasurementInputs();
@@ -1741,6 +2068,75 @@ async function resetCompletedInspectionEntry() {
   await loadContext();
   updateInspectionSubmitState();
   showEntryMessage("Inspection submitted. Fields cleared for the next inspection.", "ok");
+}
+
+function failedInspectionInputs() {
+  return [...document.querySelectorAll(".measurement-input")]
+    .filter((input) => input.dataset.submitted === "true" || input.value.trim());
+}
+
+function buildFailedInspectionPayload(reason) {
+  const { jobNum, resourceId, set } = selectedValues();
+  if (!set) {
+    throw new Error("No inspection plan is loaded.");
+  }
+
+  return {
+    jobNum,
+    partNum: set.partNum,
+    processCode: set.processCode,
+    operationSeq: set.operationSeq,
+    resourceId,
+    inspectionPhase: set.activePhase || set.inspectionPhase || $("inspectionPhase").value,
+    failedByUserId: state.user.userName,
+    machineCounter: machineCounterComplete() ? Number(machineCounterValue()) : null,
+    measurementClientRecordIds: failedInspectionInputs()
+      .map((input) => input.dataset.clientRecordId)
+      .filter(Boolean),
+    activeAlertId: state.activeLock?.alertId || null,
+    reason
+  };
+}
+
+async function endFailedInspection() {
+  if (!state.activeLock) {
+    $("overrideMessage").textContent = "No active lock is loaded.";
+    $("overrideMessage").className = "message error";
+    return;
+  }
+
+  if (!window.confirm("End this inspection as failed and start a fresh inspection?")) {
+    return;
+  }
+
+  const reason = state.activeLock.detail || `${state.activeLock.characteristicName || "Inspection"} failed and was ended from the lock screen.`;
+  $("failInspectionButton").disabled = true;
+  $("overrideMessage").textContent = "Ending failed inspection...";
+  $("overrideMessage").className = "message";
+  try {
+    await api("/inspections/fail", {
+      method: "POST",
+      body: JSON.stringify(buildFailedInspectionPayload(reason))
+    });
+    invalidatePhaseGateHistory($("jobNum").value.trim());
+    state.activeLock = null;
+    state.preserveInspectionEntriesUntil = 0;
+    clearMeasurementDraftsForCurrentInspection();
+    clearVisibleMeasurementInputs();
+    clearPerInspectionJobDataInputs();
+    $("machineCounter").value = "";
+    await loadContext();
+    await loadJobNotes($("jobNum").value.trim());
+    updateInspectionSubmitState();
+    $("overrideMessage").textContent = "Inspection marked failed. A fresh inspection is ready.";
+    $("overrideMessage").className = "message ok";
+    showEntryMessage("Inspection marked failed. A fresh inspection is ready.", "error");
+  } catch (error) {
+    $("overrideMessage").textContent = readableError(error);
+    $("overrideMessage").className = "message error";
+  } finally {
+    $("failInspectionButton").disabled = false;
+  }
 }
 
 async function saveCompletedInspection() {
@@ -2024,7 +2420,15 @@ async function disconnectSerialDevice() {
 
 function focusNextMeasurementInput(currentInput) {
   const inputs = [...document.querySelectorAll(".measurement-input")];
-  const index = inputs.indexOf(currentInput);
+  let index = inputs.indexOf(currentInput);
+  if (index < 0) {
+    const planIndex = Number(currentInput.dataset.planIndex);
+    const sampleIndex = Number(currentInput.dataset.sampleIndex);
+    index = inputs.findIndex((input) =>
+      Number(input.dataset.planIndex) > planIndex ||
+      (Number(input.dataset.planIndex) === planIndex && Number(input.dataset.sampleIndex) > sampleIndex));
+    index -= 1;
+  }
   const next = inputs.slice(index + 1).find((input) => !input.disabled);
   if (next) {
     next.focus();
@@ -2515,6 +2919,7 @@ async function loadJobNotes(jobNum) {
 
   try {
     const history = await api(`/jobs/${encodeURIComponent(jobNum)}/history`);
+    state.phaseGateHistoryCache.set(jobNum.trim().toLowerCase(), history);
     state.jobNotes = history;
     renderJobNotes(history);
   } catch (error) {
@@ -2576,7 +2981,7 @@ function renderHistoryList(list, entries) {
   list.innerHTML = "";
   entries.forEach((entry) => {
     const item = document.createElement("article");
-    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : entry.entryType === "Material" ? "material-history-item" : entry.entryType === "JobData" ? "job-data-history-item" : entry.entryType === "PhaseComplete" ? "phase-complete-history-item" : ""}`;
+    item.className = `job-note-item ${entry.entryType === "Lock" ? "lock-history-item" : entry.entryType === "Material" ? "material-history-item" : entry.entryType === "JobData" ? "job-data-history-item" : entry.entryType === "PhaseComplete" ? "phase-complete-history-item" : entry.entryType === "InspectionFailed" ? "failed-inspection-history-item" : ""}`;
     const meta = document.createElement("div");
     meta.className = "job-note-meta";
     const user = document.createElement("strong");
@@ -2594,6 +2999,10 @@ function renderHistoryList(list, entries) {
       text.textContent = phaseCompletionHistoryText(entry);
     } else if (entry.entryType === "MeasurementEdit") {
       text.textContent = measurementEditHistoryText(entry);
+    } else if (entry.entryType === "MachineCounterEdit") {
+      text.textContent = machineCounterEditHistoryText(entry);
+    } else if (entry.entryType === "InspectionFailed") {
+      text.textContent = failedInspectionHistoryText(entry);
     } else if (entry.entryType === "Measurement") {
       text.textContent = measurementHistoryText(entry);
     } else {
@@ -2622,6 +3031,10 @@ function historyEntryTitle(entry) {
     return `${entry.characteristicName} edited`;
   }
 
+  if (entry.entryType === "MachineCounterEdit") {
+    return "Machine Counter edited";
+  }
+
   if (entry.entryType === "Lock") {
     return `${entry.characteristicName} ${entry.status === "Active" ? "locked" : "lock cleared"}`;
   }
@@ -2640,6 +3053,10 @@ function historyEntryTitle(entry) {
 
   if (entry.entryType === "PhaseComplete") {
     return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed`;
+  }
+
+  if (entry.entryType === "InspectionFailed") {
+    return `${entry.inspectionPhase || "Inspection"} inspection ${entry.failureNumber || 1} failed`;
   }
 
   return entry.operatorUserId;
@@ -2667,6 +3084,13 @@ function measurementEditHistoryText(entry) {
   return `Edited from ${entry.oldInspectionPhase}: ${formatNumber(entry.oldValue)} to ${entry.newInspectionPhase}: ${formatNumber(entry.newValue)} by ${entry.operatorUserId}.${reason}`;
 }
 
+function machineCounterEditHistoryText(entry) {
+  const oldValue = entry.oldMachineCounter === null || entry.oldMachineCounter === undefined ? "blank" : formatInteger(Number(entry.oldMachineCounter));
+  const newValue = entry.newMachineCounter === null || entry.newMachineCounter === undefined ? "blank" : formatInteger(Number(entry.newMachineCounter));
+  const reason = entry.reason ? ` Reason: ${entry.reason}.` : "";
+  return `Edited from ${oldValue} to ${newValue} by ${entry.operatorUserId}.${reason}`;
+}
+
 function phaseCompletionHistoryText(entry) {
   const operation = entry.processCode
     ? ` Operation: ${entry.processCode}${entry.operationSeq ? ` ${entry.operationSeq}` : ""}.`
@@ -2676,6 +3100,18 @@ function phaseCompletionHistoryText(entry) {
     : "";
   const box = inspectionBoxNumberText(entry);
   return `${entry.inspectionPhase || "Inspection"} inspection ${entry.completionNumber || 1} completed by ${historyEntryUser(entry)}.${counter}${box}${operation}`;
+}
+
+function failedInspectionHistoryText(entry) {
+  const operation = entry.processCode
+    ? ` Operation: ${entry.processCode}${entry.operationSeq ? ` ${entry.operationSeq}` : ""}.`
+    : "";
+  const counter = entry.machineCounter !== null && entry.machineCounter !== undefined
+    ? ` Machine Counter: ${entry.machineCounter}.`
+    : "";
+  const count = Array.isArray(entry.measurementIds) ? ` ${entry.measurementIds.length} inspection entries captured.` : "";
+  const reason = entry.detail || entry.noteText ? ` Reason: ${entry.detail || entry.noteText}.` : "";
+  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.failureNumber || 1} marked failed by ${historyEntryUser(entry)}.${counter}${operation}${count}${reason}`;
 }
 
 function lockHistoryText(entry) {
@@ -2792,17 +3228,20 @@ async function clearLock(event) {
   }
 
   const preservedInputs = snapshotMeasurementInputs();
+  const preservedMachineCounter = machineCounterValue();
+  const clearedLock = state.activeLock;
+  const affectedPlanIndex = planIndexForLock(clearedLock);
   state.preserveInspectionEntriesUntil = Date.now() + 10000;
   try {
-    const isGodOverride = overrideUserHasGodRole();
-    await api(`/alerts/${state.activeLock.alertId}/override`, {
+    const isSystemManagerOverride = overrideUserIsSystemManager();
+    await api(`/alerts/${clearedLock.alertId}/override`, {
       method: "POST",
       body: JSON.stringify({
         overrideUserName: $("overrideUserName").value.trim(),
         overridePassword: $("overridePassword").value,
-        causeCategory: isGodOverride ? "Unspecified" : $("causeCategory").value,
-        causeText: isGodOverride ? "" : $("causeText").value.trim(),
-        solutionText: isGodOverride ? "" : $("solutionText").value.trim(),
+        causeCategory: isSystemManagerOverride ? "Unspecified" : $("causeCategory").value,
+        causeText: isSystemManagerOverride ? "" : $("causeText").value.trim(),
+        solutionText: isSystemManagerOverride ? "" : $("solutionText").value.trim(),
         whyStandardProcessWasBypassed: $("bypassReason").value.trim() || null,
         unlockedAt: new Date().toISOString()
       })
@@ -2814,16 +3253,69 @@ async function clearLock(event) {
     $("bypassReason").value = "";
     $("overrideMessage").textContent = "Lock cleared.";
     $("overrideMessage").className = "message ok";
-    state.activeLock = null;
-    renderLock(null);
-    await refreshContextDataWithoutClearingEntries();
+    const nextLock = clearActiveLockFromLocalContext(clearedLock);
+    renderLock(nextLock);
+    restoreMachineCounterValue(preservedMachineCounter);
     restoreMeasurementInputSnapshot(preservedInputs);
-    window.setTimeout(() => restoreMeasurementInputSnapshot(preservedInputs), 0);
-    window.setTimeout(() => restoreMeasurementInputSnapshot(preservedInputs), 300);
+    if (affectedPlanIndex >= 0) {
+      updatePlanStatus(affectedPlanIndex);
+    }
+
+    applyMachineCounterDueState();
+    updateInspectionSubmitState();
+    window.requestAnimationFrame(() => {
+      restoreMeasurementInputSnapshot(preservedInputs);
+      if (!nextLock) {
+        focusLockMeasurementInput(clearedLock);
+      }
+    });
+    showEntryMessage(nextLock ? "Lock cleared. Another active lock still needs attention." : "Lock cleared. Correct the entry and continue.", nextLock ? "error" : "ok");
+    const { jobNum } = selectedValues();
+    if (jobNum) {
+      loadJobNotes(jobNum).catch(() => {});
+    }
   } catch (error) {
     $("overrideMessage").textContent = readableError(error);
     $("overrideMessage").className = "message error";
   }
+}
+
+function clearActiveLockFromLocalContext(clearedLock) {
+  if (!clearedLock) {
+    state.activeLock = null;
+    return null;
+  }
+
+  state.contexts = state.contexts.map((context) => {
+    if (context?.activeLock?.alertId !== clearedLock.alertId) {
+      return context;
+    }
+
+    return { ...context, activeLock: null };
+  });
+  state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
+  return state.activeLock;
+}
+
+function planIndexForLock(lock) {
+  if (!lock) {
+    return -1;
+  }
+
+  return state.selectedPlans.findIndex((plan) =>
+    String(plan.characteristicName || "").toLowerCase() === String(lock.characteristicName || "").toLowerCase());
+}
+
+function focusLockMeasurementInput(lock) {
+  const planIndex = planIndexForLock(lock);
+  if (planIndex < 0) {
+    return;
+  }
+
+  const input = [...document.querySelectorAll(`.measurement-input[data-plan-index="${planIndex}"]`)]
+    .find((candidate) => !candidate.disabled);
+  input?.focus();
+  input?.select?.();
 }
 
 async function refreshContextDataWithoutClearingEntries() {
@@ -2832,7 +3324,7 @@ async function refreshContextDataWithoutClearingEntries() {
     return;
   }
 
-  state.contexts = await Promise.all(state.selectedPlans.map((plan) => loadVariableContext(jobNum, resourceId, plan)));
+  state.contexts = await loadVariableContexts(jobNum, resourceId, state.selectedPlans);
   state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
   renderLock(state.activeLock);
   renderMeanSummary();
@@ -2845,9 +3337,11 @@ async function refreshLockStatus() {
   $("overrideMessage").textContent = "Refreshing lock status...";
   $("overrideMessage").className = "message";
   const preservedInputs = snapshotMeasurementInputs();
+  const preservedMachineCounter = machineCounterValue();
   state.preserveInspectionEntriesUntil = Date.now() + 10000;
   try {
     await refreshContextDataWithoutClearingEntries();
+    restoreMachineCounterValue(preservedMachineCounter);
     restoreMeasurementInputSnapshot(preservedInputs);
     if (state.activeLock) {
       $("overrideMessage").textContent = "Lock is still active. Use authorized credentials to clear or bypass it.";
@@ -2871,11 +3365,17 @@ function resetLockForm() {
   $("bypassReason").value = "";
   $("overrideMessage").textContent = "Unlock form reset.";
   $("overrideMessage").className = "message";
-  updateGodReasonVisibility();
+  updateSystemManagerReasonVisibility();
 }
 
 function canCurrentUserOverride() {
   return state.user?.permissions?.includes("CanOverrideDriftLock") === true || isArchonSystemManager(state.user);
+}
+
+function restoreMachineCounterValue(value) {
+  if (value !== null && value !== undefined && value !== "") {
+    $("machineCounter").value = value;
+  }
 }
 
 function isArchonSystemManager(user) {
@@ -2914,6 +3414,14 @@ function assignableRoles() {
   return canArchiveData()
     ? state.roles
     : state.roles.filter((role) => role.toLowerCase() !== "god");
+}
+
+function roleDisplayName(role) {
+  return role?.toLowerCase() === "god" ? "System Manager" : role;
+}
+
+function formatRoleList(roles) {
+  return (roles || []).map(roleDisplayName).join(", ");
 }
 
 function actingSessionQuery() {
@@ -3119,7 +3627,7 @@ async function loadSetupAdmin() {
   if (canManageUsers()) {
     state.roles = await api("/setup/roles");
     state.users = await api("/setup/users");
-    fillSelect($("setupRole"), assignableRoles(), (role) => role, (role) => role);
+    fillSelect($("setupRole"), assignableRoles(), (role) => role, roleDisplayName);
     renderUserProductGroupPicker();
     renderUsers();
   }
@@ -3287,6 +3795,37 @@ async function saveReviewMeasurement(id, item) {
       body: JSON.stringify({ value, inspectionPhase, editedByUserId: state.user.userName, reason: reason.trim() })
     });
     $("reviewMessage").textContent = "Inspection entry updated.";
+    $("reviewMessage").className = "message ok";
+    await loadReview();
+  } catch (error) {
+    $("reviewMessage").textContent = readableError(error);
+    $("reviewMessage").className = "message error";
+  }
+}
+
+async function saveReviewMachineCounter(id, item) {
+  const input = item.querySelector(".review-machine-counter-value");
+  const rawValue = input?.value.trim() || "";
+  const machineCounter = rawValue ? Number(rawValue) : null;
+  if (rawValue && (!Number.isInteger(machineCounter) || machineCounter < 0)) {
+    $("reviewMessage").textContent = "Machine Counter must be a whole number.";
+    $("reviewMessage").className = "message error";
+    return;
+  }
+
+  const reason = window.prompt("Enter the reason for changing this Machine Counter:");
+  if (!reason || !reason.trim()) {
+    $("reviewMessage").textContent = "A reason is required when changing inspection history.";
+    $("reviewMessage").className = "message error";
+    return;
+  }
+
+  try {
+    await api(`/review/completions/${id}/machine-counter`, {
+      method: "PATCH",
+      body: JSON.stringify({ machineCounter, editedByUserId: state.user.userName, reason: reason.trim() })
+    });
+    $("reviewMessage").textContent = "Machine Counter updated.";
     $("reviewMessage").className = "message ok";
     await loadReview();
   } catch (error) {
@@ -3545,7 +4084,7 @@ function renderReviewMeasurementDetail(container, groupId, measurement) {
 
 function renderReviewHistoryEvent(container, entry, measurementById = new Map(), jobDataEntries = [], materialEntries = []) {
   const item = document.createElement("div");
-  item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""} ${entry.entryType === "PhaseComplete" ? "phase-complete-history-row" : ""}`;
+  item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""} ${entry.entryType === "PhaseComplete" ? "phase-complete-history-row" : ""} ${entry.entryType === "InspectionFailed" ? "measurement-out-spec" : ""}`;
   const completionMeasurements = inspectionCompletionMeasurements(entry, measurementById);
   const completionJobData = inspectionCompletionJobData(entry, jobDataEntries);
   const completionMaterials = inspectionCompletionMaterials(entry, materialEntries);
@@ -3559,9 +4098,13 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
         ? jobDataHistoryText(entry)
         : entry.entryType === "PhaseComplete"
           ? phaseCompletionHistoryText(entry)
-          : entry.entryType === "MeasurementEdit"
-            ? measurementEditHistoryText(entry)
-            : entry.noteText;
+          : entry.entryType === "InspectionFailed"
+            ? failedInspectionHistoryText(entry)
+            : entry.entryType === "MeasurementEdit"
+              ? measurementEditHistoryText(entry)
+              : entry.entryType === "MachineCounterEdit"
+                ? machineCounterEditHistoryText(entry)
+                : entry.noteText;
   const action = entry.entryType === "Material" && canEditMaterialLots()
     ? `<button type="button" class="secondary compact-button" data-action="edit-material-lot">Edit Lot</button>`
     : completionMeasurements.length || completionJobData.length || completionMaterials.length || completionMetadata.length
@@ -3586,31 +4129,30 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
 }
 
 function inspectionCompletionMetadata(entry) {
-  if (entry.entryType !== "PhaseComplete") {
+  if (entry.entryType !== "PhaseComplete" && entry.entryType !== "InspectionFailed") {
     return [];
   }
 
-  const rows = [];
-  if (entry.machineCounter !== null && entry.machineCounter !== undefined) {
-    rows.push({ label: "Machine Counter", value: entry.machineCounter });
-  }
-
-  return rows;
+  return [{ label: "Machine Counter", value: entry.machineCounter ?? "" }];
 }
 
 function renderReviewCompletionMetadataDetail(container, groupId, metadata, completionEntry) {
   const item = document.createElement("div");
   item.dataset.reviewGroup = groupId;
   item.className = "data-row review-job-data-detail-row hidden";
+  const isMachineCounter = metadata.label === "Machine Counter" && completionEntry.entryType === "PhaseComplete";
   item.innerHTML = `
     <span>${formatDateTime(completionEntry.timestamp)}</span>
     <span>-</span>
     <span>${escapeHtml(metadata.label)}<small>Inspection Data</small></span>
-    <span>${escapeHtml(metadata.value)}</span>
+    <span>${isMachineCounter
+      ? `<input class="review-machine-counter-value" type="number" min="0" step="1" value="${escapeHtml(metadata.value)}">`
+      : escapeHtml(metadata.value)}</span>
     <span>${escapeHtml(completionEntry.resourceId || "-")}</span>
     <span>${escapeHtml(completionEntry.processCode || "-")}${completionEntry.operationSeq ? ` ${completionEntry.operationSeq}` : ""}</span>
     <span>${escapeHtml(historyEntryUser(completionEntry))}</span>
-    <span></span>`;
+    <span>${isMachineCounter ? `<button type="button" class="secondary compact-button">Save</button>` : ""}</span>`;
+  item.querySelector("button")?.addEventListener("click", () => saveReviewMachineCounter(completionEntry.id, item));
   container.appendChild(item);
 }
 
@@ -3672,7 +4214,7 @@ function renderReviewJobDataDetail(container, groupId, jobData, completionEntry)
 }
 
 function inspectionCompletionMeasurements(entry, measurementById) {
-  if (entry.entryType !== "PhaseComplete" || !Array.isArray(entry.measurementIds)) {
+  if ((entry.entryType !== "PhaseComplete" && entry.entryType !== "InspectionFailed") || !Array.isArray(entry.measurementIds)) {
     return [];
   }
 
@@ -4537,7 +5079,7 @@ function renderUsers() {
     row.innerHTML = `
       <div>
         <strong>${user.userName}</strong>
-        <span>${user.roles.join(", ")} · ${escapeHtml(shiftText)}</span>
+        <span>${escapeHtml(formatRoleList(user.roles))} · ${escapeHtml(shiftText)}</span>
         <small>${productGroupText}</small>
       </div>`;
     row.addEventListener("click", () => selectUser(user.userName));
@@ -4726,7 +5268,7 @@ async function saveUser(event) {
 async function importUsersXlsx(event) {
   event.preventDefault();
   if (!canImportSetupData()) {
-    $("userImportMessage").textContent = "Import is restricted to GOD access.";
+    $("userImportMessage").textContent = "Import is restricted to System Manager access.";
     $("userImportMessage").className = "message error";
     return;
   }
@@ -5051,7 +5593,8 @@ function loadSelectedPartSetup() {
     .filter((field) =>
       field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
       normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(firstPlan.inspectionPhase) &&
-      !isBuiltInOrPartStandardJobData(field.fieldName))
+      !isBuiltInOrPartStandardJobData(field.fieldName) &&
+      !isRedundantJobDataField(field.fieldName))
     .forEach((field) => addSetupJobDataFieldRow(field));
   $("setupMaterialRows").innerHTML = "";
   (state.snapshot.partMaterialFields || [])
@@ -5336,7 +5879,7 @@ function setupJobDataFieldRows() {
       isRequired: row.querySelector(".setup-job-data-required").value === "true",
       displayOrder: index
     }))
-    .filter((row) => row.fieldName);
+    .filter((row) => row.fieldName && !isRedundantJobDataField(row.fieldName));
 }
 
 function setupMaterialRows() {
@@ -5503,7 +6046,7 @@ function validateVariablePhases(variables) {
 async function importPartsXlsx(event) {
   event.preventDefault();
   if (!canImportSetupData()) {
-    $("partsImportMessage").textContent = "Import is restricted to GOD access.";
+    $("partsImportMessage").textContent = "Import is restricted to System Manager access.";
     $("partsImportMessage").className = "message error";
     return;
   }
@@ -5535,7 +6078,7 @@ async function importPartsXlsx(event) {
 async function importMachinesXlsx(event) {
   event.preventDefault();
   if (!canImportSetupData()) {
-    $("machineImportMessage").textContent = "Import is restricted to GOD access.";
+    $("machineImportMessage").textContent = "Import is restricted to System Manager access.";
     $("machineImportMessage").className = "message error";
     return;
   }
@@ -5827,7 +6370,43 @@ function escapeHtml(value) {
 }
 
 function formatNumber(value) {
-  return value === null || value === undefined ? "-" : Number(value).toFixed(3);
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "-";
+  }
+
+  return expandScientificNotation(String(numericValue));
+}
+
+function expandScientificNotation(value) {
+  if (!/[eE]/.test(value)) {
+    return value;
+  }
+
+  const [coefficient, exponentText] = value.toLowerCase().split("e");
+  const exponent = Number(exponentText);
+  if (!Number.isInteger(exponent)) {
+    return value;
+  }
+
+  const sign = coefficient.startsWith("-") ? "-" : "";
+  const unsigned = sign ? coefficient.slice(1) : coefficient;
+  const [whole, fraction = ""] = unsigned.split(".");
+  const digits = whole + fraction;
+  const decimalPosition = whole.length + exponent;
+  if (decimalPosition <= 0) {
+    return `${sign}0.${"0".repeat(Math.abs(decimalPosition))}${digits}`.replace(/0+$/, "").replace(/\.$/, "");
+  }
+
+  if (decimalPosition >= digits.length) {
+    return `${sign}${digits}${"0".repeat(decimalPosition - digits.length)}`;
+  }
+
+  return `${sign}${digits.slice(0, decimalPosition)}.${digits.slice(decimalPosition)}`.replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function formatTime(value) {
@@ -5894,19 +6473,19 @@ $("resourceId").addEventListener("change", clearSelectedWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
 $("machineCounter").addEventListener("input", () => {
-  normalizeMachineCounterInput();
-  renderVariables();
+  applyMachineCounterDueState();
   updateInspectionSubmitState();
 });
 $("jobTagsForm").addEventListener("submit", saveJobTags);
 $("materialChangeForm").addEventListener("submit", saveMaterialChange);
 $("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
+$("failInspectionButton").addEventListener("click", endFailedInspection);
 $("refreshLockStatusButton").addEventListener("click", refreshLockStatus);
 $("resetLockFormButton").addEventListener("click", resetLockForm);
 $("connectSerialDeviceButton").addEventListener("click", connectSerialDevice);
 $("disconnectSerialDeviceButton").addEventListener("click", disconnectSerialDevice);
-$("overrideUserName").addEventListener("input", updateGodReasonVisibility);
+$("overrideUserName").addEventListener("input", updateSystemManagerReasonVisibility);
 $("trendCharacteristic").addEventListener("change", () => {
   state.trendCharacteristic = $("trendCharacteristic").value;
   loadTrend();

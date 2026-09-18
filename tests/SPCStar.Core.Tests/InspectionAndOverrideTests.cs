@@ -8,36 +8,85 @@ namespace SPCStar.Core.Tests;
 public sealed class InspectionAndOverrideTests
 {
     [Fact]
-    public void EnterMeasurement_CreatesAlertAndLocksFurtherEntry_WhenRuleViolationOccurs()
+    public void EnterMeasurement_CreatesDriftWarningAndAllowsFurtherEntry_WhenRuleViolationOccurs()
     {
         var repository = RepositoryWithSecurityAndLimits();
+        var limit = repository.ControlLimits.First(item =>
+            item.PartNum == "P100" &&
+            item.ProcessCode == "MOLD" &&
+            item.OperationSeq == 10 &&
+            item.CharacteristicName == "Diameter");
+        limit.CenterLine = 5m;
+        limit.Lcl = 4.7m;
+        limit.Ucl = 5.3m;
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
-        var ok = service.EnterMeasurement(Entry(13.5m));
-        var locked = service.EnterMeasurement(Entry(10m, minutes: 1));
+        var warning = service.EnterMeasurement(Entry(5.4m));
+        var next = service.EnterMeasurement(Entry(5m, minutes: 1));
 
-        Assert.True(ok.Succeeded);
-        Assert.Single(repository.Alerts);
-        Assert.False(locked.Succeeded);
-        Assert.Contains(locked.Errors, error => error.Contains("Diameter is locked", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(locked.Errors, error => error.Contains("control limit", StringComparison.OrdinalIgnoreCase));
+        Assert.True(warning.Succeeded, string.Join(" | ", warning.Errors));
+        Assert.True(next.Succeeded, string.Join(" | ", next.Errors));
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(RuleTriggered.OnePointBeyondControlLimit, alert.RuleTriggered);
+        Assert.Equal(AlertStatus.Warning, alert.Status);
     }
 
     [Fact]
-    public void EnterMeasurement_CreatesSpecAlert_WhenSpecLimitOnlyRuleIsSelected()
+    public void EnterMeasurement_CreatesSpecLock_WhenValueIsOutOfSpec()
     {
         var repository = RepositoryWithSecurityAndLimits();
-        SetRuleSet(repository, "Diameter", "SpecLimitOnly");
         repository.Users.Single(user => user.UserName == "operator1").Shift = "1st Shift";
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         var result = service.EnterMeasurement(Entry(6m));
+        var locked = service.EnterMeasurement(Entry(5m, minutes: 1));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal("1st Shift", result.Value!.OperatorShift);
         var alert = Assert.Single(repository.Alerts);
         Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
+        Assert.Equal(AlertStatus.Active, alert.Status);
         Assert.Equal("1st Shift", alert.OperatorShift);
+        Assert.Contains("above the upper specification limit", alert.Detail);
+        Assert.False(locked.Succeeded);
+        Assert.Contains(locked.Errors, error => error.Contains("Diameter is locked", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void EnterMeasurement_CreatesSpecLock_WhenValueIsBelowLowerOnlySpec()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var characteristic = repository.Characteristics.Single(characteristic => characteristic.Name == "Diameter");
+        var plan = repository.InspectionPlans.Single(plan => plan.CharacteristicId == characteristic.Id);
+        plan.Nominal = null;
+        plan.Lsl = 280m;
+        plan.Usl = null;
+        SetRuleSet(repository, "Diameter", "SpecLimitOnly");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(279m));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
+        Assert.Equal(AlertStatus.Active, alert.Status);
+        Assert.Contains("below the lower specification limit 280", alert.Detail);
+    }
+
+    [Fact]
+    public void EnterMeasurement_CreatesSpecLock_WhenNoControlLimitsExist()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.ControlLimits.Clear();
+        SetRuleSet(repository, "Diameter", "SpecLimitOnly");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(6m));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
+        Assert.Equal(AlertStatus.Active, alert.Status);
         Assert.Contains("above the upper specification limit", alert.Detail);
     }
 
@@ -168,9 +217,17 @@ public sealed class InspectionAndOverrideTests
     {
         var repository = RepositoryWithSecurityAndLimits();
         SetRuleSet(repository, "Diameter", "None");
+        var limit = repository.ControlLimits.First(item =>
+            item.PartNum == "P100" &&
+            item.ProcessCode == "MOLD" &&
+            item.OperationSeq == 10 &&
+            item.CharacteristicName == "Diameter");
+        limit.CenterLine = 5m;
+        limit.Lcl = 4.7m;
+        limit.Ucl = 5.3m;
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
-        var result = service.EnterMeasurement(Entry(13.5m));
+        var result = service.EnterMeasurement(Entry(5.4m));
 
         Assert.True(result.Succeeded);
         Assert.Empty(repository.Alerts);
@@ -189,7 +246,9 @@ public sealed class InspectionAndOverrideTests
             service.EnterMeasurement(Entry(value, index));
         }
 
-        Assert.Contains(repository.Alerts, alert => alert.RuleTriggered == RuleTriggered.NelsonTrend);
+        var alerts = repository.Alerts.Where(alert => alert.RuleTriggered == RuleTriggered.NelsonTrend).ToArray();
+        Assert.NotEmpty(alerts);
+        Assert.All(alerts, alert => Assert.Equal(AlertStatus.Warning, alert.Status));
     }
 
     [Fact]
@@ -210,6 +269,7 @@ public sealed class InspectionAndOverrideTests
         service.EnterMeasurement(Entry(5.4m));
 
         var alert = repository.Alerts.Single(alert => alert.RuleTriggered == RuleTriggered.OnePointBeyondControlLimit);
+        Assert.Equal(AlertStatus.Warning, alert.Status);
         Assert.Contains("prior measurements", alert.Detail);
         Assert.Contains("Control limits", alert.Detail);
         Assert.Contains("5.4", alert.Detail);
@@ -250,6 +310,7 @@ public sealed class InspectionAndOverrideTests
     {
         var repository = RepositoryWithSecurityAndLimits();
         SetRuleSet(repository, "Diameter", ruleSet);
+        WidenSpecLimits(repository, "Diameter", 0m, 10m);
         AddCompletedMeasurement(repository, "Diameter", 5m, -10);
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
@@ -258,7 +319,9 @@ public sealed class InspectionAndOverrideTests
             service.EnterMeasurement(Entry(decimal.Parse(text), index));
         }
 
-        Assert.Contains(repository.Alerts, alert => alert.RuleTriggered == expectedRule);
+        var alerts = repository.Alerts.Where(alert => alert.RuleTriggered == expectedRule).ToArray();
+        Assert.NotEmpty(alerts);
+        Assert.All(alerts, alert => Assert.Equal(AlertStatus.Warning, alert.Status));
     }
 
     [Fact]
@@ -355,6 +418,28 @@ public sealed class InspectionAndOverrideTests
         Assert.Equal(12345, completion.MachineCounter);
         Assert.Equal(3, completion.MeasurementIds.Count);
         Assert.Equal("operator1", completion.CompletedByUserId);
+    }
+
+    [Fact]
+    public void CompleteInspection_RequiresOneAttributeDisposition_WhenTemplateSampleSizeIsHigher()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        AddAttributeCharacteristic(repository);
+        var attribute = repository.Characteristics.Single(characteristic => characteristic.Name == "Comparator profile");
+        repository.InspectionPlans.Single(plan => plan.CharacteristicId == attribute.Id).SampleSize = 4;
+        repository.Measurements.Add(SavedMeasurement("Diameter", 10m, 1));
+        repository.Measurements.Add(SavedMeasurement("Length", 42m, 2));
+        repository.Measurements.Add(SavedMeasurement("Weight", 18m, 3));
+        repository.Measurements.Add(SavedMeasurement("Comparator profile", 1m, 4));
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(12345));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var completion = Assert.Single(repository.JobPhaseCompletions);
+        Assert.Equal(4, completion.MeasurementIds.Count);
+        Assert.Contains(repository.Measurements.Single(measurement => measurement.CharacteristicName == "Comparator profile").Id, completion.MeasurementIds);
     }
 
     [Fact]
@@ -587,13 +672,13 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
-    public void EnterMeasurement_AllowsGodInspectionAcrossProductGroups()
+    public void EnterMeasurement_AllowsArchonInspectionAcrossProductGroups()
     {
         var repository = RepositoryWithSecurityAndLimits();
         repository.Parts.Single(part => part.PartNum == "P100").ProductGroup = "Needles";
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
-        var result = service.EnterMeasurement(Entry(10m) with { OperatorUserId = "god1" });
+        var result = service.EnterMeasurement(Entry(10m) with { OperatorUserId = "Archon" });
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Single(repository.Measurements);
@@ -672,36 +757,36 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
-    public void Override_RequiresGodBypassReason()
+    public void Override_RequiresArchonBypassReason()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
         var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "Emergency", "Released", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "", "", null, DateTimeOffset.UtcNow));
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("required for GOD", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("Bypass reason", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void Override_AllowsGodBypassWithoutCauseOrSolution()
+    public void Override_AllowsArchonBypassWithoutCauseOrSolution()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
         var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "", "", "Architect-approved bypass for test entry.", DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "", "", "System manager bypass for test entry.", DateTimeOffset.UtcNow));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal(AlertStatus.Overridden, alert.Status);
-        Assert.Equal(RoleNames.GOD, result.Value!.OverrideRole);
-        Assert.Equal("GOD Bypass", result.Value.CauseCategory);
-        Assert.Equal("Architect-approved bypass for test entry.", result.Value.WhyStandardProcessWasBypassed);
+        Assert.Equal("System Manager", result.Value!.OverrideRole);
+        Assert.Equal("System Manager Bypass", result.Value.CauseCategory);
+        Assert.Equal("System manager bypass for test entry.", result.Value.WhyStandardProcessWasBypassed);
     }
 
     [Fact]
-    public void Override_AllowsArchonSystemManagerWithoutGodBypassReason()
+    public void Override_AllowsArchonSystemManagerNormalWorkflow()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
@@ -959,6 +1044,22 @@ public sealed class InspectionAndOverrideTests
         var characteristic = repository.Characteristics.Single(characteristic => characteristic.Name == characteristicName);
         var plan = repository.InspectionPlans.Single(plan => plan.CharacteristicId == characteristic.Id);
         plan.AlertRuleSet = ruleSet;
+    }
+
+    private static void WidenSpecLimits(InMemorySpcRepository repository, string characteristicName, decimal lsl, decimal usl)
+    {
+        var characteristic = repository.Characteristics.Single(characteristic => characteristic.Name == characteristicName);
+        foreach (var plan in repository.InspectionPlans.Where(plan => plan.CharacteristicId == characteristic.Id))
+        {
+            plan.Lsl = lsl;
+            plan.Usl = usl;
+        }
+
+        foreach (var spec in repository.SpecLimits.Where(spec => spec.CharacteristicId == characteristic.Id))
+        {
+            spec.Lsl = lsl;
+            spec.Usl = usl;
+        }
     }
 
     private static ProcessAlert AddAlert(InMemorySpcRepository repository)

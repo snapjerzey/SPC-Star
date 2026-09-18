@@ -205,7 +205,7 @@ app.MapGet("/setup/export-template.csv", (SetupTemplateExportService service) =>
         $"spc-star-parts-inspections-export-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
 });
 
-app.MapPost("/setup/import-xlsx", async (IFormFile file, SetupImportService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/import-xlsx", async (IFormFile file, bool? replaceSetup, SetupImportService service, IRepositoryPersistence persistence) =>
 {
     if (file.Length == 0)
     {
@@ -216,6 +216,11 @@ app.MapPost("/setup/import-xlsx", async (IFormFile file, SetupImportService serv
     {
         await using var stream = file.OpenReadStream();
         var csv = XlsxImportSupport.ReadImportSheetAsCsv(stream);
+        if (replaceSetup == true)
+        {
+            service.ClearSetupMasterData();
+        }
+
         var result = service.ImportCsv(csv);
         if (result.Succeeded)
         {
@@ -499,6 +504,19 @@ app.MapPost("/inspections/complete", (CompleteInspectionRequest request, Inspect
         : Results.BadRequest(new { errors = result.Errors });
 });
 
+app.MapPost("/inspections/fail", (FailInspectionRequest request, InspectionMeasurementService service, IRepositoryPersistence persistence) =>
+{
+    var result = service.FailInspection(request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/material-changes", (MaterialChangeLogEntry request, MaterialChangeLogService service, IRepositoryPersistence persistence) =>
 {
     var result = service.Record(request);
@@ -647,6 +665,11 @@ app.MapGet("/work-context", (
         inspectionPhase ?? "In Process")));
 });
 
+app.MapPost("/work-context/batch", (WorkContextBatchRequest request, WorkContextService service) =>
+{
+    return Results.Ok(service.BuildBatch(request));
+});
+
 app.MapPost("/charts/data", (ChartDataRequest request, ChartDataService service) =>
 {
     return Results.Ok(service.Build(request));
@@ -723,6 +746,23 @@ app.MapPatch("/review/measurements/{measurementId:guid}", (
     IRepositoryPersistence persistence) =>
 {
     var result = service.UpdateMeasurement(measurementId, request);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
+
+app.MapPatch("/review/completions/{completionId:guid}/machine-counter", (
+    Guid completionId,
+    UpdateMachineCounterRequest request,
+    JobReviewService service,
+    IRepositoryPersistence persistence) =>
+{
+    var result = service.UpdateMachineCounter(completionId, request);
     if (result.Succeeded)
     {
         persistence.SaveChanges();

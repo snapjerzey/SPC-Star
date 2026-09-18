@@ -321,7 +321,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
         if (UserHasGodRole(user) && !IsGodUser(request.ActingUserName))
         {
-            return ServiceResult<UserSetupDto>.Fail("Only a GOD user can reset the password for another GOD user.");
+            return ServiceResult<UserSetupDto>.Fail("Only System Manager access can reset the password for another System Manager user.");
         }
 
         var (hash, salt) = PasswordHasher.HashPassword(request.TemporaryPassword);
@@ -533,7 +533,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         {
             if (!IsGodUser(actingUserName))
             {
-                return ServiceResult.Fail("Only a GOD user can delete another GOD user.");
+                return ServiceResult.Fail("Only System Manager access can delete another System Manager user.");
             }
 
             var remainingGodUsers = repository.Users.Count(item =>
@@ -541,7 +541,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 item.Roles.Any(role => role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)));
             if (remainingGodUsers == 0)
             {
-                return ServiceResult.Fail("At least one GOD user must remain.");
+                return ServiceResult.Fail("At least one System Manager user must remain.");
             }
         }
 
@@ -889,6 +889,11 @@ public sealed class SetupManagementService(ISpcRepository repository)
     public ServiceResult<PartJobDataFieldSetupDto> UpsertPartJobDataField(UpsertPartJobDataFieldRequest request)
     {
         var errors = ValidateJobDataField(request);
+        if (errors.Count == 0 && IsRedundantJobDataField(request.FieldName))
+        {
+            errors.Add("This redundant paper job data field is no longer used in SPC-Star.");
+        }
+
         if (errors.Count > 0)
         {
             return ServiceResult<PartJobDataFieldSetupDto>.Fail(errors);
@@ -913,7 +918,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 PartId = part.Id,
                 InspectionPhase = inspectionPhase,
                 FieldName = request.FieldName.Trim(),
-                IsRequired = !IsEndCountField(request.FieldName) && request.IsRequired,
+                IsRequired = request.IsRequired,
                 DisplayOrder = request.DisplayOrder
             };
             repository.PartJobDataFields.Add(field);
@@ -922,19 +927,36 @@ public sealed class SetupManagementService(ISpcRepository repository)
         {
             field.InspectionPhase = inspectionPhase;
             field.FieldName = request.FieldName.Trim();
-            field.IsRequired = !IsEndCountField(request.FieldName) && request.IsRequired;
+            field.IsRequired = request.IsRequired;
             field.DisplayOrder = request.DisplayOrder;
         }
 
         return ServiceResult<PartJobDataFieldSetupDto>.Ok(new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder));
     }
 
-    private static bool IsEndCountField(string fieldName)
+    private static bool IsRedundantJobDataField(string fieldName)
+    {
+        return IsPaperCountField(fieldName) || IsRedundantInspectionArtifact(fieldName);
+    }
+
+    private static bool IsPaperCountField(string fieldName)
     {
         var normalized = new string((fieldName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
-        return normalized.Equals("EndCount", StringComparison.OrdinalIgnoreCase) ||
+        return normalized.Equals("StartCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("StartingCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("InitialCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("EndCount", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("EndingCount", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("FinalCount", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRedundantInspectionArtifact(string? fieldName)
+    {
+        var normalized = new string((fieldName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
+        return normalized.Equals("NMJobSpool", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMJobSpoolNumber", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMSpool", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMSpoolNumber", StringComparison.OrdinalIgnoreCase);
     }
 
     public ServiceResult<PartMaterialFieldSetupDto> UpsertPartMaterialField(UpsertPartMaterialFieldRequest request)
@@ -1085,7 +1107,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             (existingUser is not null && UserHasGodRole(existingUser));
         if (touchesGodAccess && !IsGodUser(request.ActingUserName))
         {
-            errors.Add("Only a GOD user can create, edit, or assign GOD access.");
+            errors.Add("Only System Manager access can create, edit, or assign System Manager access.");
         }
 
         return errors;

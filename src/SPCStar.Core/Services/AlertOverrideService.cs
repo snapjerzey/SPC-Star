@@ -54,23 +54,26 @@ public sealed class AlertOverrideService(
 
         var isArchonOverride = IsArchonSystemManager(request.OverrideUserName);
         var overrideRole = isArchonOverride ? "System Manager" : permissionService.HighestOverrideRole(request.OverrideUserName);
-        var isGodOverride = IsGodBypassUser(request.OverrideUserName);
+        var isBypassOverride = isArchonOverride &&
+            (string.IsNullOrWhiteSpace(request.CauseText) ||
+                string.IsNullOrWhiteSpace(request.SolutionText) ||
+                !string.IsNullOrWhiteSpace(request.WhyStandardProcessWasBypassed));
         if (!IsSupportedCauseCategory(request.CauseCategory))
         {
             return ServiceResult<AlertOverride>.Fail("CauseCategory is not supported.");
         }
 
-        if (isGodOverride && string.IsNullOrWhiteSpace(request.WhyStandardProcessWasBypassed))
+        if (isBypassOverride && string.IsNullOrWhiteSpace(request.WhyStandardProcessWasBypassed))
         {
-            return ServiceResult<AlertOverride>.Fail("WhyStandardProcessWasBypassed is required for GOD overrides.");
+            return ServiceResult<AlertOverride>.Fail("Bypass reason is required for System Manager bypass.");
         }
 
-        if (!isGodOverride && string.IsNullOrWhiteSpace(request.CauseText))
+        if (!isBypassOverride && string.IsNullOrWhiteSpace(request.CauseText))
         {
             return ServiceResult<AlertOverride>.Fail("CauseText is required.");
         }
 
-        if (!isGodOverride && string.IsNullOrWhiteSpace(request.SolutionText))
+        if (!isBypassOverride && string.IsNullOrWhiteSpace(request.SolutionText))
         {
             return ServiceResult<AlertOverride>.Fail("SolutionText is required.");
         }
@@ -88,10 +91,10 @@ public sealed class AlertOverrideService(
             ResourceId = alert.ResourceId,
             CharacteristicName = alert.CharacteristicName,
             RuleTriggered = alert.RuleTriggered,
-            CauseCategory = isGodOverride ? "GOD Bypass" : NormalizeCauseCategory(request.CauseCategory),
-            CauseText = isGodOverride ? "Standard correction workflow bypassed by GOD access." : request.CauseText.Trim(),
-            SolutionText = isGodOverride ? "Bypass approved. See bypass reason." : request.SolutionText.Trim(),
-            WhyStandardProcessWasBypassed = request.WhyStandardProcessWasBypassed?.Trim(),
+            CauseCategory = isBypassOverride ? "System Manager Bypass" : NormalizeCauseCategory(request.CauseCategory),
+            CauseText = isBypassOverride ? "Standard correction workflow bypassed by System Manager access." : request.CauseText.Trim(),
+            SolutionText = isBypassOverride ? "Bypass approved. See bypass reason." : request.SolutionText.Trim(),
+            WhyStandardProcessWasBypassed = isBypassOverride ? request.WhyStandardProcessWasBypassed?.Trim() : null,
             LockedAt = alert.LockedAt,
             UnlockedAt = request.UnlockedAt,
             SubmittedAt = request.SubmittedAt ?? request.UnlockedAt,
@@ -123,11 +126,6 @@ public sealed class AlertOverrideService(
     private static bool IsArchonSystemManager(string userName)
     {
         return userName.Equals("Archon", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsGodBypassUser(string userName)
-    {
-        return userName.Equals("god1", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeCauseCategory(string? value)

@@ -18,8 +18,10 @@ public interface ISpcRepository
     List<Device> Devices { get; }
     List<InspectionMeasurement> Measurements { get; }
     List<MeasurementEditAudit> MeasurementEditAudits { get; }
+    List<MachineCounterEditAudit> MachineCounterEditAudits { get; }
     List<JobNote> JobNotes { get; }
     List<JobPhaseCompletion> JobPhaseCompletions { get; }
+    List<FailedInspection> FailedInspections { get; }
     List<JobTag> JobTags { get; }
     List<PartJobDataField> PartJobDataFields { get; }
     List<PartMaterialField> PartMaterialFields { get; }

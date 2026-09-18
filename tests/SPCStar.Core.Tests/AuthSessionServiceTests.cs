@@ -30,7 +30,7 @@ public sealed class AuthSessionServiceTests
         Assert.Contains("General Production", result.Value.ProductGroups);
         Assert.False(string.IsNullOrWhiteSpace(result.Value.SessionToken));
         Assert.True(service.ValidateSession("qa1", result.Value.SessionToken));
-        Assert.False(service.ValidateSession("god1", result.Value.SessionToken));
+        Assert.False(service.ValidateSession("Archon", result.Value.SessionToken));
     }
 
     [Fact]

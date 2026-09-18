@@ -16,8 +16,10 @@ public sealed record CreateArchiveRequest(
 public sealed record ArchiveCounts(
     int Measurements,
     int MeasurementEditAudits,
+    int MachineCounterEditAudits,
     int JobNotes,
     int JobPhaseCompletions,
+    int FailedInspections,
     int JobTags,
     int Alerts,
     int RuleViolations,
@@ -68,7 +70,7 @@ public sealed class ArchiveService(
         }
 
         var package = BuildPackage(cutoff, request.ArchiveUserName.Trim());
-        if (package.Counts == new ArchiveCounts(0, 0, 0, 0, 0, 0, 0, 0, 0))
+        if (package.Counts == new ArchiveCounts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
         {
             return ServiceResult<ArchiveResultDto>.Fail("No archiveable records were found before the cutoff date.");
         }
@@ -123,7 +125,7 @@ public sealed class ArchiveService(
             (!credentialService.ValidateCredential(request.ArchiveUserName.Trim(), request.ArchivePassword) ||
              !permissionService.UserHasPermission(request.ArchiveUserName.Trim(), PermissionNames.CanUseGodMode)))
         {
-            errors.Add("Archive requires valid GOD credentials.");
+            errors.Add("Archive requires valid System Manager credentials.");
         }
 
         return errors;
@@ -143,8 +145,10 @@ public sealed class ArchiveService(
         return new ArchiveCounts(
             repository.Measurements.Count(item => item.Timestamp < cutoff),
             repository.MeasurementEditAudits.Count(item => item.EditedAt < cutoff || measurementIds.Contains(item.MeasurementId)),
+            repository.MachineCounterEditAudits.Count(item => item.EditedAt < cutoff || repository.JobPhaseCompletions.Any(completion => completion.Id == item.CompletionId && completion.CompletedAt < cutoff)),
             repository.JobNotes.Count(item => item.Timestamp < cutoff),
             repository.JobPhaseCompletions.Count(item => item.CompletedAt < cutoff),
+            repository.FailedInspections.Count(item => item.FailedAt < cutoff),
             repository.JobTags.Count(item => item.UpdatedAt < cutoff),
             repository.Alerts.Count(item => item.LockedAt < cutoff),
             repository.RuleViolations.Count(item => item.DetectedAt < cutoff || alertIds.Contains(item.AlertId)),
@@ -165,8 +169,10 @@ public sealed class ArchiveService(
 
         var measurements = repository.Measurements.Where(item => item.Timestamp < cutoff).ToArray();
         var editAudits = repository.MeasurementEditAudits.Where(item => item.EditedAt < cutoff || measurementIds.Contains(item.MeasurementId)).ToArray();
+        var machineCounterEditAudits = repository.MachineCounterEditAudits.Where(item => item.EditedAt < cutoff || repository.JobPhaseCompletions.Any(completion => completion.Id == item.CompletionId && completion.CompletedAt < cutoff)).ToArray();
         var notes = repository.JobNotes.Where(item => item.Timestamp < cutoff).ToArray();
         var completions = repository.JobPhaseCompletions.Where(item => item.CompletedAt < cutoff).ToArray();
+        var failedInspections = repository.FailedInspections.Where(item => item.FailedAt < cutoff).ToArray();
         var tags = repository.JobTags.Where(item => item.UpdatedAt < cutoff).ToArray();
         var alerts = repository.Alerts.Where(item => item.LockedAt < cutoff).ToArray();
         var violations = repository.RuleViolations.Where(item => item.DetectedAt < cutoff || alertIds.Contains(item.AlertId)).ToArray();
@@ -181,8 +187,10 @@ public sealed class ArchiveService(
             Counts: new ArchiveCounts(
                 measurements.Length,
                 editAudits.Length,
+                machineCounterEditAudits.Length,
                 notes.Length,
                 completions.Length,
+                failedInspections.Length,
                 tags.Length,
                 alerts.Length,
                 violations.Length,
@@ -190,8 +198,10 @@ public sealed class ArchiveService(
                 materialChanges.Length),
             Measurements: measurements,
             MeasurementEditAudits: editAudits,
+            MachineCounterEditAudits: machineCounterEditAudits,
             JobNotes: notes,
             JobPhaseCompletions: completions,
+            FailedInspections: failedInspections,
             JobTags: tags,
             Alerts: alerts,
             RuleViolations: violations,
@@ -203,8 +213,10 @@ public sealed class ArchiveService(
     {
         var measurementIds = package.Measurements.Select(item => item.Id).ToHashSet();
         var editIds = package.MeasurementEditAudits.Select(item => item.Id).ToHashSet();
+        var machineCounterEditIds = package.MachineCounterEditAudits.Select(item => item.Id).ToHashSet();
         var noteIds = package.JobNotes.Select(item => item.Id).ToHashSet();
         var completionIds = package.JobPhaseCompletions.Select(item => item.Id).ToHashSet();
+        var failedInspectionIds = package.FailedInspections.Select(item => item.Id).ToHashSet();
         var tagIds = package.JobTags.Select(item => item.Id).ToHashSet();
         var alertIds = package.Alerts.Select(item => item.Id).ToHashSet();
         var violationIds = package.RuleViolations.Select(item => item.Id).ToHashSet();
@@ -213,8 +225,10 @@ public sealed class ArchiveService(
 
         repository.Measurements.RemoveAll(item => measurementIds.Contains(item.Id));
         repository.MeasurementEditAudits.RemoveAll(item => editIds.Contains(item.Id));
+        repository.MachineCounterEditAudits.RemoveAll(item => machineCounterEditIds.Contains(item.Id));
         repository.JobNotes.RemoveAll(item => noteIds.Contains(item.Id));
         repository.JobPhaseCompletions.RemoveAll(item => completionIds.Contains(item.Id));
+        repository.FailedInspections.RemoveAll(item => failedInspectionIds.Contains(item.Id));
         repository.JobTags.RemoveAll(item => tagIds.Contains(item.Id));
         repository.Alerts.RemoveAll(item => alertIds.Contains(item.Id));
         repository.RuleViolations.RemoveAll(item => violationIds.Contains(item.Id));
@@ -241,8 +255,10 @@ public sealed record ArchivePackage(
     ArchiveCounts Counts,
     IReadOnlyList<InspectionMeasurement> Measurements,
     IReadOnlyList<MeasurementEditAudit> MeasurementEditAudits,
+    IReadOnlyList<MachineCounterEditAudit> MachineCounterEditAudits,
     IReadOnlyList<JobNote> JobNotes,
     IReadOnlyList<JobPhaseCompletion> JobPhaseCompletions,
+    IReadOnlyList<FailedInspection> FailedInspections,
     IReadOnlyList<JobTag> JobTags,
     IReadOnlyList<ProcessAlert> Alerts,
     IReadOnlyList<RuleViolation> RuleViolations,

@@ -58,6 +58,65 @@ public sealed class WorkContextServiceTests
         Assert.Single(context.RecentMeasurements);
     }
 
+    [Fact]
+    public void Build_ReturnsProcessWarningWithoutActiveLock()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
+        SeedData.SeedSampleInspectionPlans(repository);
+        repository.Alerts.Add(new ProcessAlert
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            CharacteristicName = "Diameter",
+            OperatorUserId = "operator1",
+            RuleTriggered = RuleTriggered.OnePointBeyondControlLimit,
+            Detail = "Value is above the upper control limit.",
+            LockedAt = DateTimeOffset.Parse("2026-01-01T08:01:00Z"),
+            Status = AlertStatus.Warning
+        });
+        var service = WorkContextService(repository);
+
+        var context = service.Build(new WorkContextRequest(
+            "J100",
+            "P100",
+            "MOLD",
+            10,
+            "PRESS1",
+            "Diameter",
+            DateTimeOffset.Parse("2026-01-01T08:45:00Z")));
+
+        Assert.Null(context.ActiveLock);
+        Assert.NotNull(context.ProcessWarning);
+        Assert.Equal(RuleTriggered.OnePointBeyondControlLimit, context.ProcessWarning!.RuleTriggered);
+    }
+
+    [Fact]
+    public void BuildBatch_ReturnsContextsInRequestedOrder()
+    {
+        var repository = new InMemorySpcRepository();
+        SeedData.SeedAll(repository);
+        TestSeedData.SeedUsers(repository);
+        SeedData.SeedSampleInspectionPlans(repository);
+        var service = WorkContextService(repository);
+
+        var contexts = service.BuildBatch(new WorkContextBatchRequest(
+            "J100",
+            "P100",
+            "MOLD",
+            10,
+            "PRESS1",
+            ["Length", "Diameter"],
+            "In Process",
+            DateTimeOffset.Parse("2026-01-01T08:45:00Z")));
+
+        Assert.Equal(["Length", "Diameter"], contexts.Select(context => context.Request.CharacteristicName).ToArray());
+        Assert.Equal(41.5m, contexts[0].LowerSpecLimit);
+        Assert.Equal(4.5m, contexts[1].LowerSpecLimit);
+    }
+
     private static WorkContextService WorkContextService(InMemorySpcRepository repository)
     {
         var setupQuery = new SetupQueryService(repository);

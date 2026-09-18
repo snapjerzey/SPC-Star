@@ -16,11 +16,21 @@ $backupRoot = Join-Path $InstallRoot "backups"
 $logRoot = Join-Path $InstallRoot "logs"
 $startScript = Join-Path $InstallRoot "start-spcstar.ps1"
 $backupScript = Join-Path $InstallRoot "backup-spcstar.ps1"
+$installMarker = Join-Path $InstallRoot "INSTALL-COMPLETE.txt"
 
 Write-Host "Installing SPC-Star server files..."
 New-Item -ItemType Directory -Force -Path $appRoot, $dataRoot, $backupRoot, $logRoot | Out-Null
 
 dotnet publish $projectPath -c Release -o $appRoot --self-contained false
+
+$appExe = Join-Path $appRoot "SPCStar.Api.exe"
+$appIndex = Join-Path $appRoot "wwwroot\index.html"
+if (-not (Test-Path -LiteralPath $appExe)) {
+    throw "Install verification failed. Missing: $appExe"
+}
+if (-not (Test-Path -LiteralPath $appIndex)) {
+    throw "Install verification failed. Missing web screen file: $appIndex"
+}
 
 Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\start-spcstar.ps1") -Destination $startScript -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\backup-data.ps1") -Destination $backupScript -Force
@@ -43,12 +53,23 @@ $backupTrigger = New-ScheduledTaskTrigger -Daily -At $BackupTime
 $backupSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 Register-ScheduledTask -TaskName $BackupTaskName -Action $backupAction -Trigger $backupTrigger -Settings $backupSettings -RunLevel Highest -Force | Out-Null
 
+@"
+SPC-Star install completed.
+Completed: $(Get-Date -Format s)
+App folder: $appRoot
+Data folder: $dataRoot
+Health URL: http://localhost:$Port/health
+App URL: http://localhost:$Port/
+"@ | Set-Content -LiteralPath $installMarker -Encoding ASCII
+
 Start-ScheduledTask -TaskName $TaskName
 
 Start-Sleep -Seconds 5
 $healthUrl = "http://localhost:$Port/health"
+$appUrl = "http://localhost:$Port/"
 try {
     Invoke-RestMethod -Uri $healthUrl -TimeoutSec 15 | Out-Null
+    Invoke-WebRequest -UseBasicParsing -Uri $appUrl -TimeoutSec 15 | Out-Null
     Write-Host "SPC-Star is running."
     Write-Host "Local health check: $healthUrl"
     Write-Host "Network URL: http://$env:COMPUTERNAME`:$Port/"

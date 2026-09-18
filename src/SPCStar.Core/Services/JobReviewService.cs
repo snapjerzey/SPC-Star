@@ -35,6 +35,11 @@ public sealed record UpdateInspectionMeasurementRequest(
     string? EditedByUserId = null,
     string? Reason = null);
 
+public sealed record UpdateMachineCounterRequest(
+    long? MachineCounter,
+    string? EditedByUserId = null,
+    string? Reason = null);
+
 public sealed class JobReviewService(
     ISpcRepository repository,
     QaSummaryExportService qaSummaryExportService,
@@ -130,6 +135,45 @@ public sealed class JobReviewService(
         });
 
         return ServiceResult<JobInspectionMeasurementDto>.Ok(ToDto(measurement));
+    }
+
+    public ServiceResult<JobPhaseCompletion> UpdateMachineCounter(Guid completionId, UpdateMachineCounterRequest request)
+    {
+        var completion = repository.JobPhaseCompletions.FirstOrDefault(item => item.Id == completionId);
+        if (completion is null)
+        {
+            return ServiceResult<JobPhaseCompletion>.Fail("Completed inspection was not found.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return ServiceResult<JobPhaseCompletion>.Fail("A reason is required when editing inspection history.");
+        }
+
+        if (request.MachineCounter < 0)
+        {
+            return ServiceResult<JobPhaseCompletion>.Fail("Machine Counter cannot be negative.");
+        }
+
+        var oldMachineCounter = completion.MachineCounter;
+        completion.MachineCounter = request.MachineCounter;
+        repository.MachineCounterEditAudits.Add(new MachineCounterEditAudit
+        {
+            CompletionId = completion.Id,
+            JobNum = completion.JobNum,
+            PartNum = completion.PartNum,
+            ResourceId = completion.ResourceId,
+            ProcessCode = completion.ProcessCode,
+            OperationSeq = completion.OperationSeq,
+            InspectionPhase = completion.InspectionPhase,
+            OldMachineCounter = oldMachineCounter,
+            NewMachineCounter = completion.MachineCounter,
+            EditedByUserId = string.IsNullOrWhiteSpace(request.EditedByUserId) ? "unknown" : request.EditedByUserId.Trim(),
+            EditedAt = DateTimeOffset.UtcNow,
+            Reason = request.Reason.Trim()
+        });
+
+        return ServiceResult<JobPhaseCompletion>.Ok(completion);
     }
 
     private JobInspectionMeasurementDto ToDto(InspectionMeasurement measurement)

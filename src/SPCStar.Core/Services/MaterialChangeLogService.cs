@@ -83,7 +83,7 @@ public sealed class MaterialChangeLogService(ISpcRepository repository, Permissi
         var editedBy = request.EditedByUserId.Trim();
         if (!CanEditMaterialLot(editedBy))
         {
-            return ServiceResult<MaterialChangeLog>.Fail("Only QA or Archon/GOD access can edit material lot history.");
+            return ServiceResult<MaterialChangeLog>.Fail("Only QA or System Manager access can edit material lot history.");
         }
 
         var newLot = request.NewLotNum.Trim();

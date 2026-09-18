@@ -13,11 +13,29 @@ public sealed record WorkContextRequest(
     DateTimeOffset Now,
     string InspectionPhase = "In Process");
 
+public sealed record WorkContextBatchRequest(
+    string JobNum,
+    string PartNum,
+    string ProcessCode,
+    int OperationSeq,
+    string ResourceId,
+    IReadOnlyList<string> CharacteristicNames,
+    string InspectionPhase = "In Process",
+    DateTimeOffset? Now = null);
+
 public sealed record ActiveLockDto(
     Guid AlertId,
     string CharacteristicName,
     RuleTriggered RuleTriggered,
     DateTimeOffset LockedAt,
+    string OperatorUserId,
+    string? Detail);
+
+public sealed record ProcessWarningDto(
+    Guid AlertId,
+    string CharacteristicName,
+    RuleTriggered RuleTriggered,
+    DateTimeOffset DetectedAt,
     string OperatorUserId,
     string? Detail);
 
@@ -30,6 +48,7 @@ public sealed record WorkContextDto(
     decimal? UpperControlLimit,
     InspectionFrequencyStatus FrequencyStatus,
     ActiveLockDto? ActiveLock,
+    ProcessWarningDto? ProcessWarning,
     WorkCapabilityDto Capability,
     IReadOnlyList<ChartPoint> RecentMeasurements);
 
@@ -46,6 +65,23 @@ public sealed class WorkContextService(
     InspectionFrequencyService inspectionFrequencyService,
     ChartDataService chartDataService)
 {
+    public IReadOnlyList<WorkContextDto> BuildBatch(WorkContextBatchRequest request)
+    {
+        var now = request.Now ?? DateTimeOffset.UtcNow;
+        return request.CharacteristicNames
+            .Where(characteristicName => !string.IsNullOrWhiteSpace(characteristicName))
+            .Select(characteristicName => Build(new WorkContextRequest(
+                request.JobNum,
+                request.PartNum,
+                request.ProcessCode,
+                request.OperationSeq,
+                request.ResourceId,
+                characteristicName.Trim(),
+                now,
+                request.InspectionPhase)))
+            .ToArray();
+    }
+
     public WorkContextDto Build(WorkContextRequest request)
     {
         var plan = setupQueryService
@@ -91,6 +127,16 @@ public sealed class WorkContextService(
             .OrderByDescending(alert => alert.LockedAt)
             .Select(alert => new ActiveLockDto(alert.Id, alert.CharacteristicName, alert.RuleTriggered, alert.LockedAt, alert.OperatorUserId, alert.Detail))
             .FirstOrDefault();
+        var processWarning = repository.Alerts
+            .Where(alert =>
+                alert.Status == AlertStatus.Warning &&
+                alert.JobNum.Equals(request.JobNum, StringComparison.OrdinalIgnoreCase) &&
+                alert.PartNum.Equals(request.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                alert.ResourceId.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+                alert.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(alert => alert.LockedAt)
+            .Select(alert => new ProcessWarningDto(alert.Id, alert.CharacteristicName, alert.RuleTriggered, alert.LockedAt, alert.OperatorUserId, alert.Detail))
+            .FirstOrDefault();
 
         return new WorkContextDto(
             request,
@@ -101,6 +147,7 @@ public sealed class WorkContextService(
             controlLimits?.Ucl,
             frequency,
             activeLock,
+            processWarning,
             BuildCapability(request, plan),
             chart.Points.TakeLast(10).ToArray());
     }

@@ -15,8 +15,8 @@ var tests = new (string Name, Action Run)[]
     ("override rejects operator", OverrideRejectsOperator),
     ("override allows QA", OverrideAllowsQa),
     ("override rejects bad credentials", OverrideRejectsBadCredentials),
-    ("GOD override requires bypass reason", GodOverrideRequiresBypassReason),
-    ("GOD override allows bypass reason only", GodOverrideAllowsBypassReasonOnly),
+    ("Archon override requires bypass reason", ArchonOverrideRequiresBypassReason),
+    ("Archon override allows bypass reason only", ArchonOverrideAllowsBypassReasonOnly),
     ("QA export requires characteristic", QaExportRequiresCharacteristic),
     ("QA export calculates summary CSV", QaExportCalculatesSummaryCsv),
     ("material change validates required fields", MaterialChangeValidatesRequiredFields),
@@ -209,24 +209,24 @@ static void OverrideRejectsBadCredentials()
     AssertFalse(result.Succeeded);
 }
 
-static void GodOverrideRequiresBypassReason()
+static void ArchonOverrideRequiresBypassReason()
 {
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
     var result = OverrideService(repository)
-        .Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "Emergency", "Released", null, DateTimeOffset.UtcNow));
+        .Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "", "", null, DateTimeOffset.UtcNow));
     AssertFalse(result.Succeeded);
 }
 
-static void GodOverrideAllowsBypassReasonOnly()
+static void ArchonOverrideAllowsBypassReasonOnly()
 {
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
     var result = OverrideService(repository)
-        .Override(new AlertOverrideRequest(alert.Id, "god1", "god1", "", "", "Architect-approved bypass.", DateTimeOffset.UtcNow));
+        .Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "", "", "System manager-approved bypass.", DateTimeOffset.UtcNow));
     AssertTrue(result.Succeeded);
     AssertEqual(AlertStatus.Overridden, alert.Status);
-    AssertEqual("GOD Bypass", result.Value!.CauseCategory);
+    AssertEqual("System Manager Bypass", result.Value!.CauseCategory);
 }
 
 static void QaExportRequiresCharacteristic()
@@ -419,7 +419,6 @@ static void SeedSmokeTestUsers(InMemorySpcRepository repository)
     AddSmokeTestUser(repository, "operator1", "operator1", RoleNames.Operator, "General");
     AddSmokeTestUser(repository, "linetech1", "linetech1", RoleNames.LineTech, "General");
     AddSmokeTestUser(repository, "qa1", "qa1", RoleNames.QA, "General");
-    AddSmokeTestUser(repository, "god1", "god1", RoleNames.GOD, "General");
 }
 
 static void AddSmokeTestUser(InMemorySpcRepository repository, string userName, string password, string roleName, params string[] productGroups)

@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SPC Star</title>
   <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/spc-star-mark.svg" type="image/svg+xml">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260828-material-part-completion-submit">
+  <link rel="stylesheet" href="/styles.css?v=20260918-spec-capability-cleanup">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -167,15 +168,15 @@
           <form id="overrideForm" class="override-form">
             <label>
               Authorized user
-              <input id="overrideUserName" autocomplete="username">
+              <input id="overrideUserName" name="overrideUserName" autocomplete="username">
             </label>
             <label>
               Password
-              <input id="overridePassword" type="password" autocomplete="current-password">
+              <input id="overridePassword" name="overridePassword" type="password" autocomplete="current-password">
             </label>
             <label id="causeCategoryLabel">
               Cause category
-              <select id="causeCategory">
+              <select id="causeCategory" name="causeCategory">
                 <option value="Machine">Machine</option>
                 <option value="Tooling">Tooling</option>
                 <option value="Material">Material</option>
@@ -187,17 +188,18 @@
             </label>
             <label id="causeTextLabel">
               Cause details
-              <textarea id="causeText" rows="3"></textarea>
+              <textarea id="causeText" name="causeText" rows="3"></textarea>
             </label>
             <label id="solutionTextLabel">
               Action taken
-              <textarea id="solutionText" rows="3"></textarea>
+              <textarea id="solutionText" name="solutionText" rows="3"></textarea>
             </label>
-            <label id="godReasonLabel" class="hidden">
+            <label id="systemManagerReasonLabel" class="hidden">
               Bypass reason
-              <textarea id="bypassReason" rows="3"></textarea>
+              <textarea id="bypassReason" name="bypassReason" rows="3"></textarea>
             </label>
             <button type="submit">Clear Lock</button>
+            <button type="button" id="failInspectionButton" class="danger-button">End Failed Inspection</button>
             <button type="button" id="refreshLockStatusButton" class="secondary">Refresh Lock Status</button>
             <button type="button" id="resetLockFormButton" class="secondary">Reset Unlock Form</button>
           </form>
@@ -222,7 +224,7 @@
           <form id="measurementForm" class="measurement-form hidden">
             <label class="machine-counter-field">
               Machine Counter
-              <input id="machineCounter" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" required>
+              <input id="machineCounter" name="machineCounter" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" required>
             </label>
             <div id="measurementVariableList" class="variable-list"></div>
             <button id="completeInspectionButton" type="submit" class="inspection-submit-button hidden" disabled>Submit Inspection</button>
@@ -941,11 +943,11 @@
             <p id="archiveWarning" class="message"></p>
             <div class="archive-confirm-grid">
               <label>
-                GOD user
+                System Manager user
                 <input id="archiveUserName" autocomplete="off" autocapitalize="none" spellcheck="false">
               </label>
               <label>
-                GOD password
+                System Manager password
                 <input id="archivePassword" type="password" autocomplete="off">
               </label>
               <label>
@@ -1376,7 +1378,7 @@
         <p>Rule changes affect inspection behavior. Review the rule description before saving changes and confirm that the selected rule is appropriate for the product and process.</p>
 
         <h3>6. Lock clearing</h3>
-        <p>QA may clear lockouts through the normal correction workflow. QA does not have GOD bypass access.</p>
+        <p>QA may clear lockouts through the normal correction workflow. QA does not have System Manager bypass access.</p>
         <ol>
           <li>Review the lock message and affected inspection item.</li>
           <li>Confirm whether the issue is out of specification, out of control, drift-related, or attribute-related.</li>
@@ -1387,7 +1389,7 @@
         </ol>
 
         <h3>7. Import restriction</h3>
-        <p>QA should not bulk import parts, users, or machines from workbooks. Bulk import is restricted to GOD access because a bad workbook can change large amounts of setup data at once.</p>
+        <p>QA should not bulk import parts, users, or machines from workbooks. Bulk import is restricted to System Manager access because a bad workbook can change large amounts of setup data at once.</p>
         <p>If a bulk import is needed, prepare or review the file, then escalate it to the system architect for loading.</p>
 
         <h3>8. Data integrity</h3>
@@ -1445,7 +1447,7 @@
         <p>Los cambios de reglas afectan el comportamiento de inspeccion. Revise la descripcion de la regla antes de guardar y confirme que sea apropiada para el producto y proceso.</p>
 
         <h3>6. Liberacion de bloqueos</h3>
-        <p>QA puede liberar bloqueos mediante el flujo normal de correccion. QA no tiene acceso de bypass GOD.</p>
+        <p>QA puede liberar bloqueos mediante el flujo normal de correccion. QA no tiene acceso de bypass de System Manager.</p>
         <ol>
           <li>Revise el mensaje de bloqueo y el punto de inspeccion afectado.</li>
           <li>Confirme si el problema esta fuera de especificacion, fuera de control, relacionado con deriva o relacionado con atributo.</li>
@@ -1456,7 +1458,7 @@
         </ol>
 
         <h3>7. Restriccion de importacion</h3>
-        <p>QA no debe importar partes, usuarios o maquinas de forma masiva desde libros de Excel. La importacion masiva esta restringida a acceso GOD porque un archivo incorrecto puede cambiar muchos datos de configuracion a la vez.</p>
+        <p>QA no debe importar partes, usuarios o maquinas de forma masiva desde libros de Excel. La importacion masiva esta restringida a acceso de System Manager porque un archivo incorrecto puede cambiar muchos datos de configuracion a la vez.</p>
         <p>Si se necesita una importacion masiva, prepare o revise el archivo y escale la carga al arquitecto del sistema.</p>
 
         <h3>8. Integridad de datos</h3>
@@ -1567,6 +1569,6 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260828-material-part-completion-submit"></script>
+  <script src="/app.js?v=20260918-spec-capability-cleanup"></script>
 </body>
 </html>

@@ -25,6 +25,15 @@ Write-Host "Backing up SPC-Star data before update..."
 Write-Host "Publishing updated SPC-Star app..."
 dotnet publish $projectPath -c Release -o $appRoot --self-contained false
 
+$appExe = Join-Path $appRoot "SPCStar.Api.exe"
+$appIndex = Join-Path $appRoot "wwwroot\index.html"
+if (-not (Test-Path -LiteralPath $appExe)) {
+    throw "Update verification failed. Missing: $appExe"
+}
+if (-not (Test-Path -LiteralPath $appIndex)) {
+    throw "Update verification failed. Missing web screen file: $appIndex"
+}
+
 Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\start-spcstar.ps1") -Destination (Join-Path $InstallRoot "start-spcstar.ps1") -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\backup-data.ps1") -Destination $backupScript -Force
 
@@ -39,7 +48,9 @@ Start-ScheduledTask -TaskName $TaskName
 
 Start-Sleep -Seconds 5
 $healthUrl = "http://localhost:$Port/health"
+$appUrl = "http://localhost:$Port/"
 Invoke-RestMethod -Uri $healthUrl -TimeoutSec 15 | Out-Null
+Invoke-WebRequest -UseBasicParsing -Uri $appUrl -TimeoutSec 15 | Out-Null
 Write-Host "SPC-Star update complete."
 Write-Host "Local health check: $healthUrl"
 Write-Host "Network URL: http://$env:COMPUTERNAME`:$Port/"

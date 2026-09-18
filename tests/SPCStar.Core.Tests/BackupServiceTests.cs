@@ -8,7 +8,7 @@ namespace SPCStar.Core.Tests;
 public sealed class BackupServiceTests
 {
     [Fact]
-    public void CreateManualBackup_RequiresGodCredentials()
+    public void CreateManualBackup_RequiresSystemManagerCredentials()
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);

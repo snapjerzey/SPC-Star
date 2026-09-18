@@ -1,5 +1,6 @@
 using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
+using System.Globalization;
 
 namespace SPCStar.Core.Services;
 
@@ -26,7 +27,11 @@ public sealed class SetupImportService(ISpcRepository repository)
     public ServiceResult ImportCsv(string csv)
     {
         materialNamesSeenInCurrentImport.Clear();
-        var normalizedRows = CsvSupport.ReadRows(csv).Select(NormalizeRow).ToArray();
+        var normalizedRows = CsvSupport.ReadRows(csv)
+            .Select(NormalizeRow)
+            .Where(row => !IsRedundantInspectionArtifact(row.GetValueOrDefault("CharacteristicName")) &&
+                !IsRedundantInspectionArtifact(row.GetValueOrDefault("FieldName")))
+            .ToArray();
         var rows = normalizedRows.SelectMany(ExpandPhaseMatrixRow).ToArray();
         var errors = ValidateRows(rows);
         if (errors.Count > 0)
@@ -41,6 +46,19 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         return ServiceResult.Ok();
+    }
+
+    public void ClearSetupMasterData()
+    {
+        repository.Parts.Clear();
+        repository.Processes.Clear();
+        repository.Operations.Clear();
+        repository.Characteristics.Clear();
+        repository.SpecLimits.Clear();
+        repository.InspectionPlans.Clear();
+        repository.PartJobDataFields.Clear();
+        repository.PartMaterialFields.Clear();
+        repository.ControlLimits.Clear();
     }
 
     public IReadOnlyList<string> ValidateCsv(string csv) => ValidateRows(NormalizeRows(CsvSupport.ReadRows(csv)));
@@ -102,6 +120,8 @@ public sealed class SetupImportService(ISpcRepository repository)
     {
         return rows
             .Select(NormalizeRow)
+            .Where(row => !IsRedundantInspectionArtifact(row.GetValueOrDefault("CharacteristicName")) &&
+                !IsRedundantInspectionArtifact(row.GetValueOrDefault("FieldName")))
             .SelectMany(ExpandPhaseMatrixRow)
             .ToArray();
     }
@@ -309,6 +329,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         CopyAlias(normalized, "USL", "UpperSpec", "Upper Spec", "Upper Spec Limit");
         CopyAlias(normalized, "LCL", "Lower Control", "Lower Control Limit");
         CopyAlias(normalized, "UCL", "Upper Control", "Upper Control Limit");
+        NormalizeImportedDecimalText(normalized, "Nominal", "LSL", "USL", "LCL", "UCL");
         CopyAlias(normalized, "UnitOfMeasure", "UOM", "Unit", "Units");
         CopyAlias(normalized, "SampleSize", "Sample Size");
         CopyAlias(normalized, "FrequencyType", "Frequency Type");
@@ -539,29 +560,37 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static void ApplySpecDefaults(Dictionary<string, string> row)
     {
-        if (CanonicalRowType(row.GetValueOrDefault("RowType")) != "Variable")
-        {
-            return;
-        }
+    }
 
-        var lsl = row.GetValueOrDefault("LSL");
-        var usl = row.GetValueOrDefault("USL");
-        var nominal = row.GetValueOrDefault("Nominal");
-        if (string.IsNullOrWhiteSpace(lsl) && !string.IsNullOrWhiteSpace(usl))
+    private static void NormalizeImportedDecimalText(Dictionary<string, string> row, params string[] fields)
+    {
+        foreach (var field in fields)
         {
-            row["LSL"] = "0";
-        }
+            if (!row.TryGetValue(field, out var value) || string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
 
-        if (string.IsNullOrWhiteSpace(usl) && !string.IsNullOrWhiteSpace(lsl))
-        {
-            row["USL"] = "9999";
-        }
+            var text = value.Trim();
+            var decimalIndex = text.IndexOf('.');
+            if (decimalIndex < 0 || text.Length - decimalIndex - 1 < 12)
+            {
+                row[field] = text;
+                continue;
+            }
 
-        if (string.IsNullOrWhiteSpace(nominal) &&
-            decimal.TryParse(row.GetValueOrDefault("LSL"), out var parsedLsl) &&
-            decimal.TryParse(row.GetValueOrDefault("USL"), out var parsedUsl))
-        {
-            row["Nominal"] = ((parsedLsl + parsedUsl) / 2m).ToString("0.####");
+            var fractional = text[(decimalIndex + 1)..];
+            if (!fractional.Contains("999999", StringComparison.Ordinal) &&
+                !fractional.Contains("000000", StringComparison.Ordinal))
+            {
+                row[field] = text;
+                continue;
+            }
+
+            if (decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed))
+            {
+                row[field] = decimal.Round(parsed, 10).ToString("0.##########", CultureInfo.InvariantCulture);
+            }
         }
     }
 
@@ -696,11 +725,6 @@ public sealed class SetupImportService(ISpcRepository repository)
         {
             errors.Add($"Row {rowNumber}: SampleSize must be greater than zero.");
         }
-        else if (IsPhaseMatrixExpanded(row) && !IsTruthy(row.GetValueOrDefault("PhaseMatrixSampleSizeProvided") ?? "false"))
-        {
-            errors.Add($"Row {rowNumber}: {row.GetValueOrDefault("InspectionPhase")} Sample Size is required when that phase is marked required.");
-        }
-
         var hasFrequencyType = Enum.TryParse<FrequencyType>(row.GetValueOrDefault("FrequencyType"), true, out var frequencyType);
         if (!hasFrequencyType)
         {
@@ -771,13 +795,13 @@ public sealed class SetupImportService(ISpcRepository repository)
             return;
         }
 
-        if (!decimal.TryParse(row.GetValueOrDefault("LSL"), out var lsl) ||
-            !decimal.TryParse(row.GetValueOrDefault("USL"), out var usl) ||
-            !decimal.TryParse(row.GetValueOrDefault("Nominal"), out _))
+        if (!OptionalDecimal(row, "LSL", out var lsl) ||
+            !OptionalDecimal(row, "USL", out var usl) ||
+            !OptionalDecimal(row, "Nominal", out _))
         {
-            errors.Add($"Row {rowNumber}: Nominal, LSL, and USL must be numeric when any spec value is provided for Variable rows.");
+            errors.Add($"Row {rowNumber}: Nominal, LSL, and USL must be numeric when provided for Variable rows.");
         }
-        else if (lsl > usl)
+        else if (lsl.HasValue && usl.HasValue && lsl.Value > usl.Value)
         {
             errors.Add($"Row {rowNumber}: Invalid spec limits. LSL must be less than or equal to USL.");
         }
@@ -949,7 +973,13 @@ public sealed class SetupImportService(ISpcRepository repository)
             return;
         }
 
-        var nominal = isVariable ? decimal.Parse(row["Nominal"]) : 1m;
+        if (isVariable && !HasCompleteSpecValue(row))
+        {
+            repository.SpecLimits.RemoveAll(s => s.CharacteristicId == characteristic.Id);
+            return;
+        }
+
+        var nominal = isVariable ? ParsedNominalOrMidpoint(row) : 1m;
         var lsl = isVariable ? decimal.Parse(row["LSL"]) : 1m;
         var usl = isVariable ? decimal.Parse(row["USL"]) : 1m;
         var spec = repository.SpecLimits.FirstOrDefault(s => s.CharacteristicId == characteristic.Id);
@@ -979,7 +1009,7 @@ public sealed class SetupImportService(ISpcRepository repository)
                 Nominal = PlanNominal(row, characteristic),
                 Lsl = PlanLsl(row, characteristic),
                 Usl = PlanUsl(row, characteristic),
-                SampleSize = int.Parse(row["SampleSize"]),
+                SampleSize = ImportedSampleSize(row, characteristic),
                 DisplayOrder = OptionalInt(row, "DisplayOrder", repository.InspectionPlans.Count(item => item.CharacteristicId == characteristic.Id)),
                 AlertRuleSet = row["AlertRuleSet"].Trim(),
                 Frequency = BuildFrequency(row)
@@ -991,10 +1021,15 @@ public sealed class SetupImportService(ISpcRepository repository)
         plan.Nominal = PlanNominal(row, characteristic);
         plan.Lsl = PlanLsl(row, characteristic);
         plan.Usl = PlanUsl(row, characteristic);
-        plan.SampleSize = int.Parse(row["SampleSize"]);
+        plan.SampleSize = ImportedSampleSize(row, characteristic);
         plan.DisplayOrder = OptionalInt(row, "DisplayOrder", plan.DisplayOrder);
         plan.AlertRuleSet = row["AlertRuleSet"].Trim();
         plan.Frequency = BuildFrequency(row);
+    }
+
+    private static int ImportedSampleSize(IReadOnlyDictionary<string, string> row, Characteristic characteristic)
+    {
+        return characteristic.Type == CharacteristicType.Attribute ? 1 : int.Parse(row["SampleSize"]);
     }
 
     private static decimal? PlanNominal(IReadOnlyDictionary<string, string> row, Characteristic characteristic)
@@ -1027,27 +1062,34 @@ public sealed class SetupImportService(ISpcRepository repository)
         return usl;
     }
 
-    private static bool TryPlanSpec(IReadOnlyDictionary<string, string> row, out decimal nominal, out decimal lsl, out decimal usl)
+    private static bool TryPlanSpec(IReadOnlyDictionary<string, string> row, out decimal? nominal, out decimal? lsl, out decimal? usl)
     {
-        nominal = 0m;
-        lsl = 0m;
-        usl = 0m;
-        if (!decimal.TryParse(row.GetValueOrDefault("LSL"), out lsl) ||
-            !decimal.TryParse(row.GetValueOrDefault("USL"), out usl))
+        nominal = null;
+        lsl = null;
+        usl = null;
+        if (!OptionalDecimal(row, "LSL", out lsl) ||
+            !OptionalDecimal(row, "USL", out usl) ||
+            !OptionalDecimal(row, "Nominal", out nominal))
         {
             return false;
         }
 
-        nominal = decimal.TryParse(row.GetValueOrDefault("Nominal"), out var parsedNominal)
-            ? parsedNominal
-            : (lsl + usl) / 2m;
-        return true;
+        return nominal.HasValue || lsl.HasValue || usl.HasValue;
     }
 
     private void UpsertJobDataField(Dictionary<string, string> row, Part part)
     {
         var inspectionPhase = NormalizeInspectionPhase(row.GetValueOrDefault("InspectionPhase"));
         var fieldName = row["FieldName"].Trim();
+        if (IsRedundantJobDataField(fieldName))
+        {
+            repository.PartJobDataFields.RemoveAll(item =>
+                item.PartId == part.Id &&
+                item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
+                IsRedundantJobDataField(item.FieldName));
+            return;
+        }
+
         var field = repository.PartJobDataFields.FirstOrDefault(item =>
             item.PartId == part.Id &&
             item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
@@ -1058,16 +1100,33 @@ public sealed class SetupImportService(ISpcRepository repository)
             repository.PartJobDataFields.Add(field);
         }
 
-        field.IsRequired = !IsEndCountField(fieldName) && OptionalBool(row, "IsRequired", true);
+        field.IsRequired = OptionalBool(row, "IsRequired", true);
         field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartJobDataFields.Count(item => item.PartId == part.Id && item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)));
     }
 
-    private static bool IsEndCountField(string fieldName)
+    private static bool IsRedundantJobDataField(string fieldName)
+    {
+        return IsPaperCountField(fieldName) || IsRedundantInspectionArtifact(fieldName);
+    }
+
+    private static bool IsPaperCountField(string fieldName)
     {
         var normalized = new string((fieldName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
-        return normalized.Equals("EndCount", StringComparison.OrdinalIgnoreCase) ||
+        return normalized.Equals("StartCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("StartingCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("InitialCount", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("EndCount", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("EndingCount", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("FinalCount", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRedundantInspectionArtifact(string? fieldName)
+    {
+        var normalized = new string((fieldName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
+        return normalized.Equals("NMJobSpool", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMJobSpoolNumber", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMSpool", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("NMSpoolNumber", StringComparison.OrdinalIgnoreCase);
     }
 
     private void UpsertMaterialField(Dictionary<string, string> row, Part part)
@@ -1214,7 +1273,7 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private void UpsertControlLimit(Dictionary<string, string> row, Part part, ManufacturingProcess process, int operationSeq)
     {
-        if (!HasAnySpecValue(row))
+        if (!HasCompleteSpecValue(row))
         {
             repository.ControlLimits.RemoveAll(limit =>
                 limit.PartNum.Equals(part.PartNum, StringComparison.OrdinalIgnoreCase) &&
@@ -1224,7 +1283,7 @@ public sealed class SetupImportService(ISpcRepository repository)
             return;
         }
 
-        var nominal = decimal.Parse(row["Nominal"]);
+        var nominal = ParsedNominalOrMidpoint(row);
         var hasExplicitLcl = OptionalDecimal(row, "LCL", out var parsedLcl) && parsedLcl.HasValue;
         var hasExplicitUcl = OptionalDecimal(row, "UCL", out var parsedUcl) && parsedUcl.HasValue;
         var specLsl = decimal.Parse(row["LSL"]);
@@ -1274,6 +1333,22 @@ public sealed class SetupImportService(ISpcRepository repository)
             !string.IsNullOrWhiteSpace(row.GetValueOrDefault("USL"));
     }
 
+    private static bool HasCompleteSpecValue(Dictionary<string, string> row)
+    {
+        return !string.IsNullOrWhiteSpace(row.GetValueOrDefault("LSL")) &&
+            !string.IsNullOrWhiteSpace(row.GetValueOrDefault("USL"));
+    }
+
+    private static decimal ParsedNominalOrMidpoint(IReadOnlyDictionary<string, string> row)
+    {
+        if (OptionalDecimal(row, "Nominal", out var nominal) && nominal.HasValue)
+        {
+            return nominal.Value;
+        }
+
+        return (decimal.Parse(row["LSL"]) + decimal.Parse(row["USL"])) / 2m;
+    }
+
     private static InspectionFrequency BuildFrequency(Dictionary<string, string> row)
     {
         var firstDueValue = OptionalInt(row, "FirstDueValue", 0);
@@ -1286,7 +1361,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         };
     }
 
-    private static bool OptionalDecimal(Dictionary<string, string> row, string field, out decimal? value)
+    private static bool OptionalDecimal(IReadOnlyDictionary<string, string> row, string field, out decimal? value)
     {
         value = null;
         if (!row.TryGetValue(field, out var text) || string.IsNullOrWhiteSpace(text))

@@ -38,6 +38,46 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ClearSetupMasterData_RemovesSetupDefinitionsButKeepsOperationalHistory()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        Assert.True(service.ImportCsv(ValidCsv()).Succeeded);
+        var part = repository.Parts.Single();
+        repository.PartJobDataFields.Add(new PartJobDataField { PartId = part.Id, FieldName = "Old job field" });
+        repository.PartMaterialFields.Add(new PartMaterialField { PartId = part.Id, MaterialName = "Old material", MaterialPartNum = "MAT-1" });
+        repository.Jobs.Add(new Job { JobNum = "J100", PartNum = part.PartNum });
+        repository.Measurements.Add(new InspectionMeasurement
+        {
+            JobNum = "J100",
+            PartNum = part.PartNum,
+            ProcessCode = "MOLD",
+            OperationSeq = 10,
+            ResourceId = "4S-1",
+            CharacteristicName = "Diameter",
+            Value = 5m,
+            Timestamp = DateTimeOffset.UtcNow,
+            OperatorUserId = "operator1",
+            SubmittedAt = DateTimeOffset.UtcNow
+        });
+
+        service.ClearSetupMasterData();
+
+        Assert.Empty(repository.Parts);
+        Assert.Empty(repository.Processes);
+        Assert.Empty(repository.Operations);
+        Assert.Empty(repository.Characteristics);
+        Assert.Empty(repository.SpecLimits);
+        Assert.Empty(repository.InspectionPlans);
+        Assert.Empty(repository.PartJobDataFields);
+        Assert.Empty(repository.PartMaterialFields);
+        Assert.Empty(repository.ControlLimits);
+        Assert.Single(repository.Jobs);
+        Assert.Single(repository.Measurements);
+    }
+
+    [Fact]
     public void ImportCsv_ImportsControlLimitsWhenProvided()
     {
         var repository = new InMemorySpcRepository();
@@ -53,6 +93,29 @@ public sealed class SetupImportServiceTests
         var limit = Assert.Single(repository.ControlLimits);
         Assert.Equal(4.25m, limit.Lcl);
         Assert.Equal(5.75m, limit.Ucl);
+    }
+
+    [Fact]
+    public void ImportCsv_ImportsSpecLimitsWithoutSourceNominal()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            Header(),
+            "Variable,61055,27MIL SH Undrilled,Ethicon Taperpoint - Needles,Setup,Needlemaker,,,,,Y Dim - Bottom,Variable,,0.41699999999999998,0.44700000000000001,,,in,1,Event,1,ToolChange,GlobalDefault,true,23",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var spec = Assert.Single(repository.SpecLimits);
+        Assert.Equal(0.417m, spec.Lsl);
+        Assert.Equal(0.447m, spec.Usl);
+        Assert.Equal(0.432m, spec.Nominal);
+        var plan = Assert.Single(repository.InspectionPlans);
+        Assert.Null(plan.Nominal);
+        Assert.Equal(0.417m, plan.Lsl);
+        Assert.Equal(0.447m, plan.Usl);
     }
 
     [Fact]
@@ -228,7 +291,7 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
-    public void ImportCsv_EndCountJobDataIsOptionalEvenWhenTemplateMarksRequired()
+    public void ImportCsv_IgnoresPaperCountJobDataFields()
     {
         var repository = new InMemorySpcRepository();
         var service = new SetupImportService(repository);
@@ -240,9 +303,7 @@ public sealed class SetupImportServiceTests
         ]));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        var field = Assert.Single(repository.PartJobDataFields);
-        Assert.Equal("End Count", field.FieldName);
-        Assert.False(field.IsRequired);
+        Assert.Empty(repository.PartJobDataFields);
     }
 
     [Fact]
@@ -396,7 +457,7 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
-    public void ImportCsv_RejectsPhaseMatrixRequiredWithoutSampleSize()
+    public void ImportCsv_DefaultsPhaseMatrixRequiredWithoutSampleSize()
     {
         var repository = new InMemorySpcRepository();
         var service = new SetupImportService(repository);
@@ -412,8 +473,10 @@ public sealed class SetupImportServiceTests
             string.Empty
         ]));
 
-        Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("Setup Sample Size is required", StringComparison.OrdinalIgnoreCase));
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var plan = Assert.Single(repository.InspectionPlans);
+        Assert.Equal("Setup", plan.InspectionPhase);
+        Assert.Equal(1, plan.SampleSize);
     }
 
     [Fact]
@@ -551,7 +614,14 @@ public sealed class SetupImportServiceTests
 
         var plans = new SetupQueryService(repository).GetInspectionPlans("70305").ToArray();
         Assert.Contains(plans, plan => plan.CharacteristicName == "Material Thickness" && plan.InspectionPhase == "Coil Change" && plan.SampleSize == 4 && plan.FrequencyUnit == FrequencyUnit.MaterialChange);
+        Assert.Contains(plans, plan => plan.CharacteristicName == "Jaw Profile (No Clip)" && plan.InspectionPhase == "Startup" && plan.SampleSize == 1);
+        Assert.Contains(plans, plan => plan.CharacteristicName == "Jaw Profile (No Clip)" && plan.InspectionPhase == "Setup" && plan.SampleSize == 1);
+        Assert.Contains(plans, plan => plan.CharacteristicName == "Jaw Profile (No Clip)" && plan.InspectionPhase == "Coil Change" && plan.SampleSize == 1);
         Assert.Contains(plans, plan => plan.CharacteristicName == "Brazed Contact to Jaw" && plan.InspectionPhase == "In Process" && plan.SampleSize == 3 && plan.FrequencyValue == 5000 && plan.FrequencyUnit == FrequencyUnit.Pieces);
+        var brazedContact = Assert.Single(plans, plan => plan.CharacteristicName == "Brazed Contact to Jaw" && plan.InspectionPhase == "In Process");
+        Assert.Null(brazedContact.Nominal);
+        Assert.Equal(280m, brazedContact.Lsl);
+        Assert.Null(brazedContact.Usl);
         Assert.Equal(["Material Thickness", "Jaw Profile (No Clip)", "Brazed Contact to Jaw"], plans.Where(plan => plan.InspectionPhase == "Startup").Select(plan => plan.CharacteristicName).ToArray());
     }
 
@@ -684,8 +754,8 @@ public sealed class SetupImportServiceTests
         ]));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.DisplayOrder == 1);
-        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Spool" && plan.DisplayOrder == 14);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.DisplayOrder == 1 && plan.SampleSize == 1);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Spool" && plan.DisplayOrder == 14 && plan.SampleSize == 1);
     }
 
     [Fact]

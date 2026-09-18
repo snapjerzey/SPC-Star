@@ -41,10 +41,13 @@ public sealed record JobHistoryEntryDto(
     decimal? NewValue = null,
     string? OldInspectionPhase = null,
     string? NewInspectionPhase = null,
+    long? OldMachineCounter = null,
+    long? NewMachineCounter = null,
     string? InspectionPhase = null,
     string? ProcessCode = null,
     int? OperationSeq = null,
     int? CompletionNumber = null,
+    int? FailureNumber = null,
     IReadOnlyList<Guid>? MeasurementIds = null,
     long? MachineCounter = null,
     string? TagName = null,
@@ -136,6 +139,26 @@ public sealed class JobHistoryService(ISpcRepository repository)
             .Where(tag => !phaseCompletions.Any(completion => JobTagBelongsToCompletion(tag, completion, phaseCompletions)))
             .Select(JobTagHistoryEntry);
 
+        var failedInspections = repository.FailedInspections
+            .Where(failure => failure.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Select(failure => new JobHistoryEntryDto(
+                failure.Id,
+                "InspectionFailed",
+                failure.JobNum,
+                failure.PartNum,
+                failure.ResourceId,
+                failure.FailedByUserId,
+                failure.OperatorShift,
+                failure.FailedAt,
+                NoteText: failure.Reason,
+                Detail: failure.Reason,
+                InspectionPhase: failure.InspectionPhase,
+                ProcessCode: failure.ProcessCode,
+                OperationSeq: failure.OperationSeq,
+                FailureNumber: Math.Max(failure.FailureNumber, 1),
+                MeasurementIds: [.. failure.MeasurementIds],
+                MachineCounter: failure.MachineCounter));
+
         var edits = repository.MeasurementEditAudits
             .Where(edit => edit.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
             .Select(edit => new JobHistoryEntryDto(
@@ -154,12 +177,32 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 NewInspectionPhase: edit.NewInspectionPhase,
                 Reason: edit.Reason));
 
+        var machineCounterEdits = repository.MachineCounterEditAudits
+            .Where(edit => edit.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Select(edit => new JobHistoryEntryDto(
+                edit.Id,
+                "MachineCounterEdit",
+                edit.JobNum,
+                edit.PartNum,
+                edit.ResourceId,
+                edit.EditedByUserId,
+                UserShift(edit.EditedByUserId),
+                edit.EditedAt,
+                Reason: edit.Reason,
+                OldMachineCounter: edit.OldMachineCounter,
+                NewMachineCounter: edit.NewMachineCounter,
+                InspectionPhase: edit.InspectionPhase,
+                ProcessCode: edit.ProcessCode,
+                OperationSeq: edit.OperationSeq));
+
         return notes
             .Concat(locks)
             .Concat(materialChanges)
             .Concat(standaloneJobTags)
             .Concat(phaseCompletionsWithJobData)
+            .Concat(failedInspections)
             .Concat(edits)
+            .Concat(machineCounterEdits)
             .OrderByDescending(entry => entry.Timestamp)
             .ToArray();
     }

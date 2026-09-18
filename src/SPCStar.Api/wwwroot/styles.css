@@ -63,6 +63,14 @@ button {
 }
 
 button:hover { background: linear-gradient(180deg, var(--primary-dark), #041f42); }
+button:active,
+button.is-submitting {
+  transform: translateY(1px);
+  filter: brightness(.94);
+}
+button.is-submitting {
+  cursor: wait;
+}
 button.secondary {
   background: #f8fafc;
   color: var(--text);
@@ -434,7 +442,7 @@ hr {
 .override-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 8px 12px;
 }
 .override-form label:nth-child(n+3),
 .override-form button {
@@ -1668,6 +1676,26 @@ textarea {
   margin-top: 1px;
   font-size: 13px;
 }
+.process-warning-pill {
+  align-items: center;
+  background: #fffbeb;
+  border: 1px solid #fdb022;
+  border-radius: 6px;
+  color: #92400e;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 8px 0;
+  padding: 7px 9px;
+}
+.process-warning-pill strong {
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.process-warning-pill span {
+  font-size: 12px;
+  font-weight: 700;
+}
 
 .lock-banner {
   border: 1px solid #fecdca;
@@ -1680,12 +1708,13 @@ textarea {
 .lock-panel {
   position: fixed;
   z-index: 60;
-  inset: 5vh max(16px, calc((100vw - 620px) / 2)) auto;
+  inset: 12px max(16px, calc((100vw - 760px) / 2)) auto;
   border-color: #fecdca;
   background: #fffafa;
   box-shadow: 0 24px 80px rgba(15, 23, 42, .35);
-  max-height: 90vh;
-  overflow: auto;
+  max-height: calc(100dvh - 24px);
+  padding: 18px 22px;
+  overflow: hidden;
 }
 .lock-panel::before {
   content: none;
@@ -1693,7 +1722,47 @@ textarea {
 .lock-panel .panel-heading p {
   color: var(--danger);
   font-weight: 750;
-  line-height: 1.45;
+  line-height: 1.32;
+  margin-top: 4px;
+}
+.lock-panel .panel-heading {
+  margin-bottom: 8px;
+}
+.lock-panel input,
+.lock-panel select,
+.lock-panel textarea {
+  min-height: 40px;
+}
+.lock-panel textarea {
+  min-height: 56px;
+  resize: none;
+}
+.lock-panel button {
+  grid-column: span 1;
+  min-height: 40px;
+  padding-block: 10px;
+}
+
+@media (max-height: 760px) {
+  .lock-panel {
+    top: 8px;
+    max-height: calc(100dvh - 16px);
+    padding: 12px 16px;
+  }
+  .lock-panel .panel-heading h2 {
+    font-size: 22px;
+  }
+  .lock-panel .panel-heading p {
+    font-size: 15px;
+    line-height: 1.25;
+  }
+  .lock-panel textarea {
+    min-height: 44px;
+  }
+  .lock-panel button {
+    min-height: 36px;
+    padding-block: 8px;
+  }
 }
 
 .trend-canvas {
@@ -1745,6 +1814,13 @@ textarea {
 .phase-complete-history-item .job-note-meta strong {
   color: var(--ok);
 }
+.failed-inspection-history-item {
+  border-color: #fecdca;
+  background: #fff1f3;
+}
+.failed-inspection-history-item .job-note-meta strong {
+  color: var(--danger);
+}
 .job-note-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1769,6 +1845,7 @@ textarea {
 .empty, .message { color: var(--muted); }
 .message.error { color: var(--danger); font-weight: 700; }
 .message.ok { color: var(--ok); font-weight: 700; }
+.message.warn { color: #b54708; font-weight: 700; }
 .archive-form {
   max-width: 480px;
 }

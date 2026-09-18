@@ -40,7 +40,7 @@ public sealed class SetupManagementServiceTests
             "Ttech,Tech Tim,TempPass123!,LineTech,2nd Shift,,X",
             "JTGill,Gill JT,test,GOD,3rd Shift,X,X",
             string.Empty
-        ]), "god1");
+        ]), "Archon");
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal(3, result.Value!.Imported);
@@ -194,19 +194,19 @@ public sealed class SetupManagementServiceTests
         var result = service.UpsertUser(new UpsertUserRequest("qa2", "secret", [RoleNames.GOD], ["General"], "1st Shift", "qa1"));
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("Only a GOD user", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("System Manager access", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(repository.Users, user => user.UserName == "qa2");
     }
 
     [Fact]
-    public void UpsertUser_AllowsGodRoleWhenActingUserIsGod()
+    public void UpsertUser_AllowsSystemManagerRoleWhenActingUserIsArchon()
     {
         var repository = new InMemorySpcRepository();
         SeedData.SeedSecurity(repository);
         TestSeedData.SeedUsers(repository);
         var service = new SetupManagementService(repository);
 
-        var result = service.UpsertUser(new UpsertUserRequest("architect2", "secret", [RoleNames.GOD], ["General"], "1st Shift", "god1"));
+        var result = service.UpsertUser(new UpsertUserRequest("architect2", "secret", [RoleNames.GOD], ["General"], "1st Shift", "Archon"));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Contains(repository.Users.Single(user => user.UserName == "architect2").Roles, role => role.Name == RoleNames.GOD);
@@ -228,7 +228,7 @@ public sealed class SetupManagementServiceTests
         ]), "qa1");
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("Only a GOD user", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("System Manager access", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(repository.Users, user => user.UserName == "JTGill");
     }
 
@@ -257,7 +257,7 @@ public sealed class SetupManagementServiceTests
         var result = service.DeleteUser("Archon", "Archon");
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("GOD user", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("System Manager user", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -268,11 +268,11 @@ public sealed class SetupManagementServiceTests
         TestSeedData.SeedUsers(repository);
         var service = new SetupManagementService(repository);
 
-        var result = service.DeleteUser("god1", "qa1");
+        var result = service.DeleteUser("Archon", "qa1");
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("Only a GOD user", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(repository.Users, user => user.UserName == "god1");
+        Assert.Contains(result.Errors, error => error.Contains("System Manager access", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(repository.Users, user => user.UserName == "Archon");
     }
 
     [Fact]
@@ -300,10 +300,10 @@ public sealed class SetupManagementServiceTests
         TestSeedData.SeedUsers(repository);
         var service = new SetupManagementService(repository);
 
-        var result = service.ResetUserPassword(new ResetUserPasswordRequest("god1", "temp", "qa1"));
+        var result = service.ResetUserPassword(new ResetUserPasswordRequest("Archon", "temp", "qa1"));
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("Only a GOD user", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("System Manager access", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -548,7 +548,7 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
-    public void UpsertPartJobDataField_EndCountIsOptionalEvenWhenMarkedRequired()
+    public void UpsertPartJobDataField_RejectsPaperCountFields()
     {
         var repository = new InMemorySpcRepository();
         var service = new SetupManagementService(repository);
@@ -556,11 +556,23 @@ public sealed class SetupManagementServiceTests
 
         var result = service.UpsertPartJobDataField(new UpsertPartJobDataFieldRequest("P200", "Setup", "End Count", true, 0));
 
-        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        var field = Assert.Single(repository.PartJobDataFields);
-        Assert.Equal("End Count", field.FieldName);
-        Assert.False(field.IsRequired);
-        Assert.False(result.Value!.IsRequired);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("redundant", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(repository.PartJobDataFields);
+    }
+
+    [Fact]
+    public void UpsertPartJobDataField_RejectsRedundantNmSpoolFields()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        Assert.True(service.UpsertInspectionSetup(Request("MOLD", "Diameter")).Succeeded);
+
+        var result = service.UpsertPartJobDataField(new UpsertPartJobDataFieldRequest("P200", "Setup", "NM # (Job # + Spool #)", true, 0));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("redundant", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(repository.PartJobDataFields);
     }
 
     [Fact]

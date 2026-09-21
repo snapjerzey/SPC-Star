@@ -980,6 +980,7 @@ function renderLock(activeLock) {
     panel.classList.add("hidden");
     document.body.classList.remove("lock-active");
     $("overrideMessage").textContent = "";
+    setLockFormBusy(false);
     return;
   }
   banner.classList.remove("hidden");
@@ -987,6 +988,7 @@ function renderLock(activeLock) {
   banner.textContent = lockText;
   panel.classList.remove("hidden");
   document.body.classList.add("lock-active");
+  setLockFormBusy(false);
   panel.querySelector(".panel-heading p")?.remove();
   const detail = document.createElement("p");
   detail.textContent = lockText;
@@ -994,6 +996,36 @@ function renderLock(activeLock) {
   $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
   $("failInspectionButton").disabled = false;
   updateSystemManagerReasonVisibility();
+}
+
+function setLockFormBusy(isBusy) {
+  const form = $("overrideForm");
+  if (!form) {
+    return;
+  }
+
+  form.querySelectorAll("input, select, textarea, button").forEach((control) => {
+    control.disabled = isBusy;
+  });
+  const submitButton = form.querySelector("button[type='submit']");
+  if (submitButton) {
+    submitButton.textContent = isBusy ? "Clearing..." : "Clear Lock";
+  }
+}
+
+function hideLockPanelImmediately() {
+  const banner = $("lockBanner");
+  const panel = $("overridePanel");
+  banner.classList.add("hidden");
+  banner.textContent = "";
+  panel.classList.add("hidden");
+  panel.style.display = "none";
+  document.body.classList.remove("lock-active");
+}
+
+function restoreLockPanelDisplay() {
+  const panel = $("overridePanel");
+  panel.style.display = "";
 }
 
 function overrideUserIsSystemManager() {
@@ -3227,54 +3259,83 @@ async function clearLock(event) {
     return;
   }
 
-  const preservedInputs = snapshotMeasurementInputs();
-  const preservedMachineCounter = machineCounterValue();
   const clearedLock = state.activeLock;
-  const affectedPlanIndex = planIndexForLock(clearedLock);
-  state.preserveInspectionEntriesUntil = Date.now() + 10000;
+  const previousContexts = state.contexts;
+  const previousActiveLock = state.activeLock;
   try {
     const isSystemManagerOverride = overrideUserIsSystemManager();
-    await api(`/alerts/${clearedLock.alertId}/override`, {
-      method: "POST",
-      body: JSON.stringify({
-        overrideUserName: $("overrideUserName").value.trim(),
-        overridePassword: $("overridePassword").value,
-        causeCategory: isSystemManagerOverride ? "Unspecified" : $("causeCategory").value,
-        causeText: isSystemManagerOverride ? "" : $("causeText").value.trim(),
-        solutionText: isSystemManagerOverride ? "" : $("solutionText").value.trim(),
-        whyStandardProcessWasBypassed: $("bypassReason").value.trim() || null,
-        unlockedAt: new Date().toISOString()
-      })
-    });
-    $("overridePassword").value = "";
-    $("causeCategory").value = "Machine";
-    $("causeText").value = "";
-    $("solutionText").value = "";
-    $("bypassReason").value = "";
-    $("overrideMessage").textContent = "Lock cleared.";
-    $("overrideMessage").className = "message ok";
-    const nextLock = clearActiveLockFromLocalContext(clearedLock);
-    renderLock(nextLock);
-    restoreMachineCounterValue(preservedMachineCounter);
-    restoreMeasurementInputSnapshot(preservedInputs);
-    if (affectedPlanIndex >= 0) {
-      updatePlanStatus(affectedPlanIndex);
-    }
+    const payload = {
+      overrideUserName: $("overrideUserName").value.trim(),
+      overridePassword: $("overridePassword").value,
+      causeCategory: isSystemManagerOverride ? "Unspecified" : $("causeCategory").value,
+      causeText: isSystemManagerOverride ? "" : $("causeText").value.trim(),
+      solutionText: isSystemManagerOverride ? "" : $("solutionText").value.trim(),
+      whyStandardProcessWasBypassed: $("bypassReason").value.trim() || null,
+      unlockedAt: new Date().toISOString()
+    };
 
-    applyMachineCounterDueState();
-    updateInspectionSubmitState();
-    window.requestAnimationFrame(() => {
-      restoreMeasurementInputSnapshot(preservedInputs);
-      if (!nextLock) {
-        focusLockMeasurementInput(clearedLock);
+    hideLockPanelImmediately();
+    showEntryMessage("Lock cleared. Correct the entry and continue.", "ok");
+
+    window.setTimeout(() => {
+      const preservedInputs = snapshotMeasurementInputs();
+      const preservedMachineCounter = machineCounterValue();
+      const affectedPlanIndex = planIndexForLock(clearedLock);
+      state.preserveInspectionEntriesUntil = Date.now() + 10000;
+      const nextLock = clearActiveLockFromLocalContext(clearedLock);
+      restoreLockPanelDisplay();
+      if (nextLock) {
+        renderLock(nextLock);
       }
-    });
-    showEntryMessage(nextLock ? "Lock cleared. Another active lock still needs attention." : "Lock cleared. Correct the entry and continue.", nextLock ? "error" : "ok");
-    const { jobNum } = selectedValues();
-    if (jobNum) {
-      loadJobNotes(jobNum).catch(() => {});
-    }
+      restoreMachineCounterValue(preservedMachineCounter);
+      restoreMeasurementInputSnapshot(preservedInputs);
+      if (affectedPlanIndex >= 0) {
+        updatePlanStatus(affectedPlanIndex);
+      }
+
+      applyMachineCounterDueState();
+      updateInspectionSubmitState();
+      window.requestAnimationFrame(() => {
+        restoreMeasurementInputSnapshot(preservedInputs);
+        if (!nextLock) {
+          focusLockMeasurementInput(clearedLock);
+        }
+      });
+      if (nextLock) {
+        showEntryMessage("Lock cleared locally. Another active lock still needs attention.", "error");
+      }
+
+      api(`/alerts/${clearedLock.alertId}/override`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      })
+        .then(() => {
+          $("overridePassword").value = "";
+          $("causeCategory").value = "Machine";
+          $("causeText").value = "";
+          $("solutionText").value = "";
+          $("bypassReason").value = "";
+          const { jobNum } = selectedValues();
+          if (jobNum) {
+            loadJobNotes(jobNum).catch(() => {});
+          }
+        })
+        .catch((error) => {
+          state.contexts = previousContexts;
+          state.activeLock = previousActiveLock;
+          restoreLockPanelDisplay();
+          renderLock(state.activeLock);
+          setLockFormBusy(false);
+          $("overrideMessage").textContent = readableError(error);
+          $("overrideMessage").className = "message error";
+        });
+    }, 0);
   } catch (error) {
+    state.contexts = previousContexts;
+    state.activeLock = previousActiveLock;
+    restoreLockPanelDisplay();
+    renderLock(state.activeLock);
+    setLockFormBusy(false);
     $("overrideMessage").textContent = readableError(error);
     $("overrideMessage").className = "message error";
   }
@@ -6620,6 +6681,10 @@ restoreAuthenticatedSession();
 clearInspectionSetupForm();
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+  navigator.serviceWorker.getRegistrations()
+    .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+    .then(() => caches?.keys?.())
+    .then((keys) => Promise.all((keys || []).map((key) => caches.delete(key))))
+    .catch(() => {});
 }
 

@@ -14,25 +14,27 @@ http://SERVER-NAME:5000/
 
 Use the server computer name or server IP address in place of `SERVER-NAME`.
 
+The current pilot install is a direct SPC-Star application install running in the background through Windows Task Scheduler. IIS is not part of the normal pilot runtime path.
+
 ## Server Folder Layout
 
 Default install location:
 
 ```text
-C:\SPCStar
+C:\Program Files\SPCstar
 ```
 
 Important folders:
 
-- `C:\SPCStar\app` - published SPC-Star application files.
-- `C:\SPCStar\data` - live SPC-Star database folder.
-- `C:\SPCStar\data\spcstar.db` - live SPC-Star SQLite database.
-- `C:\SPCStar\data\archives` - long-term archive export files.
-- `C:\SPCStar\backups` - SPC-Star database backup files.
-- `C:\SPCStar\quarantine` - suspect database copies saved before restore or destructive restore testing.
-- `C:\SPCStar\logs` - server log output.
+- `C:\Program Files\SPCstar\app` - published SPC-Star application files.
+- `C:\Program Files\SPCstar\data` - live SPC-Star database folder.
+- `C:\Program Files\SPCstar\data\spcstar.db` - live SPC-Star SQLite database.
+- `C:\Program Files\SPCstar\data\archives` - long-term archive export files.
+- `C:\Program Files\SPCstar\backups` - SPC-Star database backup files.
+- `C:\Program Files\SPCstar\quarantine` - suspect database copies saved before restore or destructive restore testing.
+- `C:\Program Files\SPCstar\logs` - server log output.
 
-Keep `data`, `backups`, `quarantine`, and `archives` outside the app publish folder. Application updates should replace `C:\SPCStar\app` without deleting database or backup files.
+Keep `data`, `backups`, `quarantine`, and `archives` outside the app publish folder. Application updates should replace `C:\Program Files\SPCstar\app` without deleting database or backup files.
 
 ## Required Scheduled Tasks
 
@@ -48,7 +50,7 @@ The deployment scripts create these Windows Scheduled Tasks:
 - `SPC-Star Daily Backup`
   - Runs the SPC-Star backup script once per day.
   - Default time is `02:00`, which is 0200 / 2:00 AM.
-  - Writes backup files to `C:\SPCStar\backups`.
+  - Writes backup files to `C:\Program Files\SPCstar\backups`.
 
 ## Install
 
@@ -79,10 +81,12 @@ The update script:
 1. Stops the `SPC-Star Server` scheduled task.
 2. Creates a database backup before updating.
 3. Publishes the updated app files.
-4. Copies the current start and backup scripts into `C:\SPCStar`.
+4. Copies the current start and backup scripts into `C:\Program Files\SPCstar`.
 5. Creates or refreshes the `SPC-Star Daily Backup` scheduled task.
 6. Starts SPC-Star again.
 7. Verifies the local health endpoint.
+
+For the current thumb-drive patch handoff, IT should run the update script from the root of the handoff drive/package. The patch is expected to preserve the existing live data folder, replace only the application files and support scripts, restart the `SPC-Star Server` scheduled task, and verify that the app responds at `/health`.
 
 To update and change the daily backup time:
 
@@ -95,13 +99,13 @@ To update and change the daily backup time:
 The live database is:
 
 ```text
-C:\SPCStar\data\spcstar.db
+C:\Program Files\SPCstar\data\spcstar.db
 ```
 
 SPC-Star also creates its own backup files here:
 
 ```text
-C:\SPCStar\backups
+C:\Program Files\SPCstar\backups
 ```
 
 Backup file naming format:
@@ -123,7 +127,7 @@ Backups do not overwrite existing backups. If more than one backup is created du
 The `SPC-Star Daily Backup` task runs:
 
 ```powershell
-C:\SPCStar\backup-spcstar.ps1
+C:\Program Files\SPCstar\backup-spcstar.ps1
 ```
 
 When SPC-Star is running, the backup script asks the local SPC-Star server to create an online SQLite backup. Operators may stay logged in and continue submitting inspections while this backup is created. The backup is a consistent snapshot of all data saved before the backup finishes. Any newer submissions continue into the live database and will be included in a later backup.
@@ -134,16 +138,16 @@ If SPC-Star is stopped or unavailable, the script falls back to a direct file co
 
 The company's normal local server backup should include:
 
-- `C:\SPCStar\data\spcstar.db`
-- `C:\SPCStar\backups`
-- `C:\SPCStar\data\archives`
-- `C:\SPCStar\quarantine`
-- `C:\SPCStar\logs` if operational logs are retained
+- `C:\Program Files\SPCstar\data\spcstar.db`
+- `C:\Program Files\SPCstar\backups`
+- `C:\Program Files\SPCstar\data\archives`
+- `C:\Program Files\SPCstar\quarantine`
+- `C:\Program Files\SPCstar\logs` if operational logs are retained
 
 Best protection is:
 
-1. SPC-Star creates daily local database backups in `C:\SPCStar\backups`.
-2. The normal server backup captures `C:\SPCStar\backups` and `C:\SPCStar\data`.
+1. SPC-Star creates daily local database backups in `C:\Program Files\SPCstar\backups`.
+2. The normal server backup captures `C:\Program Files\SPCstar\backups` and `C:\Program Files\SPCstar\data`.
 
 This gives both application-level backups and server-level backups.
 
@@ -157,16 +161,16 @@ Manual script backup:
 
 Manual backup from SPC-Star:
 
-1. Log in as `Archon` or another GOD user.
+1. Log in as `Archon` or another System Manager user.
 2. Open `Setup > Archive`.
 3. Use `Database Backup`.
-4. Enter GOD credentials.
+4. Enter System Manager credentials.
 5. Click `Create Backup`.
 
 The manual backup writes to the same backup folder:
 
 ```text
-C:\SPCStar\backups
+C:\Program Files\SPCstar\backups
 ```
 
 ## Restore
@@ -180,13 +184,13 @@ Setup > Archive > Database Test / Restore
 `Restore Latest Backup` restores the newest `.db` file from:
 
 ```text
-C:\SPCStar\backups
+C:\Program Files\SPCstar\backups
 ```
 
 Before restoring, SPC-Star saves the current database into quarantine:
 
 ```text
-C:\SPCStar\quarantine
+C:\Program Files\SPCstar\quarantine
 ```
 
 Quarantine file naming format:
@@ -198,8 +202,8 @@ MMDDYY Quarantine HHMM.db
 If SPC-Star cannot run and IT must restore manually:
 
 1. Stop the `SPC-Star Server` scheduled task.
-2. Copy the current suspect database from `C:\SPCStar\data\spcstar.db` into `C:\SPCStar\quarantine`.
-3. Copy the selected known-good backup from `C:\SPCStar\backups` to `C:\SPCStar\data\spcstar.db`.
+2. Copy the current suspect database from `C:\Program Files\SPCstar\data\spcstar.db` into `C:\Program Files\SPCstar\quarantine`.
+3. Copy the selected known-good backup from `C:\Program Files\SPCstar\backups` to `C:\Program Files\SPCstar\data\spcstar.db`.
 4. Start the `SPC-Star Server` scheduled task.
 5. Verify:
 
@@ -223,7 +227,7 @@ Archive is different from backup.
 Archive files are written to:
 
 ```text
-C:\SPCStar\data\archives
+C:\Program Files\SPCstar\data\archives
 ```
 
 Archive should be copied into the company's normal local retention location for the seven-year record hold process.
@@ -234,9 +238,21 @@ When the database is empty, SPC-Star seeds one protected system manager account:
 
 - Username: `Archon`
 - Password: `archon`
-- Role: `GOD`
+- Role: `GOD` / System Manager permission level
 
 The password should be changed after server setup.
+
+## Current Inspection Behavior
+
+- Operators select the shift they are actually working at login.
+- Operators select job, machine, part, operation, and inspection phase before entering measurements.
+- Attribute inspections are entered as one lot disposition, Accept or Reject.
+- The machine counter is required when submitting an inspection and can be corrected later from job history by authorized users.
+- The inspection capability panel uses saved job/machine/operation/phase history for the loaded variable, not only the current browser entry.
+- The trend chart is filtered to the loaded job, machine, part, process, operation, phase, and inspection item.
+- Full lockouts are created for out-of-spec measured values and rejected attributes.
+- Process drift appears beside the inspection variable as a warning and is recorded for history/top-issue review, but it does not create the full lock screen.
+- If an inspection fails partway through, the lock screen includes the operator/line-tech workflow to end the current inspection as failed and start a fresh inspection for the same job context.
 
 ## Quick Health Checks
 
@@ -261,9 +277,10 @@ https://spcstar.bihler.com/
 If the app does not respond:
 
 1. Check that the `SPC-Star Server` scheduled task is running.
-2. Check `C:\SPCStar\logs\spcstar.log`.
+2. Check `C:\Program Files\SPCstar\logs\spcstar.log`.
 3. Confirm inbound TCP port `5000` is allowed on the server firewall.
-4. Confirm the live database exists at `C:\SPCStar\data\spcstar.db`.
+4. Confirm the live database exists at `C:\Program Files\SPCstar\data\spcstar.db`.
+5. Confirm the app was not started only from a temporary Administrator PowerShell window. Closing that window must not be what keeps SPC-Star alive; the scheduled task should own the running process.
 
 ## Serial Gauge Browser Requirement
 
@@ -334,3 +351,4 @@ ECNT / RS-232 information to collect from engineering:
 - Example raw output from the ECNT device.
 - Whether the device sends a newline/Enter after each reading.
 - Whether WinSPC or any other software must be closed before SPC-Star can connect.
+

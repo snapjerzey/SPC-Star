@@ -1,42 +1,42 @@
 # SPC-Star Windows Service Setup
 
-Use this when SPC-Star should keep running after PowerShell is closed and after the server user logs out.
+This document is retained only as a legacy reference. The current pilot standard is not a Windows Service.
 
-## Server Folder
+For the pilot server, SPC-Star runs through the Windows Scheduled Task named `SPC-Star Server`, installed and refreshed by the deployment scripts in `deploy`. That scheduled task is the supported way to keep SPC-Star running after PowerShell closes and after the server user logs out.
 
-Copy the published SPC-Star package to:
+Use these documents for current server work:
 
-```powershell
-C:\SPC-Star\01 Published App
-```
+- `deploy/README.md`
+- `deploy/IT-SERVER-REFERENCE.md`
 
-Create the database folder:
+## Current Pilot Runtime
 
-```powershell
-New-Item -ItemType Directory -Force C:\SPC-Star\Data
-```
+- Install root: `C:\Program Files\SPCstar`
+- App files: `C:\Program Files\SPCstar\app`
+- Live database: `C:\Program Files\SPCstar\data\spcstar.db`
+- Backups: `C:\Program Files\SPCstar\backups`
+- Logs: `C:\Program Files\SPCstar\logs\spcstar.log`
+- Runtime owner: Windows Scheduled Task `SPC-Star Server`
+- Daily backup task: Windows Scheduled Task `SPC-Star Daily Backup`
+- Default port: `5000`
 
-## Required System Environment Variables
+## Standard Install
 
-Run PowerShell as Administrator:
-
-```powershell
-setx /M SPCSTAR_DATABASE_PATH "C:\SPC-Star\Data\spcstar.db"
-```
-
-The service install command below passes the URL binding directly to SPC-Star, so no separate URL environment variable is required.
-
-## Install as a Windows Service
-
-Run PowerShell as Administrator:
+Run PowerShell as Administrator from the current SPC-Star project or IT handoff package:
 
 ```powershell
-sc.exe create "SPC-Star" binPath= '"C:\Program Files\dotnet\dotnet.exe" "C:\SPC-Star\01 Published App\SPCStar.Api.dll" --urls http://0.0.0.0:5000' start= auto DisplayName= "SPC-Star"
-sc.exe description "SPC-Star" "SPC-Star inspection and traceability server"
-sc.exe start "SPC-Star"
+.\deploy\install-server.ps1
 ```
 
-After this is installed, SPC-Star starts automatically when the server starts. No one needs to stay logged in, and PowerShell does not need to remain open.
+## Standard Update
+
+Run PowerShell as Administrator from the current SPC-Star project or IT handoff package:
+
+```powershell
+.\deploy\update-server.ps1
+```
+
+The update path preserves `C:\Program Files\SPCstar\data`, creates a backup, replaces the application files, restarts the scheduled task, and verifies `/health`.
 
 ## Verify
 
@@ -54,47 +54,6 @@ http://SERVER-NAME:5000/
 
 Replace `SERVER-NAME` with the actual server name or IP address.
 
-## Manage the Service
+## Legacy Service Note
 
-```powershell
-sc.exe stop "SPC-Star"
-sc.exe start "SPC-Star"
-sc.exe query "SPC-Star"
-```
-
-The service can also be managed from Windows Services.
-
-## Back Up the Database
-
-Use SPC-Star's backup script from the project folder:
-
-```powershell
-.\deploy\backup-data.ps1 -InstallRoot "C:\SPC-Star"
-```
-
-When SPC-Star is running, the script uses the local server to create an online SQLite backup. Operators can remain logged in and continue working. The backup contains a consistent snapshot of all submitted/saved data up to the backup point.
-
-## Update SPC-Star
-
-1. Stop the service.
-2. Replace the files in `C:\SPC-Star\01 Published App` with the new published package.
-3. Start the service.
-4. Verify `/health`.
-
-```powershell
-sc.exe stop "SPC-Star"
-sc.exe start "SPC-Star"
-```
-
-## Remove the Service
-
-```powershell
-sc.exe stop "SPC-Star"
-sc.exe delete "SPC-Star"
-```
-
-Deleting the service does not delete the database file. The database remains at:
-
-```powershell
-C:\SPC-Star\Data\spcstar.db
-```
+Do not install a separate Windows Service for the current pilot unless the deployment standard is formally changed. Running both a service and the scheduled task can create port conflicts or make it unclear which process owns the app.

@@ -12,29 +12,30 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Manual setup screens for parts, operations, part-specific job data fields, measured variables, accept/reject attributes, sample size, and frequency.
 - Machine setup screen for adding and maintaining the machine list operators choose from at job start.
 - Machine workbook import using a sheet named `SPC-Star Machine Import` with `Machine ID` and `Description` columns.
-- User management screens for operators, line techs, QA, admins, and GOD access, including shift assignment, add/edit/delete, password reset, and last-admin/GOD protection.
+- User management screens for operators, line techs, QA, admins, and System Manager access, including shift assignment, add/edit/delete, password reset, and last-admin/System Manager protection.
 - Browser/tablet inspection console served by the API.
-- Job, machine, part, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, Coil Change, Spool, and End of Spool.
+- Login includes shift selection so an operator can choose the shift they are actually working. Current shifts are 1st Half Days, 1st Half Nights, 2nd Half Days, 2nd Half Nights, and 5 Day.
+- Job, machine, part, operation, and inspection phase selection before entry. Current phases are Startup, Setup, In Process, Coil Change, Spool, and End of Spool.
 - Persistent job tag storage for part-specific context fields that will be driven by inspection setup.
 - Part-specific material requirements from setup/import, with lot entry on the inspection screen.
 - Ordered inspection-item entry for measured variables and accept/reject attributes, with inactive phase items removed from the operator view.
-- Accept/Reject inspection support for comparator/template checks.
-- Live row-based min, max, mean, standard deviation, Cp, Cpk, Pp, and Ppk summary for every active measured variable.
+- Accept/Reject inspection support for lot-level attribute disposition.
+- Live row-based min, max, mean, standard deviation, Cp, Cpk, Pp, and Ppk summary for every active measured variable, based on the saved job/machine/operation/phase history for that variable.
 - Cp, Cpk, Pp, and Ppk calculations with shared red/yellow/green visual status cues.
-- Trend chart rendering with chart type selection.
+- Trend chart rendering with chart type selection, filtered to the loaded job, machine, part, process, operation, phase, and inspection item.
 - Drift detection rule selection with a global default, part-level override, and editable system capability thresholds.
 - Western Electric, Nelson-style trend, CUSUM, EWMA, moving average trend, linear trend/slope, custom default, spec-limit-only, and no-automatic-rule options.
-- Drift alert creation and lock enforcement.
-- Authorized override workflow with credential validation, cause/action notes, line tech/admin/QA/GOD support, and GOD-mode bypass reason validation.
+- Full lock enforcement for out-of-spec measured values and rejected attributes. Process drift is shown as a warning beside the inspection variable instead of locking the operator out.
+- Authorized lock-clear workflow with credential validation, cause/action notes, line tech/admin/QA support, and Archon/System Manager authority for system-level actions.
 - Material lot change logging for job/resource traceability.
 - Timestamped job notes for operator handoff and issue history.
 - History tab combining ledger review, charts, top issue analysis, and job-data export. It carries part/job filters across Ledger, Charts, Top Issues, and Export.
-- History ledger for part capability across all jobs, part/job review, measurement history, notes, locks, material history, and editable inspection entries.
+- History ledger for part capability across all jobs, part/job review, measurement history, notes, locks, material history, editable inspection entries, and machine counter edits.
 - Top Issues history report for repeat out-of-spec, drift, and rejected-attribute events by part, inspection item, rule/signal, cause category, shift, timeframe, affected jobs, and affected machines.
 - History measurement highlighting: red for out-of-spec values and yellow for out-of-control values.
 - QA summary views and CSV export for one or more jobs, including mean, min, max, standard deviation, Cp, Cpk, Pp, and Ppk.
 - Raw inspection, alert, material, and job history CSV exports, with operator shift stamped on new inspection and alert rows for shift-based reporting.
-- GOD-only Archive tab for exporting old historical records to a JSON archive file before removing them from the live database.
+- System Manager-only Archive tab for exporting old historical records to a JSON archive file before removing them from the live database.
 - USB keyboard-style measurement capture support for gauges/scales/calipers that enter values into focused fields, including value cleanup and Enter-to-next-field behavior.
 - Web Serial text-gauge capture for USB devices that expose serial readings instead of acting like a keyboard.
 - Offline-oriented setup snapshot and retry-safe sync contracts.
@@ -196,17 +197,17 @@ The default server URL is:
 http://SERVER-NAME:5000/
 ```
 
-The scripts publish the app to `C:\SPCStar\app`, store data at `C:\SPCStar\data\spcstar.db`, keep archive files at `C:\SPCStar\data\archives`, keep backups in `C:\SPCStar\backups`, and create Windows Scheduled Tasks named `SPC-Star Server` and `SPC-Star Daily Backup`.
+The scripts publish the app to `C:\Program Files\SPCstar\app`, store data at `C:\Program Files\SPCstar\data\spcstar.db`, keep archive files at `C:\Program Files\SPCstar\data\archives`, keep backups in `C:\Program Files\SPCstar\backups`, and create Windows Scheduled Tasks named `SPC-Star Server` and `SPC-Star Daily Backup`.
 
 See `deploy/README.md` for the deployment workflow and `deploy/IT-SERVER-REFERENCE.md` for the IT handoff covering scheduled tasks, backups, restore, archive folders, and health checks.
 
-For a production-style server install where SPC-Star keeps running after PowerShell closes and after the server user logs out, install it as a Windows Service. See `docs/deployment/windows-service-setup.md`.
+For the pilot server, SPC-Star runs through the `SPC-Star Server` Windows Scheduled Task. Do not keep the app alive by leaving an Administrator PowerShell window open, and do not route the normal pilot install through IIS. See `deploy/IT-SERVER-REFERENCE.md`.
 
 The API seeds one protected system manager account when the database is empty:
 
 - User `Archon`
 - Password `archon`
-- Role `GOD`
+- Role `GOD` / System Manager permission level
 
 There are no seeded operator, line tech, QA, or admin demo users in the production seed.
 
@@ -217,8 +218,8 @@ SPC-Star supports database backups from the server script and from the browser U
 Backup locations:
 
 - Local development manual backups: `.appdata/backups`
-- Server manual/script backups: `C:\SPCStar\backups`
-- Suspect pre-restore database copies should be stored separately in `C:\SPCStar\quarantine`
+- Server manual/script backups: `C:\Program Files\SPCstar\backups`
+- Suspect pre-restore database copies should be stored separately in `C:\Program Files\SPCstar\quarantine`
 
 Backup file naming uses the format `MMDDYY Backup HHMM.db`, for example `081226 Backup 1430.db`. Backups do not overwrite the existing backup file. If two backups are created in the same minute, SPC-Star appends seconds to keep the file unique.
 
@@ -261,18 +262,18 @@ Restore testing:
 
 ## Archive Process
 
-SPC-Star includes a GOD-only `Setup > Archive` tab for long-term record retention and live database cleanup.
+SPC-Star includes a System Manager-only `Setup > Archive` tab for long-term record retention and live database cleanup.
 
 Archive workflow:
 
 1. Open `Setup > Archive`.
 2. Select a cutoff date. Records before that date are eligible for archive.
 3. Click `Preview Archive` to review the record counts.
-4. Enter GOD credentials.
+4. Enter Archon/System Manager credentials.
 5. Type `ARCHIVE` to confirm.
 6. Click `Create Archive`.
 
-The archive process writes a JSON file first, then removes matching records from the live database only after the file is created successfully. Archive files are stored in `.appdata/archives` for local development. Server installs write archive files to `C:\SPCStar\data\archives` through `SPCSTAR_ARCHIVE_PATH`. The UI also provides a download link after the archive is created.
+The archive process writes a JSON file first, then removes matching records from the live database only after the file is created successfully. Archive files are stored in `.appdata/archives` for local development. Server installs write archive files to `C:\Program Files\SPCstar\data\archives` through `SPCSTAR_ARCHIVE_PATH`. The UI also provides a download link after the archive is created.
 
 Archived historical record types:
 
@@ -300,8 +301,9 @@ Archive is blocked if active locks exist before the selected cutoff date. Those 
 
 ## Current Gaps / Next Work
 
-- Continue validating loaded inspection plans against source sheets before production-floor pilot use.
-- Prepare pilot rollout checklist: server install, backups, user permissions, operator sign-in/password reset, product group access, and test jobs.
+- Continue production-floor pilot testing and collect feedback for the next patch package.
+- Keep the IT patch/update handoff simple: backup current data, replace app files, preserve `C:\Program Files\SPCstar\data`, refresh the scheduled task, verify `/health`, and test login/inspection entry.
+- Continue validating loaded inspection plans against source sheets when new part feedback is found.
 - Production database backup/restore drill and internal user/session hardening.
 - Fully relational EF Core/SQL Server storage if the pilot requires a separate database engine.
 - Full offline queue UI with conflict handling.
@@ -309,4 +311,5 @@ Archive is blocked if active locks exist before the selected cutoff date. Those 
 - Box-level traceability once the required production count/source logic is defined.
 - WebHID/custom binary device profiles once the actual gauge models and report formats are known.
 - Deeper History search/refinement for cross-job note text, machine issue trends, material event trends, full shift-based report cards, MES/OEE correlation, and saved QA report views.
+
 

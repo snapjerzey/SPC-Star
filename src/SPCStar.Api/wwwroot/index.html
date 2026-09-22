@@ -1010,18 +1010,18 @@
 
         <h3>4. Record measurements and attributes</h3>
         <p>For measured variables, enter the required measurement in each field, use the correct gauge, tool, or inspection device listed, and follow the required sample size shown for that inspection item.</p>
-        <p>For accept/reject attributes, select or enter the required result and follow the listed inspection method and sample size.</p>
+        <p>For accept/reject attributes, select the lot disposition. If one required attribute fails, reject the attribute for that inspection.</p>
         <p>Do not skip required fields. If a field is required, SPC-Star will not allow the inspection to continue until it is completed.</p>
 
         <h3>5. Out-of-spec or process drift alerts</h3>
-        <p>If SPC-Star detects an out-of-spec result or process drift, the inspection may lock.</p>
+        <p>If SPC-Star detects an out-of-spec measured value or a rejected attribute, the inspection will lock. Process drift is shown as a warning beside the inspection item so it can be reviewed before parts move out of specification.</p>
         <ol>
-          <li>Stop entering inspection data.</li>
+          <li>Stop entering inspection data if a lock screen appears.</li>
           <li>Notify a line tech, QA, or supervisor.</li>
-          <li>Do not continue production inspection entries until the issue is reviewed.</li>
-          <li>The authorized person must review the issue, enter the cause, enter the corrective action, and unlock the inspection.</li>
+          <li>Do not continue production inspection entries on a locked inspection until the issue is reviewed.</li>
+          <li>The authorized person must review the issue, document the cause and solution when required, and unlock or end the failed inspection.</li>
         </ol>
-        <p>Do not attempt to bypass or ignore a lockout.</p>
+        <p>Do not attempt to bypass or ignore a lockout. If the inspection failed partway through, the authorized response is to end the current inspection as failed and start a fresh inspection.</p>
 
         <h3>6. Material changes</h3>
         <ol>
@@ -1036,11 +1036,13 @@
         <p>Notes should be clear, factual, and professional.</p>
 
         <h3>8. Review job history</h3>
-        <p>The job history area shows inspection activity, notes, lock events, material changes, and other job records. Operators should review the history when taking over a job or when trying to understand recent issues.</p>
+        <p>The job history area shows inspection activity, notes, lock events, material changes, machine counter records, and other job records. Operators should review the history when taking over a job or when trying to understand recent issues.</p>
+        <p>The inspection capability and trend areas use saved job history for the loaded job, machine, operation, phase, and inspection item. The colored status on the inspection card reflects the current entry being made.</p>
 
         <h3>9. Sign out</h3>
         <ol>
-          <li>Confirm your entries are complete.</li>
+          <li>Confirm your measurement entries, required job data, and Machine Counter are complete.</li>
+          <li>Click Submit Inspection when the inspection is complete.</li>
           <li>Add any needed job notes.</li>
           <li>Click Sign Out.</li>
         </ol>
@@ -1084,18 +1086,18 @@
 
         <h3>4. Registrar mediciones y atributos</h3>
         <p>Para variables medidas, ingrese la medición requerida en cada campo, use el calibrador, herramienta o dispositivo de inspección listado, y siga el tamaño de muestra requerido para ese punto de inspección.</p>
-        <p>Para atributos de aceptar/rechazar, seleccione o ingrese el resultado requerido y siga el método de inspección y tamaño de muestra listado.</p>
+        <p>Para atributos de aceptar/rechazar, seleccione la disposición del lote. Si un atributo requerido falla, rechace el atributo para esa inspección.</p>
         <p>No omita campos requeridos. Si un campo es requerido, SPC-Star no permitirá continuar la inspección hasta que esté completo.</p>
 
         <h3>5. Alertas fuera de especificación o deriva del proceso</h3>
-        <p>Si SPC-Star detecta un resultado fuera de especificación o deriva del proceso, la inspección puede bloquearse.</p>
+        <p>Si SPC-Star detecta una medición fuera de especificación o un atributo rechazado, la inspección se bloqueará. La deriva del proceso se muestra como advertencia junto al punto de inspección para que pueda revisarse antes de que las piezas salgan de especificación.</p>
         <ol>
-          <li>Deje de ingresar datos de inspección.</li>
+          <li>Deje de ingresar datos si aparece una pantalla de bloqueo.</li>
           <li>Notifique a un técnico de línea, QA o supervisor.</li>
-          <li>No continúe ingresando inspecciones de producción hasta que el problema sea revisado.</li>
-          <li>La persona autorizada debe revisar el problema, ingresar la causa, ingresar la acción correctiva y desbloquear la inspección.</li>
+          <li>No continúe ingresando inspecciones en una inspección bloqueada hasta que el problema sea revisado.</li>
+          <li>La persona autorizada debe revisar el problema, documentar la causa y solución cuando sea requerido, y desbloquear o terminar la inspección fallida.</li>
         </ol>
-        <p>No intente evitar o ignorar un bloqueo.</p>
+        <p>No intente evitar o ignorar un bloqueo. Si la inspección falló a mitad del proceso, la respuesta autorizada es terminar la inspección actual como fallida y empezar una inspección nueva.</p>
 
         <h3>6. Cambios de material</h3>
         <ol>
@@ -1110,11 +1112,13 @@
         <p>Las notas deben ser claras, objetivas y profesionales.</p>
 
         <h3>8. Revisar historial del trabajo</h3>
-        <p>El área de historial del trabajo muestra actividad de inspección, notas, eventos de bloqueo, cambios de material y otros registros del trabajo. Los operadores deben revisar el historial al tomar un trabajo o cuando intentan entender problemas recientes.</p>
+        <p>El área de historial del trabajo muestra actividad de inspección, notas, eventos de bloqueo, cambios de material, registros del contador de máquina y otros registros del trabajo. Los operadores deben revisar el historial al tomar un trabajo o cuando intentan entender problemas recientes.</p>
+        <p>Las áreas de capacidad y tendencia usan el historial guardado para el trabajo, máquina, operación, fase y punto de inspección cargados. El color de la tarjeta de inspección refleja la entrada actual que se está haciendo.</p>
 
         <h3>9. Cerrar sesión</h3>
         <ol>
-          <li>Confirme que sus entradas estén completas.</li>
+          <li>Confirme que sus mediciones, datos requeridos del trabajo y Machine Counter estén completos.</li>
+          <li>Haga clic en Submit Inspection cuando la inspección esté completa.</li>
           <li>Agregue cualquier nota necesaria del trabajo.</li>
           <li>Haga clic en Sign Out.</li>
         </ol>
@@ -1179,22 +1183,23 @@
         <p>All entries made under your login are traceable to you.</p>
 
         <h3>4. Respond to lockouts</h3>
-        <p>SPC-Star may lock an inspection when a result is out of specification, an attribute is rejected, or process drift is detected.</p>
+        <p>SPC-Star locks an inspection when a measured value is out of specification or an attribute is rejected. Process drift appears as a warning beside the inspection item and should be reviewed, but it does not create the full lock screen.</p>
         <ol>
           <li>Review the lockout message.</li>
           <li>Identify which variable or attribute caused the lock.</li>
-          <li>Determine whether the issue is related to machine, tooling, material, user error, measurement method, process drift, or another cause.</li>
+          <li>Determine whether the issue is related to Machine, Tooling, Material, user error, measurement method, process drift, or another cause.</li>
           <li>Inspect the part, machine, tooling, material, and measurement method as needed.</li>
           <li>Do not clear the lock until the issue has been reviewed and a corrective action has been taken.</li>
         </ol>
+        <p>If the inspection failed partway through and should not be continued, use the lock-screen option to end the current inspection as failed and start a fresh inspection for the same job context.</p>
 
         <h3>5. Clear a lockout</h3>
         <p>Only clear a lockout when the issue has been reviewed and production can safely continue.</p>
         <ol>
           <li>Enter your authorized username and password.</li>
           <li>Select the correct cause category.</li>
-          <li>Enter clear cause details.</li>
-          <li>Enter the corrective action or solution.</li>
+          <li>Enter clear cause details when required.</li>
+          <li>Enter the corrective action or solution when required.</li>
           <li>Confirm the information is accurate.</li>
           <li>Clear the lock.</li>
         </ol>
@@ -1269,7 +1274,7 @@
         <p>Todas las entradas hechas bajo su inicio de sesión son trazables a usted.</p>
 
         <h3>4. Responder a bloqueos</h3>
-        <p>SPC-Star puede bloquear una inspección cuando un resultado está fuera de especificación, un atributo es rechazado o se detecta deriva del proceso.</p>
+        <p>SPC-Star bloquea una inspección cuando una medición está fuera de especificación o un atributo es rechazado. La deriva del proceso aparece como advertencia junto al punto de inspección y debe revisarse, pero no crea la pantalla completa de bloqueo.</p>
         <ol>
           <li>Revise el mensaje de bloqueo.</li>
           <li>Identifique qué variable o atributo causó el bloqueo.</li>
@@ -1277,14 +1282,15 @@
           <li>Inspeccione la parte, máquina, herramental, material y método de medición según sea necesario.</li>
           <li>No libere el bloqueo hasta que el problema haya sido revisado y se haya tomado una acción correctiva.</li>
         </ol>
+        <p>Si la inspección falló a mitad del proceso y no debe continuarse, use la opción de la pantalla de bloqueo para terminar la inspección actual como fallida e iniciar una inspección nueva para el mismo trabajo.</p>
 
         <h3>5. Liberar un bloqueo</h3>
         <p>Libere un bloqueo solo cuando el problema haya sido revisado y la producción pueda continuar de manera segura.</p>
         <ol>
           <li>Ingrese su nombre de usuario y contraseña autorizados.</li>
           <li>Seleccione la categoría de causa correcta.</li>
-          <li>Ingrese detalles claros de la causa.</li>
-          <li>Ingrese la acción correctiva o solución.</li>
+          <li>Ingrese detalles claros de la causa cuando sea requerido.</li>
+          <li>Ingrese la acción correctiva o solución cuando sea requerido.</li>
           <li>Confirme que la información sea correcta.</li>
           <li>Libere el bloqueo.</li>
         </ol>
@@ -1336,7 +1342,7 @@
       </div>
       <div id="qaSopEnglishBody" class="sop-body">
         <h3>Purpose</h3>
-        <p>This SOP explains how QA should use SPC-Star to review inspection data, export records, maintain setup information manually, and respond to quality-related lockouts.</p>
+        <p>This SOP explains how QA should use SPC-Star to review inspection data, export records, maintain setup information manually, and respond to quality-related lockouts and drift warnings.</p>
 
         <h3>Scope</h3>
         <p>This applies to QA personnel using SPC-Star for inspection review, job history review, reports, setup maintenance, user maintenance, machine maintenance, drift-rule settings, and normal lock clearing.</p>
@@ -1358,6 +1364,7 @@
           <li>Use Top Issues to review repeat out-of-spec, drift, or rejected-attribute events.</li>
           <li>Use Export to pull data needed for review, documentation, reporting, or customer support.</li>
         </ol>
+        <p>Inspection capability and trend views should be reviewed as saved job-history data for the selected job, machine, operation, phase, and inspection item.</p>
 
         <h3>3. Maintain setup manually</h3>
         <p>QA may manually create or update parts, operations, job data fields, materials, variables, attributes, sample sizes, frequencies, and drift-rule selections.</p>
@@ -1378,19 +1385,19 @@
         <p>Rule changes affect inspection behavior. Review the rule description before saving changes and confirm that the selected rule is appropriate for the product and process.</p>
 
         <h3>6. Lock clearing</h3>
-        <p>QA may clear lockouts through the normal correction workflow. QA does not have System Manager bypass access.</p>
+        <p>QA may clear lockouts through the normal correction workflow. QA does not have Archon/System Manager bypass access.</p>
         <ol>
           <li>Review the lock message and affected inspection item.</li>
-          <li>Confirm whether the issue is out of specification, out of control, drift-related, or attribute-related.</li>
+          <li>Confirm whether the issue is out of specification, rejected-attribute, or related to a drift warning.</li>
           <li>Select the correct cause category.</li>
-          <li>Enter clear cause details.</li>
-          <li>Enter the action taken or required corrective action.</li>
+          <li>Enter clear cause details when required.</li>
+          <li>Enter the action taken or required corrective action when required.</li>
           <li>Clear the lock only when the issue has been reviewed and production may continue.</li>
         </ol>
 
         <h3>7. Import restriction</h3>
-        <p>QA should not bulk import parts, users, or machines from workbooks. Bulk import is restricted to System Manager access because a bad workbook can change large amounts of setup data at once.</p>
-        <p>If a bulk import is needed, prepare or review the file, then escalate it to the system architect for loading.</p>
+        <p>QA should not bulk import parts, users, or machines from workbooks unless specifically assigned that controlled update. Bulk import is restricted to System Manager access because a bad workbook can change large amounts of setup data at once.</p>
+        <p>If a bulk import is needed, prepare or review the file, then escalate it to Archon/System Manager for loading.</p>
 
         <h3>8. Data integrity</h3>
         <p>Do not delete or change inspection setup, users, machines, limits, or rule settings unless the change is intentional, verified, and traceable to the correct source.</p>
@@ -1405,7 +1412,7 @@
       </div>
       <div id="qaSopSpanishBody" class="sop-body hidden" lang="es">
         <h3>Proposito</h3>
-        <p>Este SOP explica como QA debe usar SPC-Star para revisar datos de inspeccion, exportar registros, mantener informacion de configuracion manualmente y responder a bloqueos relacionados con calidad.</p>
+        <p>Este SOP explica como QA debe usar SPC-Star para revisar datos de inspeccion, exportar registros, mantener informacion de configuracion manualmente y responder a bloqueos y advertencias de deriva relacionados con calidad.</p>
 
         <h3>Alcance</h3>
         <p>Esto aplica a personal de QA que usa SPC-Star para revisar inspecciones, historial de trabajos, reportes, mantenimiento de configuracion, usuarios, maquinas, reglas de deriva y liberacion normal de bloqueos.</p>
@@ -1427,6 +1434,7 @@
           <li>Use Top Issues para revisar eventos repetidos fuera de especificacion, deriva o atributos rechazados.</li>
           <li>Use Export para obtener datos necesarios para revision, documentacion, reportes o soporte al cliente.</li>
         </ol>
+        <p>Las vistas de capacidad y tendencia deben revisarse como historial guardado para el trabajo, maquina, operacion, fase y punto de inspeccion seleccionados.</p>
 
         <h3>3. Mantener configuracion manualmente</h3>
         <p>QA puede crear o actualizar manualmente partes, operaciones, campos de datos del trabajo, materiales, variables, atributos, tamanos de muestra, frecuencias y reglas de deriva.</p>
@@ -1447,19 +1455,19 @@
         <p>Los cambios de reglas afectan el comportamiento de inspeccion. Revise la descripcion de la regla antes de guardar y confirme que sea apropiada para el producto y proceso.</p>
 
         <h3>6. Liberacion de bloqueos</h3>
-        <p>QA puede liberar bloqueos mediante el flujo normal de correccion. QA no tiene acceso de bypass de System Manager.</p>
+        <p>QA puede liberar bloqueos mediante el flujo normal de correccion. QA no tiene acceso de bypass de Archon/System Manager.</p>
         <ol>
           <li>Revise el mensaje de bloqueo y el punto de inspeccion afectado.</li>
-          <li>Confirme si el problema esta fuera de especificacion, fuera de control, relacionado con deriva o relacionado con atributo.</li>
+          <li>Confirme si el problema esta fuera de especificacion, relacionado con un atributo rechazado o relacionado con una advertencia de deriva.</li>
           <li>Seleccione la categoria de causa correcta.</li>
-          <li>Ingrese detalles claros de la causa.</li>
-          <li>Ingrese la accion tomada o accion correctiva requerida.</li>
+          <li>Ingrese detalles claros de la causa cuando sea requerido.</li>
+          <li>Ingrese la accion tomada o accion correctiva requerida cuando sea requerido.</li>
           <li>Libere el bloqueo solo cuando el problema haya sido revisado y la produccion pueda continuar.</li>
         </ol>
 
         <h3>7. Restriccion de importacion</h3>
-        <p>QA no debe importar partes, usuarios o maquinas de forma masiva desde libros de Excel. La importacion masiva esta restringida a acceso de System Manager porque un archivo incorrecto puede cambiar muchos datos de configuracion a la vez.</p>
-        <p>Si se necesita una importacion masiva, prepare o revise el archivo y escale la carga al arquitecto del sistema.</p>
+        <p>QA no debe importar partes, usuarios o maquinas de forma masiva desde libros de Excel a menos que se le asigne especificamente esa actualizacion controlada. La importacion masiva esta restringida a acceso de System Manager porque un archivo incorrecto puede cambiar muchos datos de configuracion a la vez.</p>
+        <p>Si se necesita una importacion masiva, prepare o revise el archivo y escale la carga a Archon/System Manager.</p>
 
         <h3>8. Integridad de datos</h3>
         <p>No elimine ni cambie configuracion de inspeccion, usuarios, maquinas, limites o reglas a menos que el cambio sea intencional, verificado y trazable a la fuente correcta.</p>
@@ -1569,7 +1577,7 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260921-lock-clear-hardhide"></script>
+  <script src="/app.js?v=20260922-job-history-trend"></script>
 </body>
 </html>
 

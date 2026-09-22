@@ -53,11 +53,16 @@ public sealed record WorkContextDto(
     IReadOnlyList<ChartPoint> RecentMeasurements);
 
 public sealed record WorkCapabilityDto(
+    decimal? Mean,
+    decimal? Min,
+    decimal? Max,
+    decimal? StdDev,
     decimal? Cp,
     decimal? Cpk,
     decimal? Pp,
     decimal? Ppk,
-    int Count);
+    int Count,
+    int OutOfSpecExcludedCount);
 
 public sealed class WorkContextService(
     ISpcRepository repository,
@@ -99,7 +104,9 @@ public sealed class WorkContextService(
             request.CharacteristicName,
             null,
             null,
-            NormalizeInspectionPhase(request.InspectionPhase)));
+            NormalizeInspectionPhase(request.InspectionPhase),
+            request.ProcessCode,
+            request.OperationSeq));
         var controlLimits = repository.ControlLimits.FirstOrDefault(limit =>
             limit.PartNum.Equals(request.PartNum, StringComparison.OrdinalIgnoreCase) &&
             limit.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
@@ -156,30 +163,37 @@ public sealed class WorkContextService(
     {
         if (plan is null || plan.CharacteristicType == CharacteristicType.Attribute || !plan.Lsl.HasValue || !plan.Usl.HasValue || plan.Lsl.Value == plan.Usl.Value)
         {
-            return new WorkCapabilityDto(null, null, null, null, 0);
+            return new WorkCapabilityDto(null, null, null, null, null, null, null, null, 0, 0);
         }
 
-        var values = repository.Measurements
+        var allValues = repository.Measurements
             .Where(measurement =>
                 measurement.JobNum.Equals(request.JobNum, StringComparison.OrdinalIgnoreCase) &&
                 measurement.PartNum.Equals(request.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                measurement.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                measurement.OperationSeq == request.OperationSeq &&
                 measurement.ResourceId.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
                 measurement.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase) &&
-                measurement.InspectionPhase.Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase) &&
-                measurement.Value >= plan.Lsl.Value &&
-                measurement.Value <= plan.Usl.Value)
+                measurement.InspectionPhase.Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase))
             .Select(measurement => measurement.Value)
             .ToArray();
+        var values = allValues
+            .Where(value => value >= plan.Lsl.Value && value <= plan.Usl.Value)
+            .ToArray();
+        var outOfSpecExcludedCount = allValues.Length - values.Length;
+        var mean = values.Length == 0 ? (decimal?)null : values.Average();
+        var min = values.Length == 0 ? (decimal?)null : values.Min();
+        var max = values.Length == 0 ? (decimal?)null : values.Max();
         var stdDev = StandardDeviation(values);
         if (!stdDev.HasValue || stdDev.Value <= 0 || values.Length < 2)
         {
-            return new WorkCapabilityDto(null, null, null, null, values.Length);
+            return new WorkCapabilityDto(mean, min, max, stdDev, null, null, null, null, values.Length, outOfSpecExcludedCount);
         }
 
-        var mean = values.Average();
+        var meanValue = mean.GetValueOrDefault();
         var cp = (plan.Usl.Value - plan.Lsl.Value) / (6 * stdDev.Value);
-        var cpk = Math.Min((mean - plan.Lsl.Value) / (3 * stdDev.Value), (plan.Usl.Value - mean) / (3 * stdDev.Value));
-        return new WorkCapabilityDto(cp, cpk, cp, cpk, values.Length);
+        var cpk = Math.Min((meanValue - plan.Lsl.Value) / (3 * stdDev.Value), (plan.Usl.Value - meanValue) / (3 * stdDev.Value));
+        return new WorkCapabilityDto(mean, min, max, stdDev, cp, cpk, cp, cpk, values.Length, outOfSpecExcludedCount);
     }
 
     private static decimal? StandardDeviation(IReadOnlyCollection<decimal> values)

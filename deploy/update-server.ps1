@@ -1,5 +1,5 @@
 param(
-    [string]$InstallRoot = "C:\SPCStar",
+    [string]$InstallRoot = "C:\Program Files\SPCstar",
     [int]$Port = 5000,
     [string]$TaskName = "SPC-Star Server",
     [string]$BackupTaskName = "SPC-Star Daily Backup",

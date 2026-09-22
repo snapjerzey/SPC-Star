@@ -1457,9 +1457,6 @@ function renderMeanSummary() {
     </div>`;
   state.selectedPlans.forEach((plan, index) => {
     const points = state.contexts[index]?.recentMeasurements || [];
-    const mean = points.length
-      ? points.reduce((total, point) => total + Number(point.value), 0) / points.length
-      : null;
     const item = document.createElement("div");
     item.className = "capability-row";
     if (plan.characteristicType === "Attribute") {
@@ -1476,15 +1473,14 @@ function renderMeanSummary() {
       summary.appendChild(item);
       return;
     }
-    const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
     const capability = state.contexts[index]?.capability || {};
     const isRecordOnly = !hasSpecLimits(plan, state.contexts[index]);
     item.innerHTML = `
       <span>${plan.characteristicName}</span>
-      <span>${formatNumber(values.length ? Math.min(...values) : null)}</span>
-      <span>${formatNumber(values.length ? Math.max(...values) : null)}</span>
-      <span>${formatStatisticNumber(mean)}</span>
-      <span>${formatStatisticNumber(standardDeviation(values))}</span>
+      <span>${formatNumber(capability.min)}</span>
+      <span>${formatNumber(capability.max)}</span>
+      <span>${formatStatisticNumber(capability.mean)}</span>
+      <span>${formatStatisticNumber(capability.stdDev)}</span>
       ${isRecordOnly ? `
       <span class="record-only-cell">No spec limits</span>` : `
       <span>${capabilityBadge(capability.cp)}</span>
@@ -2501,7 +2497,9 @@ async function loadTrend() {
       characteristicName: state.trendCharacteristic,
       from: null,
       to: null,
-      inspectionPhase: set.inspectionPhase || $("inspectionPhase").value
+      inspectionPhase: set.inspectionPhase || $("inspectionPhase").value,
+      processCode: set.processCode,
+      operationSeq: set.operationSeq
     })
   });
 
@@ -3824,8 +3822,8 @@ function renderReviewSummary(rows, container, emptyMessage) {
       <span>${row.inspectionPhases || ""}</span>
       <span>${row.characteristicName}</span>
       <span>${row.characteristicType === "Attribute" ? "Accept/Reject" : "Measured"}</span>
-      <span>${formatNumber(row.mean)}</span>
-      <span>${formatNumber(row.stdDev)}</span>
+      <span>${formatStatisticNumber(row.mean)}</span>
+      <span>${formatStatisticNumber(row.stdDev)}</span>
       <span>${capabilityBadge(row.cpk)}</span>
       <span>${capabilityBadge(row.ppk)}</span>
       <span>${row.count}${row.outOfSpecExcludedCount ? ` / ${row.outOfSpecExcludedCount} excluded` : ""}</span>`;
@@ -4081,7 +4079,7 @@ function reviewMeasurementGroupSummary(items) {
     outOfSpec ? `${outOfSpec} out of spec` : "",
     outOfControl ? `${outOfControl} out of control` : ""
   ].filter(Boolean).join(" · ");
-  return `${items.length} entries · Mean ${formatNumber(mean)} · Range ${formatNumber(min)} - ${formatNumber(max)}${flags ? ` · ${flags}` : ""}`;
+  return `${items.length} entries · Mean ${formatStatisticNumber(mean)} · Range ${formatNumber(min)} - ${formatNumber(max)}${flags ? ` · ${flags}` : ""}`;
 }
 
 function reviewMeasurementDateKey(timestamp) {
@@ -4337,9 +4335,9 @@ function renderJobSummary(rows) {
       <span>${row.jobNum}</span>
       <span>${row.processCode || ""} ${row.operationSeq || ""}<small>${row.inspectionPhases || ""}</small></span>
       <span>${row.characteristicName} (${row.unitOfMeasure})</span>
-      <span>${formatNumber(row.mean)}</span>
+      <span>${formatStatisticNumber(row.mean)}</span>
       <span>${formatNumber(row.min)} - ${formatNumber(row.max)}</span>
-      <span>${formatNumber(row.stdDev)}</span>
+      <span>${formatStatisticNumber(row.stdDev)}</span>
       <span>Cpk ${capabilityBadge(row.cpk)}<small>Ppk ${capabilityBadge(row.ppk)}</small></span>`;
     container.appendChild(item);
   });

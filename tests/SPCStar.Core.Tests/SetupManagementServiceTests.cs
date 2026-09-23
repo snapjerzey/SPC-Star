@@ -390,6 +390,43 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertInspectionSetup_AllowsBlankTargetForVariableSpecs()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var result = service.UpsertInspectionSetup(new UpsertInspectionSetupRequest(
+            "61131",
+            "50MIL CT-1",
+            "Ethicon Taperpoint - Needles",
+            "Needlemaker",
+            "Needlemaker",
+            10,
+            "Crimp Tightness - Normal",
+            CharacteristicType.Variable,
+            null,
+            2m,
+            4m,
+            null,
+            null,
+            "lb",
+            3,
+            FrequencyType.Event,
+            1,
+            FrequencyUnit.Spool,
+            "SpecLimitOnly",
+            InspectionPhase: "End of Spool"));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Null(result.Value!.Nominal);
+        Assert.Equal(2m, result.Value.Lsl);
+        Assert.Equal(4m, result.Value.Usl);
+        Assert.Equal(3, result.Value.SampleSize);
+        Assert.Equal(3m, repository.SpecLimits.Single().Nominal);
+        Assert.Equal(3m, repository.ControlLimits.Single().CenterLine);
+    }
+
+    [Fact]
     public void UpsertInspectionSetup_AllowsDifferentRequirementsByInspectionPhase()
     {
         var repository = new InMemorySpcRepository();

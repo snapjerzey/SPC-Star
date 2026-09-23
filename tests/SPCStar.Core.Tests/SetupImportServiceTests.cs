@@ -794,6 +794,41 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_ImportsEndOfSpoolFromReadableTemplateHeaders()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "Section", "Part Number", "Part Description", "Product Group", "Operation",
+            "Sort Order", "Inspection Item", "Attribute/Variable", "Tool Used",
+            "Lower Spec", "Upper Spec", "Target", "Unit",
+            "Setup Required", "Setup Sample Size",
+            "End of Spool Required", "End of Spool Sample Size", "End of Spool Frequency Type"
+        };
+        string Row(params (string Field, string Value)[] values)
+        {
+            var row = header.ToDictionary(field => field, _ => "", StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, value) in values)
+            {
+                row[field] = value;
+            }
+
+            return string.Join(",", header.Select(field => row[field]));
+        }
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("Section", "INSPECTION"), ("Part Number", "61131"), ("Part Description", "50MIL CT-1"), ("Product Group", "Ethicon Taperpoint - Needles"), ("Operation", "Needlemaker"), ("Sort Order", "22"), ("Inspection Item", "Crimp Tightness - Normal"), ("Attribute/Variable", "Variable"), ("Tool Used", "Tensile Tester"), ("Lower Spec", "2"), ("Upper Spec", "4"), ("Target", "3"), ("Unit", "lb"), ("Setup Required", "X"), ("Setup Sample Size", "3"), ("End of Spool Required", "X"), ("End of Spool Sample Size", "3"), ("End of Spool Frequency Type", "Event")),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.SampleSize == 3 && plan.Lsl == 2m && plan.Usl == 4m);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "End of Spool" && plan.SampleSize == 3 && plan.Lsl == 2m && plan.Usl == 4m);
+    }
+
+    [Fact]
     public void ImportCsv_UsesPhaseSpecificDriftRulesFromUniversalTemplateRows()
     {
         var repository = new InMemorySpcRepository();

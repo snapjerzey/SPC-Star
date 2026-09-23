@@ -5378,7 +5378,7 @@ function setupVariableRowTemplate() {
         ${INSPECTION_PHASES.map((phase) => setupPhaseRowTemplate(phase)).join("")}
       </div>
     </section>
-    <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="0.0001" required></label>
+    <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="0.0001"></label>
     <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
     <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
@@ -5598,7 +5598,7 @@ function updateSetupVariableType(row) {
   const ucl = row.querySelector(".setup-ucl");
   row.classList.toggle("attribute-row", isAttribute);
   unit.required = !isAttribute;
-  nominal.required = !isAttribute;
+  nominal.required = false;
   lsl.required = !isAttribute;
   usl.required = !isAttribute;
   if (isAttribute) {
@@ -5907,7 +5907,7 @@ function setupVariableRows() {
     location: row.querySelector(".setup-location").value.trim(),
     inspectionMethod: row.querySelector(".setup-method").value.trim(),
     phaseSettings: setupPhaseRows(row),
-    nominal: Number(row.querySelector(".setup-nominal").value),
+    nominal: optionalInputNumber(row.querySelector(".setup-nominal")),
     lsl: Number(row.querySelector(".setup-lsl").value),
     usl: Number(row.querySelector(".setup-usl").value),
     lcl: optionalInputNumber(row.querySelector(".setup-lcl")),

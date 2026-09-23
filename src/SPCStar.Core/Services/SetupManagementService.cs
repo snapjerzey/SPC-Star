@@ -35,7 +35,7 @@ public sealed record UpsertInspectionSetupRequest(
     int OperationSeq,
     string CharacteristicName,
     CharacteristicType CharacteristicType,
-    decimal Nominal,
+    decimal? Nominal,
     decimal Lsl,
     decimal Usl,
     decimal? Lcl,
@@ -723,14 +723,15 @@ public sealed class SetupManagementService(ISpcRepository repository)
             RenameControlLimitCharacteristic(request, oldCharacteristicName);
         }
 
+        var resolvedNominal = ResolveNominal(request);
         var spec = repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
         if (spec is null)
         {
-            repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = request.Nominal, Lsl = request.Lsl, Usl = request.Usl });
+            repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = resolvedNominal, Lsl = request.Lsl, Usl = request.Usl });
         }
         else
         {
-            spec.Nominal = request.Nominal;
+            spec.Nominal = resolvedNominal;
             spec.Lsl = request.Lsl;
             spec.Usl = request.Usl;
         }
@@ -772,7 +773,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         };
         if (request.CharacteristicType == CharacteristicType.Variable)
         {
-            UpsertControlLimit(request);
+            UpsertControlLimit(request, resolvedNominal);
         }
         else
         {
@@ -1010,7 +1011,17 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return ServiceResult<PartMaterialFieldSetupDto>.Ok(new PartMaterialFieldSetupDto(part.PartNum, field.InspectionPhase, field.MaterialName, field.MaterialPartNum, field.MaterialDescription, field.IsRequired, field.DisplayOrder));
     }
 
-    private void UpsertControlLimit(UpsertInspectionSetupRequest request)
+    private static decimal ResolveNominal(UpsertInspectionSetupRequest request)
+    {
+        if (request.CharacteristicType == CharacteristicType.Attribute)
+        {
+            return request.Nominal ?? 1m;
+        }
+
+        return request.Nominal ?? ((request.Lsl + request.Usl) / 2m);
+    }
+
+    private void UpsertControlLimit(UpsertInspectionSetupRequest request, decimal resolvedNominal)
     {
         var lcl = request.Lcl ?? request.Lsl;
         var ucl = request.Ucl ?? request.Usl;
@@ -1028,14 +1039,14 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 ProcessCode = request.ProcessCode.Trim(),
                 OperationSeq = request.OperationSeq,
                 CharacteristicName = request.CharacteristicName.Trim(),
-                CenterLine = request.Nominal,
+                CenterLine = resolvedNominal,
                 Lcl = lcl,
                 Ucl = ucl
             });
             return;
         }
 
-        limit.CenterLine = request.Nominal;
+        limit.CenterLine = resolvedNominal;
         limit.Lcl = lcl;
         limit.Ucl = ucl;
     }

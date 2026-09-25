@@ -14,7 +14,7 @@ http://SERVER-NAME:5000/
 
 Use the server computer name or server IP address in place of `SERVER-NAME`.
 
-The current pilot install is a direct SPC-Star application install running in the background through Windows Task Scheduler. IIS is not part of the normal pilot runtime path.
+The current pilot install is a direct SPC-Star application install running in the background through the `SPC-Star` Windows Service. IIS is not part of the normal pilot runtime path.
 
 ## Server Folder Layout
 
@@ -36,16 +36,18 @@ Important folders:
 
 Keep `data`, `backups`, `quarantine`, and `archives` outside the app publish folder. Application updates should replace `C:\Program Files\SPCstar\app` without deleting database or backup files.
 
-## Required Scheduled Tasks
+## Required Windows Service And Backup Task
 
 SPC-Star should not require an open PowerShell window or an active logged-in server session.
 
-The deployment scripts create these Windows Scheduled Tasks:
+The deployment scripts create this Windows Service:
 
-- `SPC-Star Server`
+- `SPC-Star`
   - Starts SPC-Star automatically when the server starts.
   - Runs SPC-Star in the background.
   - Keeps the application available after PowerShell closes and after the server user logs out.
+
+The deployment scripts also create this Windows Scheduled Task:
 
 - `SPC-Star Daily Backup`
   - Runs the SPC-Star backup script once per day.
@@ -78,15 +80,15 @@ Run from the updated SPC-Star project/update package folder on the server:
 
 The update script:
 
-1. Stops the `SPC-Star Server` scheduled task.
+1. Stops the `SPC-Star` Windows Service.
 2. Creates a database backup before updating.
 3. Publishes the updated app files.
-4. Copies the current start and backup scripts into `C:\Program Files\SPCstar`.
+4. Copies the current support scripts into `C:\Program Files\SPCstar`.
 5. Creates or refreshes the `SPC-Star Daily Backup` scheduled task.
 6. Starts SPC-Star again.
 7. Verifies the local health endpoint.
 
-For the current thumb-drive patch handoff, IT should run the update script from the root of the handoff drive/package. The patch is expected to preserve the existing live data folder, replace only the application files and support scripts, restart the `SPC-Star Server` scheduled task, and verify that the app responds at `/health`.
+For the current thumb-drive patch handoff, IT should run the update script from the root of the handoff drive/package. The patch is expected to preserve the existing live data folder, replace only the application files and support scripts, restart the `SPC-Star` Windows Service, and verify that the app responds at `/health`.
 
 To update and change the daily backup time:
 
@@ -201,10 +203,10 @@ MMDDYY Quarantine HHMM.db
 
 If SPC-Star cannot run and IT must restore manually:
 
-1. Stop the `SPC-Star Server` scheduled task.
+1. Stop the `SPC-Star` Windows Service.
 2. Copy the current suspect database from `C:\Program Files\SPCstar\data\spcstar.db` into `C:\Program Files\SPCstar\quarantine`.
 3. Copy the selected known-good backup from `C:\Program Files\SPCstar\backups` to `C:\Program Files\SPCstar\data\spcstar.db`.
-4. Start the `SPC-Star Server` scheduled task.
+4. Start the `SPC-Star` Windows Service.
 5. Verify:
 
 ```text
@@ -276,11 +278,11 @@ https://spcstar.bihler.com/
 
 If the app does not respond:
 
-1. Check that the `SPC-Star Server` scheduled task is running.
+1. Check that the `SPC-Star` Windows Service is running.
 2. Check `C:\Program Files\SPCstar\logs\spcstar.log`.
 3. Confirm inbound TCP port `5000` is allowed on the server firewall.
 4. Confirm the live database exists at `C:\Program Files\SPCstar\data\spcstar.db`.
-5. Confirm the app was not started only from a temporary Administrator PowerShell window. Closing that window must not be what keeps SPC-Star alive; the scheduled task should own the running process.
+5. Confirm the app was not started only from a temporary Administrator PowerShell window. Closing that window must not be what keeps SPC-Star alive; the Windows Service should own the running process.
 
 ## Serial Gauge Browser Requirement
 
@@ -315,7 +317,7 @@ Operator workstation Chrome/Edge
     -> trusted internal certificate / HTTPS endpoint
     -> reverse proxy on the SPC-Star server
     -> http://localhost:5000
-    -> SPC-Star scheduled task / app
+    -> SPC-Star Windows Service / app
 ```
 
 In this setup, SPC-Star can continue running internally on port `5000`. Operators should use the HTTPS URL, not the plain `http://spcstar.bihler.com:5000` URL.

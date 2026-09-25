@@ -197,11 +197,11 @@ The default server URL is:
 http://SERVER-NAME:5000/
 ```
 
-The scripts publish the app to `C:\Program Files\SPCstar\app`, store data at `C:\Program Files\SPCstar\data\spcstar.db`, keep archive files at `C:\Program Files\SPCstar\data\archives`, keep backups in `C:\Program Files\SPCstar\backups`, and create Windows Scheduled Tasks named `SPC-Star Server` and `SPC-Star Daily Backup`.
+The scripts publish the app to `C:\Program Files\SPCstar\app`, store data at `C:\Program Files\SPCstar\data\spcstar.db`, keep archive files at `C:\Program Files\SPCstar\data\archives`, keep backups in `C:\Program Files\SPCstar\backups`, run SPC-Star as the `SPC-Star` Windows Service, and create the `SPC-Star Daily Backup` scheduled task.
 
-See `deploy/README.md` for the deployment workflow and `deploy/IT-SERVER-REFERENCE.md` for the IT handoff covering scheduled tasks, backups, restore, archive folders, and health checks.
+See `deploy/README.md` for the deployment workflow and `deploy/IT-SERVER-REFERENCE.md` for the IT handoff covering the Windows Service, backups, restore, archive folders, and health checks.
 
-For the pilot server, SPC-Star runs through the `SPC-Star Server` Windows Scheduled Task. Do not keep the app alive by leaving an Administrator PowerShell window open, and do not route the normal pilot install through IIS. See `deploy/IT-SERVER-REFERENCE.md`.
+For the pilot server, SPC-Star runs through the `SPC-Star` Windows Service. Do not keep the app alive by leaving an Administrator PowerShell window open, and do not route the normal pilot install through IIS. See `deploy/IT-SERVER-REFERENCE.md`.
 
 The API seeds one protected system manager account when the database is empty:
 
@@ -302,7 +302,7 @@ Archive is blocked if active locks exist before the selected cutoff date. Those 
 ## Current Gaps / Next Work
 
 - Continue production-floor pilot testing and collect feedback for the next patch package.
-- Keep the IT patch/update handoff simple: backup current data, replace app files, preserve `C:\Program Files\SPCstar\data`, refresh the scheduled task, verify `/health`, and test login/inspection entry.
+- Keep the IT patch/update handoff simple: backup current data, replace app files, preserve `C:\Program Files\SPCstar\data`, refresh the Windows Service, verify `/health`, and test login/inspection entry.
 - Continue validating loaded inspection plans against source sheets when new part feedback is found.
 - Production database backup/restore drill and internal user/session hardening.
 - Fully relational EF Core/SQL Server storage if the pilot requires a separate database engine.

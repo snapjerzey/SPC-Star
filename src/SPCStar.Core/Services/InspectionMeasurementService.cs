@@ -123,13 +123,14 @@ public sealed class InspectionMeasurementService(
             return ServiceResult<InspectionMeasurement>.Ok(measurement);
         }
 
-        if (HasActiveAlertForMeasurement(measurement.Id) && !ClearDraftAlertsForMeasurement(measurement.Id))
+        var draftLockAlertIds = DraftLockAlertIdsForMeasurement(measurement.Id);
+        if (draftLockAlertIds.Count > 0 && !ReleaseDraftAlertsForMeasurement(draftLockAlertIds))
         {
             return ServiceResult<InspectionMeasurement>.Fail("This sample has an active lock. Clear the lock before changing the measurement.");
         }
 
         var activeLock = FindActiveLock(entry);
-        if (activeLock is not null)
+        if (activeLock is not null && !draftLockAlertIds.Contains(activeLock.Id))
         {
             return ServiceResult<InspectionMeasurement>.Fail(ActiveLockMessage(activeLock));
         }
@@ -163,10 +164,6 @@ public sealed class InspectionMeasurementService(
                 item.InspectionPhase.Equals(phase, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(item => item.CompletedAt)
             .ToArray();
-        var recordedRunCount = recordedRuns
-            .Select(item => Math.Max(item.CompletionNumber, 1))
-            .DefaultIfEmpty(0)
-            .Max();
         var previousCompletionAt = recordedRuns.FirstOrDefault()?.CompletedAt;
         var completionMeasurementIds = MeasurementIdsForCompletionWindow(measurement, phase, plans, previousCompletionAt, measurement.Timestamp);
 
@@ -183,7 +180,7 @@ public sealed class InspectionMeasurementService(
             OperationSeq = measurement.OperationSeq,
             ResourceId = measurement.ResourceId,
             InspectionPhase = phase,
-            CompletionNumber = recordedRunCount + 1,
+            CompletionNumber = NextCompletionNumber(measurement.JobNum, measurement.PartNum, phase),
             CompletedByUserId = measurement.OperatorUserId,
             OperatorShift = measurement.OperatorShift,
             CompletedAt = measurement.Timestamp
@@ -202,16 +199,22 @@ public sealed class InspectionMeasurementService(
         }
 
         var phase = NormalizeInspectionPhase(request.InspectionPhase);
-        var completion = FindCompletionForClientRecords(request, phase) ?? repository.JobPhaseCompletions
-            .Where(item =>
-                item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                item.OperationSeq == request.OperationSeq &&
-                item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(item => item.CompletedAt)
-            .FirstOrDefault();
+        var hasClientRecordIds = request.MeasurementClientRecordIds?.Any(id => !string.IsNullOrWhiteSpace(id)) == true;
+        var completion = FindCompletionForClientRecords(request, phase);
+        if (completion is null && !hasClientRecordIds)
+        {
+            completion = repository.JobPhaseCompletions
+                .Where(item =>
+                    item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    item.OperationSeq == request.OperationSeq &&
+                    item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(item => item.CompletedAt)
+                .FirstOrDefault();
+        }
+
         if (completion is null)
         {
             completion = TryCreateCompletionFromClientRecords(request, phase) ?? TryCreateCompletionFromSavedMeasurements(request, phase);
@@ -336,7 +339,7 @@ public sealed class InspectionMeasurementService(
 
         var phasePlans = PlansForPhase(request.PartNum.Trim(), request.ProcessCode.Trim(), request.OperationSeq, phase);
         var plans = PlansRequiredOrEnteredForCompletion(phasePlans, measurements, request.MachineCounter);
-        var completionMeasurementIds = BuildLatestCompletionSet(plans, measurements);
+        var completionMeasurementIds = BuildClientRecordCompletionSet(plans, measurements);
         if (completionMeasurementIds.Count == 0)
         {
             return null;
@@ -351,17 +354,7 @@ public sealed class InspectionMeasurementService(
             OperationSeq = request.OperationSeq,
             ResourceId = request.ResourceId.Trim(),
             InspectionPhase = phase,
-            CompletionNumber = repository.JobPhaseCompletions
-                .Where(item =>
-                    item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    item.OperationSeq == request.OperationSeq &&
-                    item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
-                .Select(item => Math.Max(item.CompletionNumber, 1))
-                .DefaultIfEmpty(0)
-                .Max() + 1,
+            CompletionNumber = NextCompletionNumber(request.JobNum.Trim(), request.PartNum.Trim(), phase),
             CompletedByUserId = latestMeasurement.OperatorUserId,
             OperatorShift = latestMeasurement.OperatorShift,
             CompletedAt = latestMeasurement.Timestamp
@@ -516,7 +509,7 @@ public sealed class InspectionMeasurementService(
             OperationSeq = request.OperationSeq,
             ResourceId = resourceId,
             InspectionPhase = phase,
-            CompletionNumber = recordedRuns.Select(item => Math.Max(item.CompletionNumber, 1)).DefaultIfEmpty(0).Max() + 1,
+            CompletionNumber = NextCompletionNumber(jobNum, partNum, phase),
             CompletedByUserId = latestMeasurement.OperatorUserId,
             OperatorShift = latestMeasurement.OperatorShift,
             CompletedAt = latestMeasurement.Timestamp
@@ -524,6 +517,18 @@ public sealed class InspectionMeasurementService(
         completion.MeasurementIds.AddRange(completionMeasurementIds);
         repository.JobPhaseCompletions.Add(completion);
         return completion;
+    }
+
+    private int NextCompletionNumber(string jobNum, string partNum, string phase)
+    {
+        return repository.JobPhaseCompletions
+            .Where(item =>
+                item.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase) &&
+                item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
+            .Select(item => Math.Max(item.CompletionNumber, 1))
+            .DefaultIfEmpty(0)
+            .Max() + 1;
     }
 
     private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansForMeasurementPhase(InspectionMeasurement measurement, string phase)
@@ -704,6 +709,36 @@ public sealed class InspectionMeasurementService(
             .ToArray();
     }
 
+    private static IReadOnlyList<Guid> BuildClientRecordCompletionSet(
+        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
+        IReadOnlyList<InspectionMeasurement> measurements)
+    {
+        var selected = new List<InspectionMeasurement>();
+        foreach (var plan in plans)
+        {
+            var matches = measurements
+                .Where(measurement => measurement.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(measurement => measurement.Timestamp)
+                .ThenBy(measurement => measurement.SubmittedAt)
+                .ThenBy(measurement => measurement.Id)
+                .Take(RequiredMeasurementCount(plan))
+                .ToArray();
+            if (matches.Length < RequiredMeasurementCount(plan))
+            {
+                return [];
+            }
+
+            selected.AddRange(matches);
+        }
+
+        return selected
+            .OrderBy(measurement => measurement.Timestamp)
+            .ThenBy(measurement => measurement.SubmittedAt)
+            .ThenBy(measurement => measurement.Id)
+            .Select(measurement => measurement.Id)
+            .ToArray();
+    }
+
     private static IReadOnlyList<Guid> BuildLatestCompletionSet(
         IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
         IReadOnlyList<InspectionMeasurement> measurements)
@@ -832,7 +867,7 @@ public sealed class InspectionMeasurementService(
         return errors;
     }
 
-    private bool HasActiveAlertForMeasurement(Guid measurementId)
+    private HashSet<Guid> DraftLockAlertIdsForMeasurement(Guid measurementId)
     {
         return repository.RuleViolations
             .Where(violation => violation.MeasurementIds.Contains(measurementId))
@@ -840,16 +875,12 @@ public sealed class InspectionMeasurementService(
                 repository.Alerts.Where(alert => alert.Status == AlertStatus.Active),
                 violation => violation.AlertId,
                 alert => alert.Id,
-                (_, _) => true)
-            .Any();
+                (_, alert) => alert.Id)
+            .ToHashSet();
     }
 
-    private bool ClearDraftAlertsForMeasurement(Guid measurementId)
+    private bool ReleaseDraftAlertsForMeasurement(HashSet<Guid> alertIds)
     {
-        var alertIds = repository.RuleViolations
-            .Where(violation => violation.MeasurementIds.Contains(measurementId))
-            .Select(violation => violation.AlertId)
-            .ToHashSet();
         if (alertIds.Count == 0)
         {
             return true;
@@ -864,8 +895,11 @@ public sealed class InspectionMeasurementService(
             return false;
         }
 
-        repository.RuleViolations.RemoveAll(violation => alertIds.Contains(violation.AlertId));
-        repository.Alerts.RemoveAll(alert => alertIds.Contains(alert.Id) && alert.Status != AlertStatus.Overridden);
+        foreach (var alert in repository.Alerts.Where(alert => alertIds.Contains(alert.Id) && alert.Status == AlertStatus.Active))
+        {
+            alert.Status = AlertStatus.Overridden;
+        }
+
         return true;
     }
 

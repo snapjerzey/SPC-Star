@@ -36,8 +36,8 @@ public sealed record UpsertInspectionSetupRequest(
     string CharacteristicName,
     CharacteristicType CharacteristicType,
     decimal? Nominal,
-    decimal Lsl,
-    decimal Usl,
+    decimal? Lsl,
+    decimal? Usl,
     decimal? Lcl,
     decimal? Ucl,
     string UnitOfMeasure,
@@ -723,17 +723,24 @@ public sealed class SetupManagementService(ISpcRepository repository)
             RenameControlLimitCharacteristic(request, oldCharacteristicName);
         }
 
-        var resolvedNominal = ResolveNominal(request);
         var spec = repository.SpecLimits.FirstOrDefault(item => item.CharacteristicId == characteristic.Id);
-        if (spec is null)
+        if (request.CharacteristicType == CharacteristicType.Variable && request.Lsl.HasValue && request.Usl.HasValue)
         {
-            repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = resolvedNominal, Lsl = request.Lsl, Usl = request.Usl });
+            var resolvedSpecNominal = ResolveNominal(request)!.Value;
+            if (spec is null)
+            {
+                repository.SpecLimits.Add(new SpecLimit { CharacteristicId = characteristic.Id, Nominal = resolvedSpecNominal, Lsl = request.Lsl.Value, Usl = request.Usl.Value });
+            }
+            else
+            {
+                spec.Nominal = resolvedSpecNominal;
+                spec.Lsl = request.Lsl.Value;
+                spec.Usl = request.Usl.Value;
+            }
         }
         else
         {
-            spec.Nominal = resolvedNominal;
-            spec.Lsl = request.Lsl;
-            spec.Usl = request.Usl;
+            repository.SpecLimits.RemoveAll(item => item.CharacteristicId == characteristic.Id);
         }
 
         var inspectionPhase = NormalizeInspectionPhase(request.InspectionPhase);
@@ -771,9 +778,10 @@ public sealed class SetupManagementService(ISpcRepository repository)
             Unit = request.FrequencyUnit,
             FirstDueValue = request.FirstDueValue is > 0 ? request.FirstDueValue : null
         };
-        if (request.CharacteristicType == CharacteristicType.Variable)
+        var resolvedNominal = ResolveNominal(request);
+        if (request.CharacteristicType == CharacteristicType.Variable && resolvedNominal.HasValue && CanBuildControlLimit(request))
         {
-            UpsertControlLimit(request, resolvedNominal);
+            UpsertControlLimit(request, resolvedNominal.Value);
         }
         else
         {
@@ -1011,20 +1019,35 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return ServiceResult<PartMaterialFieldSetupDto>.Ok(new PartMaterialFieldSetupDto(part.PartNum, field.InspectionPhase, field.MaterialName, field.MaterialPartNum, field.MaterialDescription, field.IsRequired, field.DisplayOrder));
     }
 
-    private static decimal ResolveNominal(UpsertInspectionSetupRequest request)
+    private static decimal? ResolveNominal(UpsertInspectionSetupRequest request)
     {
         if (request.CharacteristicType == CharacteristicType.Attribute)
         {
             return request.Nominal ?? 1m;
         }
 
-        return request.Nominal ?? ((request.Lsl + request.Usl) / 2m);
+        if (request.Nominal.HasValue)
+        {
+            return request.Nominal.Value;
+        }
+
+        if (request.Lsl.HasValue && request.Usl.HasValue)
+        {
+            return (request.Lsl.Value + request.Usl.Value) / 2m;
+        }
+
+        if (request.Lcl.HasValue && request.Ucl.HasValue)
+        {
+            return (request.Lcl.Value + request.Ucl.Value) / 2m;
+        }
+
+        return null;
     }
 
     private void UpsertControlLimit(UpsertInspectionSetupRequest request, decimal resolvedNominal)
     {
-        var lcl = request.Lcl ?? request.Lsl;
-        var ucl = request.Ucl ?? request.Usl;
+        var lcl = request.Lcl ?? request.Lsl!.Value;
+        var ucl = request.Ucl ?? request.Usl!.Value;
         var limit = repository.ControlLimits.FirstOrDefault(item =>
             item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
             item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
@@ -1082,6 +1105,12 @@ public sealed class SetupManagementService(ISpcRepository repository)
             item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
             item.OperationSeq == request.OperationSeq &&
             item.CharacteristicName.Equals(request.CharacteristicName.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool CanBuildControlLimit(UpsertInspectionSetupRequest request)
+    {
+        return (request.Lcl.HasValue && request.Ucl.HasValue) ||
+            (request.Lsl.HasValue && request.Usl.HasValue);
     }
 
     private List<string> ValidateUser(UpsertUserRequest request)
@@ -1328,7 +1357,8 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         if (request.OperationSeq <= 0) errors.Add("OperationSeq must be greater than zero.");
-        if (request.CharacteristicType == CharacteristicType.Variable && request.Lsl >= request.Usl) errors.Add("LSL must be less than USL.");
+        if (request.CharacteristicType == CharacteristicType.Variable && request.Lsl.HasValue != request.Usl.HasValue) errors.Add("Both LSL and USL are required when either spec limit is provided.");
+        if (request.CharacteristicType == CharacteristicType.Variable && request.Lsl.HasValue && request.Usl.HasValue && request.Lsl.Value >= request.Usl.Value) errors.Add("LSL must be less than USL.");
         if (request.CharacteristicType == CharacteristicType.Variable && request.Lcl.HasValue && request.Ucl.HasValue && request.Lcl.Value >= request.Ucl.Value) errors.Add("LCL must be less than UCL.");
         if (request.SampleSize <= 0) errors.Add("SampleSize must be greater than zero.");
         if (request.FrequencyValue <= 0) errors.Add("FrequencyValue must be greater than zero.");

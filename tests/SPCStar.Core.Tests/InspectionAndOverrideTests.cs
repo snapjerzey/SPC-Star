@@ -130,8 +130,9 @@ public sealed class InspectionAndOverrideTests
         Assert.True(corrected.Succeeded, string.Join(" | ", corrected.Errors));
         Assert.Single(repository.Measurements);
         Assert.Equal(5m, repository.Measurements.Single().Value);
-        Assert.Empty(repository.Alerts);
-        Assert.Empty(repository.RuleViolations);
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(AlertStatus.Overridden, alert.Status);
+        Assert.DoesNotContain(repository.Alerts, alert => alert.Status == AlertStatus.Active);
     }
 
     [Fact]
@@ -477,6 +478,128 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void CompleteInspection_CreatesNextCompletion_WhenClientRecordIdsAreNew()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        var firstMeasurements = new[]
+        {
+            SavedMeasurementWithClientId("Diameter", 10m, 1, "first-diameter"),
+            SavedMeasurementWithClientId("Length", 42m, 2, "first-length"),
+            SavedMeasurementWithClientId("Weight", 18m, 3, "first-weight")
+        };
+        var secondMeasurements = new[]
+        {
+            SavedMeasurementWithClientId("Diameter", 10m, 11, "second-diameter"),
+            SavedMeasurementWithClientId("Length", 42m, 12, "second-length"),
+            SavedMeasurementWithClientId("Weight", 18m, 13, "second-weight")
+        };
+        repository.Measurements.AddRange(firstMeasurements);
+        repository.Measurements.AddRange(secondMeasurements);
+        var firstCompletion = AddCompletion(repository, firstMeasurements, 1);
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(22222) with
+        {
+            MeasurementClientRecordIds = ["second-diameter", "second-length", "second-weight"]
+        });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(2, repository.JobPhaseCompletions.Count);
+        Assert.Equal(1, firstCompletion.CompletionNumber);
+        Assert.Null(firstCompletion.MachineCounter);
+        Assert.Equal(2, result.Value!.CompletionNumber);
+        Assert.Equal(22222, result.Value.MachineCounter);
+        Assert.All(secondMeasurements, measurement => Assert.Contains(measurement.Id, result.Value.MeasurementIds));
+    }
+
+    [Theory]
+    [InlineData("Setup")]
+    [InlineData("Startup")]
+    [InlineData("In Process")]
+    [InlineData("Coil Change")]
+    [InlineData("Spool")]
+    [InlineData("End of Spool")]
+    public void CompleteInspection_NumbersNextCompletionAcrossWholeJobPhase_ForEveryInspectionPhase(string phase)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        foreach (var plan in repository.InspectionPlans)
+        {
+            plan.InspectionPhase = phase;
+        }
+
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ProcessCode = "OTHER",
+            OperationSeq = 20,
+            ResourceId = "PRESS2",
+            InspectionPhase = phase,
+            CompletionNumber = 3,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-01-01T00:10:00Z")
+        });
+        var currentMeasurements = new[]
+        {
+            SavedMeasurementWithClientId("Diameter", 10m, 21, "current-diameter", phase),
+            SavedMeasurementWithClientId("Length", 42m, 22, "current-length", phase),
+            SavedMeasurementWithClientId("Weight", 18m, 23, "current-weight", phase)
+        };
+        repository.Measurements.AddRange(currentMeasurements);
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(44444) with
+        {
+            InspectionPhase = phase,
+            MeasurementClientRecordIds = ["current-diameter", "current-length", "current-weight"]
+        });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(4, result.Value!.CompletionNumber);
+        Assert.Equal(44444, result.Value.MachineCounter);
+    }
+
+    [Theory]
+    [InlineData("Setup")]
+    [InlineData("Startup")]
+    [InlineData("In Process")]
+    [InlineData("Coil Change")]
+    [InlineData("Spool")]
+    [InlineData("End of Spool")]
+    public void CompleteInspection_UsesClientRecordIdsEvenWhenEntryOrderChanged_ForEveryInspectionPhase(string phase)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        foreach (var plan in repository.InspectionPlans)
+        {
+            plan.InspectionPhase = phase;
+        }
+
+        var currentMeasurements = new[]
+        {
+            SavedMeasurementWithClientId("Diameter", 10m, 3, "current-diameter", phase),
+            SavedMeasurementWithClientId("Length", 42m, 1, "current-length", phase),
+            SavedMeasurementWithClientId("Weight", 18m, 2, "current-weight", phase)
+        };
+        repository.Measurements.AddRange(currentMeasurements);
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(33333) with
+        {
+            InspectionPhase = phase,
+            MeasurementClientRecordIds = ["current-diameter", "current-length", "current-weight"]
+        });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var completion = Assert.Single(repository.JobPhaseCompletions);
+        Assert.Equal(phase, completion.InspectionPhase);
+        Assert.Equal(33333, completion.MachineCounter);
+        Assert.All(currentMeasurements, measurement => Assert.Contains(measurement.Id, completion.MeasurementIds));
+    }
+
+    [Fact]
     public void CompleteInspection_RequiresSelectedPhasePlansRegardlessOfMachineCounter()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -713,6 +836,39 @@ public sealed class InspectionAndOverrideTests
         Assert.Equal(RuleTriggered.AttributeRejected, alert.RuleTriggered);
         Assert.False(locked.Succeeded);
         Assert.Contains(locked.Errors, error => error.Contains("locked", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void EnterMeasurement_AllowsImmediateCorrectionAfterDraftLockClear()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        AddAttributeCharacteristic(repository);
+        var measurementService = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var failed = measurementService.EnterMeasurement(Entry(0m) with
+        {
+            CharacteristicName = "Comparator profile",
+            DeviceId = "browser-dev",
+            ClientRecordId = "attribute-sample-1"
+        });
+        var corrected = measurementService.EnterMeasurement(Entry(1m, minutes: 1) with
+        {
+            CharacteristicName = "Comparator profile",
+            DeviceId = "browser-dev",
+            ClientRecordId = "attribute-sample-1"
+        });
+
+        Assert.True(failed.Succeeded, string.Join(" | ", failed.Errors));
+        Assert.True(corrected.Succeeded, string.Join(" | ", corrected.Errors));
+        Assert.Single(repository.Measurements);
+        Assert.Equal(1m, repository.Measurements.Single().Value);
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(AlertStatus.Overridden, alert.Status);
+
+        var overrideResult = OverrideService(repository).Override(new AlertOverrideRequest(alert.Id, "linetech1", "linetech1", "User entry error", "Corrected measurement", null, DateTimeOffset.UtcNow));
+
+        Assert.True(overrideResult.Succeeded, string.Join(" | ", overrideResult.Errors));
+        Assert.Single(repository.AlertOverrides);
     }
 
     [Fact]
@@ -1005,11 +1161,12 @@ public sealed class InspectionAndOverrideTests
         };
     }
 
-    private static InspectionMeasurement SavedMeasurementWithClientId(string characteristicName, decimal value, int minutes, string clientRecordId)
+    private static InspectionMeasurement SavedMeasurementWithClientId(string characteristicName, decimal value, int minutes, string clientRecordId, string inspectionPhase = "In Process")
     {
         var measurement = SavedMeasurement(characteristicName, value, minutes);
         measurement.DeviceId = "browser-dev";
         measurement.ClientRecordId = clientRecordId;
+        measurement.InspectionPhase = inspectionPhase;
         return measurement;
     }
 

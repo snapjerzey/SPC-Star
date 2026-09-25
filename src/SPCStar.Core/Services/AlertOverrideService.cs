@@ -35,7 +35,17 @@ public sealed class AlertOverrideService(
             return ServiceResult<AlertOverride>.Fail("Alert was not found.");
         }
 
-        if (alert.Status != AlertStatus.Active)
+        if (alert.Status == AlertStatus.Overridden)
+        {
+            var existing = repository.AlertOverrides
+                .OrderByDescending(item => item.UnlockedAt)
+                .FirstOrDefault(item => item.AlertId == alert.Id);
+            if (existing is not null)
+            {
+                return ServiceResult<AlertOverride>.Ok(existing);
+            }
+        }
+        else if (alert.Status != AlertStatus.Active)
         {
             return ServiceResult<AlertOverride>.Fail("Alert is not active.");
         }

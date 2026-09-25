@@ -427,6 +427,72 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
+    public void UpsertInspectionSetup_AllowsNoSpecVariableWhenOnlySampleSizeChanges()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+
+        var initial = service.UpsertInspectionSetup(new UpsertInspectionSetupRequest(
+            "61055",
+            "Needlemaker part",
+            "Ethicon Taperpoint - Needles",
+            "Needlemaker",
+            "Needlemaker",
+            10,
+            "Y Dim - Bottom",
+            CharacteristicType.Variable,
+            0.100m,
+            0.090m,
+            0.110m,
+            null,
+            null,
+            "in",
+            1,
+            FrequencyType.Event,
+            1,
+            FrequencyUnit.ToolChange,
+            "SpecLimitOnly",
+            InspectionPhase: "Setup"));
+
+        Assert.True(initial.Succeeded, string.Join(" | ", initial.Errors));
+        Assert.Single(repository.SpecLimits);
+        Assert.Single(repository.ControlLimits);
+
+        var result = service.UpsertInspectionSetup(new UpsertInspectionSetupRequest(
+            "61055",
+            "Needlemaker part",
+            "Ethicon Taperpoint - Needles",
+            "Needlemaker",
+            "Needlemaker",
+            10,
+            "Y Dim - Bottom",
+            CharacteristicType.Variable,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "in",
+            3,
+            FrequencyType.Event,
+            1,
+            FrequencyUnit.ToolChange,
+            "SpecLimitOnly",
+            OriginalProcessCode: "Needlemaker",
+            OriginalOperationSeq: 10,
+            OriginalCharacteristicName: "Y Dim - Bottom",
+            InspectionPhase: "Setup"));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Null(result.Value!.Nominal);
+        Assert.Null(result.Value.Lsl);
+        Assert.Null(result.Value.Usl);
+        Assert.Equal(3, result.Value.SampleSize);
+        Assert.Empty(repository.SpecLimits);
+        Assert.Empty(repository.ControlLimits);
+    }
+
+    [Fact]
     public void UpsertInspectionSetup_AllowsDifferentRequirementsByInspectionPhase()
     {
         var repository = new InMemorySpcRepository();

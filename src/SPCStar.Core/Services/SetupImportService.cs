@@ -192,10 +192,8 @@ public sealed class SetupImportService(ISpcRepository repository)
             PhaseFieldValue(row, phase, "Frequency Type") != "" ||
             PhaseFieldValue(row, phase, "Frequency") != "" ||
             PhaseFieldValue(row, phase, "Frequency Qty") != "" ||
-            PhaseFieldValue(row, phase, "First Due") != "" ||
             PhaseFieldValue(row, phase, "Frequency Unit") != "" ||
-            PhaseFieldValue(row, phase, "Drift Rule") != "" ||
-            PhaseFieldValue(row, phase, "Display Order") != "";
+            PhaseFieldValue(row, phase, "Drift Rule") != "";
     }
 
     private static bool IsTruthy(string value)
@@ -406,6 +404,11 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private static string InspectionRowType(Dictionary<string, string> row)
     {
+        if (IsOperatorTextEntryJobData(row))
+        {
+            return "JobData";
+        }
+
         var explicitType = CanonicalRowType(row.GetValueOrDefault("CharacteristicType"));
         if (IsValidRowType(explicitType))
         {
@@ -429,6 +432,17 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         return "";
+    }
+
+    private static bool IsOperatorTextEntryJobData(Dictionary<string, string> row)
+    {
+        var entryType = Value(row, "EntryType", "Entry Type", "Input Type");
+        var characteristicType = Value(row, "CharacteristicType", "Attribute/Variable", "DataType", "Inspection Type");
+        var method = Value(row, "InspectionMethod", "ToolUsed", "Tool Used", "ToolMethod", "Inspection Method", "Measurement Method", "Tool", "Gauge", "Gage");
+
+        return entryType.Contains("text", StringComparison.OrdinalIgnoreCase) &&
+            characteristicType.Contains("text", StringComparison.OrdinalIgnoreCase) &&
+            method.Contains("operator", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void NormalizeTimingFields(Dictionary<string, string> row)
@@ -1081,6 +1095,7 @@ public sealed class SetupImportService(ISpcRepository repository)
     {
         var inspectionPhase = NormalizeInspectionPhase(row.GetValueOrDefault("InspectionPhase"));
         var fieldName = row["FieldName"].Trim();
+        RemoveInspectionArtifactsForJobDataField(part, fieldName);
         if (IsRedundantJobDataField(fieldName))
         {
             repository.PartJobDataFields.RemoveAll(item =>
@@ -1102,6 +1117,30 @@ public sealed class SetupImportService(ISpcRepository repository)
 
         field.IsRequired = OptionalBool(row, "IsRequired", true);
         field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartJobDataFields.Count(item => item.PartId == part.Id && item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private void RemoveInspectionArtifactsForJobDataField(Part part, string fieldName)
+    {
+        var characteristics =
+            (from operation in repository.Operations
+             join process in repository.Processes on operation.ProcessId equals process.Id
+             join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
+             where operation.PartId == part.Id &&
+                characteristic.Name.Equals(fieldName.Trim(), StringComparison.OrdinalIgnoreCase)
+             select new { operation, process, characteristic })
+            .ToArray();
+
+        foreach (var item in characteristics)
+        {
+            repository.InspectionPlans.RemoveAll(plan => plan.CharacteristicId == item.characteristic.Id);
+            repository.SpecLimits.RemoveAll(limit => limit.CharacteristicId == item.characteristic.Id);
+            repository.ControlLimits.RemoveAll(limit =>
+                limit.PartNum.Equals(part.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                limit.ProcessCode.Equals(item.process.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                limit.OperationSeq == item.operation.OperationSeq &&
+                limit.CharacteristicName.Equals(item.characteristic.Name, StringComparison.OrdinalIgnoreCase));
+            repository.Characteristics.RemoveAll(characteristic => characteristic.Id == item.characteristic.Id);
+        }
     }
 
     private static bool IsRedundantJobDataField(string fieldName)

@@ -724,6 +724,68 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
+    public void ImportCsv_TreatsOperatorTextEntryInspectionRowsAsJobData()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "RecordType", "PartNum", "PartDescription", "ProductGroup", "Operation",
+            "ParameterSeq", "InspectionParameter", "Attribute/Variable", "EntryType", "RequirementText", "Tool Used",
+            "SetupRequired", "SetupSampleSize", "InProcessRequired", "InProcessSampleSize"
+        };
+        string Row(params (string Field, string Value)[] values)
+        {
+            var row = header.ToDictionary(field => field, _ => "", StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, value) in values)
+            {
+                row[field] = value;
+            }
+
+            return string.Join(",", header.Select(field => row[field]));
+        }
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("RecordType", "INSPECTION"), ("PartNum", "61135"), ("PartDescription", "22MIL SH-1 Undrilled"), ("ProductGroup", "Ethicon Taperpoint"), ("Operation", "Needlemaker"), ("ParameterSeq", "1"), ("InspectionParameter", "Vendor Coil #"), ("Attribute/Variable", "Text Entry"), ("EntryType", "Text Entry"), ("RequirementText", "Enter this value with each inspection submission."), ("Tool Used", "Operator Entry"), ("InProcessRequired", "Y")),
+            Row(("RecordType", "INSPECTION"), ("PartNum", "61135"), ("PartDescription", "22MIL SH-1 Undrilled"), ("ProductGroup", "Ethicon Taperpoint"), ("Operation", "Needlemaker"), ("ParameterSeq", "2"), ("InspectionParameter", "Wire Shipment (W/S) #"), ("Attribute/Variable", "Text Entry"), ("EntryType", "Text Entry"), ("RequirementText", "Enter this value with each inspection submission."), ("Tool Used", "Operator Entry"), ("InProcessRequired", "Y")),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(2, repository.PartJobDataFields.Count);
+        Assert.Contains(repository.PartJobDataFields, field => field.FieldName == "Vendor Coil #" && field.InspectionPhase == "In Process");
+        Assert.Contains(repository.PartJobDataFields, field => field.FieldName == "Wire Shipment (W/S) #" && field.InspectionPhase == "In Process");
+        Assert.Empty(repository.InspectionPlans);
+    }
+
+    [Fact]
+    public void ImportCsv_RemovesStaleInspectionItem_WhenReimportedAsJobData()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var oldInspectionResult = service.ImportCsv(string.Join(Environment.NewLine, [
+            "RecordType,PartNum,PartDescription,ProductGroup,Operation,InspectionParameter,Attribute/Variable,EntryType,Tool Used,SetupRequired,SetupSampleSize",
+            "INSPECTION,61131,45MIL CT,Ethicon Taperpoint,Needlemaker,Wire Shipment (W/S) #,Attribute,Accept/Reject,Operator verification,Y,1",
+            string.Empty
+        ]));
+        Assert.True(oldInspectionResult.Succeeded, string.Join(" | ", oldInspectionResult.Errors));
+        Assert.Single(repository.InspectionPlans);
+        Assert.Single(repository.Characteristics);
+
+        var jobDataResult = service.ImportCsv(string.Join(Environment.NewLine, [
+            "RecordType,PartNum,PartDescription,ProductGroup,Operation,InspectionParameter,Attribute/Variable,EntryType,Tool Used,InProcessRequired",
+            "INSPECTION,61131,45MIL CT,Ethicon Taperpoint,Needlemaker,Wire Shipment (W/S) #,Text Entry,Text Entry,Operator Entry,Y",
+            string.Empty
+        ]));
+
+        Assert.True(jobDataResult.Succeeded, string.Join(" | ", jobDataResult.Errors));
+        Assert.Single(repository.PartJobDataFields);
+        Assert.Empty(repository.InspectionPlans);
+        Assert.Empty(repository.Characteristics);
+    }
+
+    [Fact]
     public void ImportCsv_UsesPhaseSpecificDisplayOrderFromUniversalTemplateRows()
     {
         var repository = new InMemorySpcRepository();
@@ -804,7 +866,7 @@ public sealed class SetupImportServiceTests
             "Sort Order", "Inspection Item", "Attribute/Variable", "Tool Used",
             "Lower Spec", "Upper Spec", "Target", "Unit",
             "Setup Required", "Setup Sample Size",
-            "End of Spool Required", "End of Spool Sample Size", "End of Spool Frequency Type"
+            "End of Spool Required", "End of Spool Sample Size", "End of Spool Frequency Type", "End of Spool Order"
         };
         string Row(params (string Field, string Value)[] values)
         {
@@ -819,13 +881,49 @@ public sealed class SetupImportServiceTests
 
         var result = service.ImportCsv(string.Join(Environment.NewLine, [
             string.Join(",", header),
-            Row(("Section", "INSPECTION"), ("Part Number", "61131"), ("Part Description", "50MIL CT-1"), ("Product Group", "Ethicon Taperpoint - Needles"), ("Operation", "Needlemaker"), ("Sort Order", "22"), ("Inspection Item", "Crimp Tightness - Normal"), ("Attribute/Variable", "Variable"), ("Tool Used", "Tensile Tester"), ("Lower Spec", "2"), ("Upper Spec", "4"), ("Target", "3"), ("Unit", "lb"), ("Setup Required", "X"), ("Setup Sample Size", "3"), ("End of Spool Required", "X"), ("End of Spool Sample Size", "3"), ("End of Spool Frequency Type", "Event")),
+            Row(("Section", "INSPECTION"), ("Part Number", "61131"), ("Part Description", "50MIL CT-1"), ("Product Group", "Ethicon Taperpoint - Needles"), ("Operation", "Needlemaker"), ("Sort Order", "22"), ("Inspection Item", "Crimp Tightness - Normal"), ("Attribute/Variable", "Variable"), ("Tool Used", "Tensile Tester"), ("Lower Spec", "2"), ("Upper Spec", "4"), ("Target", "3"), ("Unit", "lb"), ("Setup Required", "X"), ("Setup Sample Size", "3"), ("End of Spool Required", "X"), ("End of Spool Sample Size", "3"), ("End of Spool Frequency Type", "Event"), ("End of Spool Order", "14")),
             string.Empty
         ]));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.SampleSize == 3 && plan.Lsl == 2m && plan.Usl == 4m);
-        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "End of Spool" && plan.SampleSize == 3 && plan.Lsl == 2m && plan.Usl == 4m);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "End of Spool" && plan.SampleSize == 3 && plan.Lsl == 2m && plan.Usl == 4m && plan.DisplayOrder == 14);
+    }
+
+    [Fact]
+    public void ImportCsv_DoesNotCreatePhaseFromFirstDueOrOrderAlone()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var header = new[]
+        {
+            "Section", "Part Number", "Part Description", "Product Group", "Operation",
+            "Sort Order", "Inspection Item", "Attribute/Variable", "Tool Used",
+            "Lower Spec", "Upper Spec", "Unit",
+            "Setup Required", "Setup Sample Size",
+            "End of Spool First Due Qty", "End of Spool Order"
+        };
+        string Row(params (string Field, string Value)[] values)
+        {
+            var row = header.ToDictionary(field => field, _ => "", StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, value) in values)
+            {
+                row[field] = value;
+            }
+
+            return string.Join(",", header.Select(field => row[field]));
+        }
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            string.Join(",", header),
+            Row(("Section", "INSPECTION"), ("Part Number", "61131"), ("Part Description", "45MIL CT"), ("Product Group", "Ethicon Taperpoint - Needles"), ("Operation", "Needlemaker"), ("Sort Order", "22"), ("Inspection Item", "Y Dim - Top"), ("Attribute/Variable", "Variable"), ("Tool Used", "Toolmakers Microscope FX20"), ("Lower Spec", ".752"), ("Upper Spec", ".782"), ("Unit", "in"), ("Setup Required", "X"), ("Setup Sample Size", "1"), ("End of Spool First Due Qty", "1"), ("End of Spool Order", "7")),
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Single(repository.InspectionPlans);
+        Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup");
+        Assert.DoesNotContain(repository.InspectionPlans, plan => plan.InspectionPhase == "End of Spool");
     }
 
     [Fact]

@@ -24,6 +24,10 @@ const state = {
   inspectionDrafts: new Map(),
   preserveInspectionEntriesUntil: 0,
   inspectionSubmitting: false,
+  pendingLockClearPromise: null,
+  pendingLockClearAlertId: "",
+  pendingClearLock: null,
+  suppressedClearedLockIds: new Set(),
   device: {
     serialPort: null,
     serialReader: null,
@@ -728,7 +732,7 @@ async function loadContext(event) {
     }
 
     state.contexts = contexts;
-    state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
+    state.activeLock = activeLockFromContexts();
     renderLock(state.activeLock);
     renderVariables();
     renderMeanSummary();
@@ -817,7 +821,7 @@ function renderContext() {
   $("tagsDivider").classList.toggle("hidden", !hasEditableTags && !hasPartFacts);
   $("tagsSection").classList.toggle("hidden", !hasEditableTags && !hasPartFacts);
   $("jobTagsForm").classList.toggle("hidden", !hasEditableTags);
-  state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
+  state.activeLock = activeLockFromContexts();
   renderLock(state.activeLock);
   renderVariables();
   renderMeanSummary();
@@ -828,13 +832,22 @@ function renderContext() {
 }
 
 function renderConfiguredJobDataFields(set) {
-  const fields = (state.snapshot.partJobDataFields || [])
+  const uniqueFields = (state.snapshot.partJobDataFields || [])
     .filter((field) =>
       field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
-      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(set.inspectionPhase) &&
+      jobDataFieldAppliesToSelectedSet(field, set) &&
       !isBuiltInOrPartStandardJobData(field.fieldName) &&
       !isRedundantJobDataField(field.fieldName) &&
       !isMaterialLotJobDataField(field.fieldName))
+    .reduce((unique, field) => {
+      const key = String(field.fieldName || "").trim().toLowerCase();
+      const existing = unique.get(key);
+      if (!existing || (field.displayOrder ?? 0) < (existing.displayOrder ?? 0)) {
+        unique.set(key, field);
+      }
+      return unique;
+    }, new Map());
+  const fields = Array.from(uniqueFields.values())
     .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   const form = $("jobTagsForm");
   $("jobTagsList").innerHTML = partStandardJobData(set).map((fact) => `
@@ -850,6 +863,15 @@ function renderConfiguredJobDataFields(set) {
   form.querySelectorAll(".job-tag-input[data-per-inspection='true']").forEach((input) => {
     input.addEventListener("input", updateInspectionSubmitState);
   });
+}
+
+function jobDataFieldAppliesToSelectedSet(field, set) {
+  if (!isPerInspectionJobDataField(field.fieldName)) {
+    return true;
+  }
+
+  const activePhase = normalizeInspectionPhase(set.activePhase || set.inspectionPhase);
+  return normalizeInspectionPhase(field.inspectionPhase) === activePhase;
 }
 
 function isBuiltInOrPartStandardJobData(fieldName) {
@@ -972,6 +994,10 @@ function materialNameFromLotField(fieldName) {
 }
 
 function renderLock(activeLock) {
+  if (isSuppressedLock(activeLock)) {
+    activeLock = null;
+  }
+
   const banner = $("lockBanner");
   const panel = $("overridePanel");
   if (!activeLock) {
@@ -996,6 +1022,15 @@ function renderLock(activeLock) {
   $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
   $("failInspectionButton").disabled = false;
   updateSystemManagerReasonVisibility();
+}
+
+function isSuppressedLock(lock) {
+  const alertId = lock?.alertId || "";
+  return alertId && state.suppressedClearedLockIds.has(alertId);
+}
+
+function activeLockFromContexts(contexts = state.contexts) {
+  return contexts.find((context) => context?.activeLock && !isSuppressedLock(context.activeLock))?.activeLock || null;
 }
 
 function setLockFormBusy(isBusy) {
@@ -1071,6 +1106,9 @@ function renderVariables() {
     const upperSpecLimit = firstFiniteValue(context?.upperSpecLimit, plan.usl);
     const lowerControlLimit = firstFiniteValue(context?.lowerControlLimit, plan.lcl);
     const upperControlLimit = firstFiniteValue(context?.upperControlLimit, plan.ucl);
+    const entryStarter = isAttribute ? "" : measurementEntryStarter(plan, context);
+    const entryPlaceholder = entryStarter || "0.0000";
+    const entryDecimals = isAttribute ? 0 : measurementEntryDecimalPlaces(plan, context);
     const processWarning = context?.processWarning;
     card.className = `variable-card ${status.className}${isInactive ? " inactive-plan-card" : ""}`;
     card.dataset.planIndex = String(index);
@@ -1124,7 +1162,7 @@ function renderVariables() {
                   <option value="1">Accept</option>
                   <option value="0">Reject</option>
                 </select>` : `
-                <input id="measurement-${index}-${sampleIndex}" name="measurement-${index}-${sampleIndex}" class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0000">`}
+                <input id="measurement-${index}-${sampleIndex}" name="measurement-${index}-${sampleIndex}" class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Variable" data-entry-starter="${escapeHtml(entryStarter)}" data-entry-decimals="${entryDecimals}" type="text" inputmode="decimal" autocomplete="off" placeholder="${escapeHtml(entryPlaceholder)}">`}
             </label>`).join("")}
         </div>`}`;
     if (isInactive) {
@@ -1224,7 +1262,7 @@ function formatInteger(value) {
 }
 
 function inspectionItemStatus(plan, context, isAttribute, isRecordOnly, currentEntryStatus = null) {
-  if (context?.activeLock) {
+  if (context?.activeLock && !isSuppressedLock(context.activeLock)) {
     return {
       className: "inspection-status-bad",
       shortLabel: "Lock",
@@ -1276,10 +1314,7 @@ function inspectionItemStatus(plan, context, isAttribute, isRecordOnly, currentE
   }
 
   if (isAttribute) {
-    const rejected = points.some((point) => Number(point.value) === 0);
-    return rejected
-      ? { className: "inspection-status-bad", shortLabel: "Reject", label: "Recent reject recorded" }
-      : { className: "inspection-status-good", shortLabel: "OK", label: "Recent attribute entries accepted" };
+    return { className: "inspection-status-good", shortLabel: "OK", label: "Recent attribute entries accepted" };
   }
 
   if (isRecordOnly) {
@@ -1291,22 +1326,13 @@ function inspectionItemStatus(plan, context, isAttribute, isRecordOnly, currentE
     return { className: "inspection-status-neutral", shortLabel: "New", label: "No numeric measurements recorded yet" };
   }
 
-  const lsl = firstFiniteValue(context?.lowerSpecLimit, plan?.lsl);
-  const usl = firstFiniteValue(context?.upperSpecLimit, plan?.usl);
   const lcl = firstFiniteValue(context?.lowerControlLimit);
   const ucl = firstFiniteValue(context?.upperControlLimit);
-  const outOfSpec = values.some((value) =>
-    (lsl !== null && value < lsl) ||
-    (usl !== null && value > usl));
-  if (outOfSpec) {
-    return { className: "inspection-status-bad", shortLabel: "Spec", label: "Recent value is outside specification" };
-  }
-
   const outOfControl = values.some((value) =>
     (lcl !== null && value < lcl) ||
     (ucl !== null && value > ucl));
   if (outOfControl || points.some((point) => point.hasRuleViolation)) {
-    return { className: "inspection-status-warn", shortLabel: "Watch", label: "Recent value is outside control limits or has a drift warning" };
+    return { className: "inspection-status-warn", shortLabel: "Watch", label: "Recent value needs process review" };
   }
 
   return { className: "inspection-status-good", shortLabel: "OK", label: "Recent values are within current limits" };
@@ -1315,6 +1341,66 @@ function inspectionItemStatus(plan, context, isAttribute, isRecordOnly, currentE
 function firstFiniteValue(...values) {
   const value = values.find((item) => isFiniteValue(item));
   return value === undefined ? null : Number(value);
+}
+
+function measurementEntryStarter(plan, context = null) {
+  const leadingZeroCounts = measurementEntryNumbers(plan, context)
+    .filter((value) => value > 0 && value < 1)
+    .map(leadingDecimalZeroCount)
+    .filter((count) => count > 0);
+  if (!leadingZeroCounts.length) {
+    return "";
+  }
+
+  const sharedZeroCount = Math.min(...leadingZeroCounts);
+  if (sharedZeroCount >= 2) {
+    return ".00";
+  }
+
+  return sharedZeroCount === 1 ? ".0" : "";
+}
+
+function measurementEntryDecimalPlaces(plan, context = null) {
+  return Math.max(0, ...measurementEntryNumbers(plan, context).map(decimalPlacesForNumber));
+}
+
+function measurementEntryNumbers(plan, context = null) {
+  return [
+    context?.lowerSpecLimit,
+    context?.upperSpecLimit,
+    context?.lowerControlLimit,
+    context?.upperControlLimit,
+    plan?.lsl,
+    plan?.usl,
+    plan?.nominal,
+    plan?.lcl,
+    plan?.ucl
+  ]
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+}
+
+function decimalPlacesForNumber(value) {
+  const text = String(value);
+  if (text.includes("e-")) {
+    const [coefficient, exponent] = text.split("e-");
+    const coefficientDecimals = (coefficient.split(".")[1] || "").length;
+    return Number(exponent) + coefficientDecimals;
+  }
+
+  const decimals = text.split(".")[1] || "";
+  return decimals.replace(/0+$/, "").length;
+}
+
+function leadingDecimalZeroCount(value) {
+  let remaining = Math.abs(Number(value));
+  let count = 0;
+  while (remaining > 0 && remaining < 0.1 && count < 4) {
+    count += 1;
+    remaining *= 10;
+  }
+
+  return count;
 }
 
 function draftKeyForInput(input) {
@@ -1340,14 +1426,18 @@ function restoreMeasurementDraft(input) {
   const key = draftKeyForInput(input);
   const draft = key ? state.inspectionDrafts.get(key) : null;
   input.dataset.clientRecordId = draft?.clientRecordId || newClientRecordId();
+  input.dataset.submitted = draft?.submitted ? "true" : "false";
+  input.dataset.lastSubmittedValue = draft?.lastSubmittedValue || "";
+  input.dataset.lastSubmittedNumericValue = draft?.lastSubmittedNumericValue || "";
   if (!draft) {
+    applyMeasurementEntryStarter(input);
     return;
   }
 
   input.value = draft.value || "";
-  input.dataset.submitted = draft.submitted ? "true" : "false";
-  input.dataset.lastSubmittedValue = draft.lastSubmittedValue || "";
-  input.dataset.lastSubmittedNumericValue = draft.lastSubmittedNumericValue || "";
+  if (!inputHasValue(input) && input.dataset.submitted !== "true") {
+    applyMeasurementEntryStarter(input);
+  }
 }
 
 function updateMeasurementDraft(input, updates = {}) {
@@ -1360,7 +1450,7 @@ function updateMeasurementDraft(input, updates = {}) {
   state.inspectionDrafts.set(key, {
     ...existing,
     clientRecordId: input.dataset.clientRecordId || existing.clientRecordId || newClientRecordId(),
-    value: input.value,
+    value: inputHasValue(input) ? input.value : "",
     submitted: input.dataset.submitted === "true",
     lastSubmittedValue: input.dataset.lastSubmittedValue || "",
     lastSubmittedNumericValue: input.dataset.lastSubmittedNumericValue || "",
@@ -1384,13 +1474,14 @@ function clearVisibleMeasurementInputs() {
     input.dataset.submitted = "false";
     input.dataset.lastSubmittedValue = "";
     input.dataset.lastSubmittedNumericValue = "";
+    applyMeasurementEntryStarter(input);
   });
 }
 
 function snapshotMeasurementInputs() {
   return [...document.querySelectorAll(".measurement-input:not(:disabled)")].map((input) => ({
     key: draftKeyForInput(input),
-    value: input.value,
+    value: inputHasValue(input) ? input.value : "",
     clientRecordId: input.dataset.clientRecordId || "",
     submitted: input.dataset.submitted === "true",
     lastSubmittedValue: input.dataset.lastSubmittedValue || "",
@@ -1423,6 +1514,9 @@ function restoreMeasurementInputSnapshot(snapshot) {
     input.dataset.submitted = item.submitted ? "true" : "false";
     input.dataset.lastSubmittedValue = item.lastSubmittedValue;
     input.dataset.lastSubmittedNumericValue = item.lastSubmittedNumericValue;
+    if (!inputHasValue(input) && input.dataset.submitted !== "true") {
+      applyMeasurementEntryStarter(input);
+    }
   });
   saveInspectionDrafts();
 }
@@ -1656,32 +1750,46 @@ async function submitMeasurement(event) {
     return;
   }
 
-  const activeInput = document.activeElement?.classList?.contains("measurement-input")
-    ? document.activeElement
-    : null;
-  if (activeInput && activeInput.value !== activeInput.dataset.lastSubmittedValue) {
-    const result = await submitSingleMeasurementAndAdvance(activeInput, false);
-    if (result === "locked" || result === "error" || result === "empty") {
+  await withInspectionSubmitFeedback(async () => {
+    const pendingResult = await submitPendingMeasurementInputs();
+    if (pendingResult === "locked" || pendingResult === "error" || pendingResult === "empty") {
       return;
     }
-  }
 
-  if (!inspectionEntryComplete()) {
-    showEntryMessage("Complete and save every sample before submitting the inspection.", "error");
-    updateInspectionSubmitState();
-    return;
-  }
+    if (!inspectionEntryComplete()) {
+      showEntryMessage(missingInspectionSamplesMessage(), "error");
+      updateInspectionSubmitState();
+      return;
+    }
 
-  await withInspectionSubmitFeedback(async () => {
     await resetCompletedInspectionEntry();
   });
 }
 
 function inputHasValue(input) {
-  return input.value.trim().length > 0;
+  const value = input.value.trim();
+  return value.length > 0 && value !== (input.dataset.entryStarter || "");
+}
+
+async function submitPendingMeasurementInputs() {
+  const inputs = completionRequiredInputs()
+    .filter((input) =>
+      !input.disabled &&
+      inputHasValue(input) &&
+      !(input.dataset.submitted === "true" && input.value === input.dataset.lastSubmittedValue));
+
+  for (const input of inputs) {
+    const result = await submitSingleMeasurementAndAdvance(input, false);
+    if (result === "locked" || result === "error" || result === "empty") {
+      return result;
+    }
+  }
+
+  return "submitted";
 }
 
 async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) {
+  window.clearTimeout(input._autoAdvanceTimer);
   normalizeMeasurementInput(input);
   if (!inputHasValue(input)) {
     showEntryMessage(`Fill in ${sampleLabel(input)} before moving on.`, "error");
@@ -1699,19 +1807,35 @@ async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) 
   }
 
   try {
-    const result = await submitMeasurementInput(input, { reloadOnSuccess: false });
+    const pending = input._submitPromise;
+    if (pending) {
+      const pendingResult = await pending;
+      if (moveNext && pendingResult !== "locked" && !state.activeLock) {
+        focusNextMeasurementInput(input);
+      }
+      return pendingResult;
+    }
+
+    const submission = submitMeasurementInput(input, { reloadOnSuccess: false });
+    input._submitPromise = submission;
+    const result = await submission;
     if (moveNext && result !== "locked" && !state.activeLock) {
       focusNextMeasurementInput(input);
     }
     return result;
   } catch {
     return "error";
+  } finally {
+    input._submitPromise = null;
   }
 }
 
 function wireMeasurementDeviceInputs() {
   document.querySelectorAll(".measurement-input").forEach((input) => {
-    input.addEventListener("focus", () => input.closest("label")?.classList.add("device-input-active"));
+    input.addEventListener("focus", () => {
+      input.closest("label")?.classList.add("device-input-active");
+      placeCaretAfterEntryStarter(input);
+    });
     input.addEventListener("input", () => {
       if (input.dataset.entryType === "Variable") {
         const limitedValue = capMeasurementDecimalPlaces(input.value);
@@ -1725,17 +1849,23 @@ function wireMeasurementDeviceInputs() {
       updateMeasurementDraft(input);
       updateCurrentPlanStatus(input);
       updateInspectionSubmitState();
+      scheduleAutoAdvanceMeasurement(input);
     });
     input.addEventListener("blur", async () => {
       input.closest("label")?.classList.remove("device-input-active");
-      if (input.dataset.tabSubmitting === "true" || input.disabled || input.value === input.dataset.lastSubmittedValue) {
+      if (input.dataset.tabSubmitting === "true" || input.dataset.autoSubmitting === "true" || input.dataset.changeSubmitting === "true" || input.disabled || !inputHasValue(input) || input.value === input.dataset.lastSubmittedValue) {
         return;
       }
       await submitSingleMeasurementAndAdvance(input, false);
     });
     input.addEventListener("change", async () => {
       if (input.dataset.entryType === "Attribute" && inputHasValue(input)) {
-        await submitSingleMeasurementAndAdvance(input, false);
+        input.dataset.changeSubmitting = "true";
+        try {
+          await submitSingleMeasurementAndAdvance(input, true);
+        } finally {
+          input.dataset.changeSubmitting = "false";
+        }
       }
     });
     input.addEventListener("keydown", async (event) => {
@@ -1908,7 +2038,7 @@ async function refreshPlanContextAfterMeasurement(jobNum, resourceId, plan, plan
   updatePlanStatus(planIndex);
   updateInspectionSubmitState();
 
-  if (latestContext?.activeLock) {
+  if (latestContext?.activeLock && !isSuppressedLock(latestContext.activeLock)) {
     await loadJobNotes(jobNum);
     state.activeLock = latestContext.activeLock;
     renderLock(state.activeLock);
@@ -1953,6 +2083,62 @@ function capMeasurementDecimalPlaces(value) {
   return normalized.length > allowedEnd ? normalized.slice(0, allowedEnd) : normalized;
 }
 
+function scheduleAutoAdvanceMeasurement(input) {
+  window.clearTimeout(input._autoAdvanceTimer);
+  if (!measurementInputReadyToAutoAdvance(input)) {
+    return;
+  }
+
+  const expectedDecimals = Number(input.dataset.entryDecimals || 0);
+  const delay = Number.isInteger(expectedDecimals) && expectedDecimals <= 0 ? 300 : 150;
+  input._autoAdvanceTimer = window.setTimeout(async () => {
+    if (!measurementInputReadyToAutoAdvance(input)) {
+      return;
+    }
+
+    input.dataset.autoSubmitting = "true";
+    try {
+      await submitSingleMeasurementAndAdvance(input, true);
+    } finally {
+      input.dataset.autoSubmitting = "false";
+    }
+  }, delay);
+}
+
+function measurementInputReadyToAutoAdvance(input) {
+  if (
+    input.disabled ||
+    input.dataset.entryType !== "Variable" ||
+    input.dataset.submitting === "true" ||
+    input.dataset.submitted === "true" && input.value === input.dataset.lastSubmittedValue ||
+    !inputHasValue(input)
+  ) {
+    return false;
+  }
+
+  const expectedDecimals = Number(input.dataset.entryDecimals || 0);
+  if (!Number.isInteger(expectedDecimals)) {
+    return false;
+  }
+
+  const normalized = capMeasurementDecimalPlaces(input.value.trim());
+  if (!Number.isFinite(Number(normalized))) {
+    return false;
+  }
+
+  if (expectedDecimals <= 0) {
+    return !/[.+-]$/.test(normalized);
+  }
+
+  const decimalIndex = normalized.indexOf(".");
+  if (decimalIndex < 0) {
+    return false;
+  }
+
+  const actualDecimals = normalized.slice(decimalIndex + 1).length;
+  return actualDecimals >= expectedDecimals;
+}
+
 function inspectionEntryComplete() {
   const inputs = completionRequiredInputs();
   return inputs.length > 0 && inputs.every((input) =>
@@ -1960,10 +2146,25 @@ function inspectionEntryComplete() {
     input.value === input.dataset.lastSubmittedValue);
 }
 
+function missingInspectionSamplesMessage() {
+  const missing = completionRequiredInputs()
+    .filter((input) => !(input.dataset.submitted === "true" && input.value === input.dataset.lastSubmittedValue))
+    .slice(0, 3)
+    .map(sampleLabel);
+  if (!missing.length) {
+    return "Complete and save every sample before submitting the inspection.";
+  }
+
+  const suffix = completionRequiredInputs().filter((input) => !(input.dataset.submitted === "true" && input.value === input.dataset.lastSubmittedValue)).length > missing.length
+    ? " and more"
+    : "";
+  return `Complete and save: ${missing.join(", ")}${suffix}.`;
+}
+
 function completionRequiredInputs() {
   const inputs = [...document.querySelectorAll(".measurement-input:not(:disabled)")];
   const startedPlans = new Set(inputs
-    .filter((input) => input.value.trim() || input.dataset.submitted === "true")
+    .filter((input) => inputHasValue(input) || input.dataset.submitted === "true")
     .map((input) => Number(input.dataset.planIndex)));
   return inputs.filter((input) => {
     const planIndex = Number(input.dataset.planIndex);
@@ -1974,7 +2175,7 @@ function completionRequiredInputs() {
 
 function planHasStartedEntries(planIndex) {
   return [...document.querySelectorAll(`.measurement-input[data-plan-index="${planIndex}"]`)]
-    .some((input) => input.value.trim() || input.dataset.submitted === "true");
+    .some((input) => inputHasValue(input) || input.dataset.submitted === "true");
 }
 
 function planIsRequiredForCompletion(plan) {
@@ -2093,9 +2294,11 @@ async function resetCompletedInspectionEntry() {
   clearVisibleMeasurementInputs();
   clearPerInspectionJobDataInputs();
   $("machineCounter").value = "";
-  await loadContext();
   updateInspectionSubmitState();
   showEntryMessage("Inspection submitted. Fields cleared for the next inspection.", "ok");
+  loadContext().catch((error) => {
+    showEntryMessage("Inspection submitted, but live status could not be refreshed. " + readableError(error), "warn");
+  });
 }
 
 function failedInspectionInputs() {
@@ -2276,6 +2479,7 @@ function sampleLabel(input) {
 
 function normalizeMeasurementInput(input) {
   if (input.dataset.entryType !== "Variable") return;
+  if (!inputHasValue(input)) return;
   const parsed = parseDeviceMeasurement(input.value);
   if (parsed !== null) {
     input.value = parsed;
@@ -3114,6 +3318,26 @@ function measurementEditHistoryText(entry) {
   return `Edited from ${entry.oldInspectionPhase}: ${formatNumber(entry.oldValue)} to ${entry.newInspectionPhase}: ${formatNumber(entry.newValue)} by ${entry.operatorUserId}.${reason}`;
 }
 
+function applyMeasurementEntryStarter(input) {
+  if (input.dataset.entryType !== "Variable" || input.value.trim()) {
+    return;
+  }
+
+  const starter = input.dataset.entryStarter || "";
+  if (starter) {
+    input.value = starter;
+  }
+}
+
+function placeCaretAfterEntryStarter(input) {
+  const starter = input.dataset.entryStarter || "";
+  if (!starter || input.value !== starter || typeof input.setSelectionRange !== "function") {
+    return;
+  }
+
+  window.setTimeout(() => input.setSelectionRange(starter.length, starter.length), 0);
+}
+
 function machineCounterEditHistoryText(entry) {
   const oldValue = entry.oldMachineCounter === null || entry.oldMachineCounter === undefined ? "blank" : formatInteger(Number(entry.oldMachineCounter));
   const newValue = entry.newMachineCounter === null || entry.newMachineCounter === undefined ? "blank" : formatInteger(Number(entry.newMachineCounter));
@@ -3252,14 +3476,49 @@ function showMaterialEditMessage(message, kind, options = {}) {
 }
 
 async function clearLock(event) {
-  event.preventDefault();
-  if (!state.activeLock) {
+  event?.preventDefault?.();
+  const clearedLock = state.pendingClearLock || state.activeLock;
+  if (!clearedLock) {
     return;
   }
 
-  const clearedLock = state.activeLock;
-  const previousContexts = state.contexts;
-  const previousActiveLock = state.activeLock;
+  const alertId = clearedLock.alertId || "";
+  if (state.pendingLockClearPromise && state.pendingLockClearAlertId === alertId) {
+    return;
+  }
+
+  hideLockForClearIntent(clearedLock);
+
+  let resolvePendingLockClear;
+  let rejectPendingLockClear;
+  state.pendingLockClearAlertId = alertId;
+  state.pendingLockClearPromise = new Promise((resolve, reject) => {
+    resolvePendingLockClear = resolve;
+    rejectPendingLockClear = reject;
+  });
+  state.pendingLockClearPromise.catch(() => {});
+
+  afterLockScreenPaint(() => {
+    showEntryMessage("Lock cleared. Correct the entry and continue.", "ok");
+    applyLocalLockClear(clearedLock);
+    finishClearLock(clearedLock, resolvePendingLockClear, rejectPendingLockClear);
+  });
+}
+
+function hideLockForClearIntent(lock = state.activeLock) {
+  if (!lock) {
+    return;
+  }
+
+  state.pendingClearLock = lock;
+  if (lock.alertId) {
+    state.suppressedClearedLockIds.add(lock.alertId);
+  }
+  state.activeLock = null;
+  hideLockPanelImmediately();
+}
+
+function finishClearLock(clearedLock, resolvePendingLockClear, rejectPendingLockClear) {
   try {
     const isSystemManagerOverride = overrideUserIsSystemManager();
     const payload = {
@@ -3272,42 +3531,19 @@ async function clearLock(event) {
       unlockedAt: new Date().toISOString()
     };
 
-    hideLockPanelImmediately();
-    showEntryMessage("Lock cleared. Correct the entry and continue.", "ok");
-
-    window.setTimeout(() => {
-      const preservedInputs = snapshotMeasurementInputs();
-      const preservedMachineCounter = machineCounterValue();
-      const affectedPlanIndex = planIndexForLock(clearedLock);
-      state.preserveInspectionEntriesUntil = Date.now() + 10000;
-      const nextLock = clearActiveLockFromLocalContext(clearedLock);
-      restoreLockPanelDisplay();
-      if (nextLock) {
-        renderLock(nextLock);
-      }
-      restoreMachineCounterValue(preservedMachineCounter);
-      restoreMeasurementInputSnapshot(preservedInputs);
-      if (affectedPlanIndex >= 0) {
-        updatePlanStatus(affectedPlanIndex);
-      }
-
-      applyMachineCounterDueState();
-      updateInspectionSubmitState();
-      window.requestAnimationFrame(() => {
-        restoreMeasurementInputSnapshot(preservedInputs);
-        if (!nextLock) {
-          focusLockMeasurementInput(clearedLock);
-        }
-      });
-      if (nextLock) {
-        showEntryMessage("Lock cleared locally. Another active lock still needs attention.", "error");
-      }
-
-      api(`/alerts/${clearedLock.alertId}/override`, {
-        method: "POST",
-        body: JSON.stringify(payload)
-      })
-        .then(() => {
+    api(`/alerts/${clearedLock.alertId}/override`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    })
+      .then(() => {
+          resolvePendingLockClear?.();
+          if (state.pendingLockClearAlertId === (clearedLock.alertId || "")) {
+            state.pendingLockClearPromise = null;
+            state.pendingLockClearAlertId = "";
+          }
+          if (state.pendingClearLock?.alertId === clearedLock.alertId) {
+            state.pendingClearLock = null;
+          }
           $("overridePassword").value = "";
           $("causeCategory").value = "Machine";
           $("causeText").value = "";
@@ -3319,24 +3555,73 @@ async function clearLock(event) {
           }
         })
         .catch((error) => {
-          state.contexts = previousContexts;
-          state.activeLock = previousActiveLock;
-          restoreLockPanelDisplay();
-          renderLock(state.activeLock);
-          setLockFormBusy(false);
-          $("overrideMessage").textContent = readableError(error);
-          $("overrideMessage").className = "message error";
+          resolvePendingLockClear?.();
+          if (state.pendingLockClearAlertId === (clearedLock.alertId || "")) {
+            state.pendingLockClearPromise = null;
+            state.pendingLockClearAlertId = "";
+          }
+          if (state.pendingClearLock?.alertId === clearedLock.alertId) {
+            state.pendingClearLock = null;
+          }
+          showEntryMessage("Lock cleared from the screen, but the server did not save the clear record. " + readableError(error), "error");
         });
-    }, 0);
   } catch (error) {
-    state.contexts = previousContexts;
-    state.activeLock = previousActiveLock;
-    restoreLockPanelDisplay();
-    renderLock(state.activeLock);
-    setLockFormBusy(false);
-    $("overrideMessage").textContent = readableError(error);
-    $("overrideMessage").className = "message error";
+    resolvePendingLockClear?.();
+    state.pendingLockClearPromise = null;
+    state.pendingLockClearAlertId = "";
+    if (state.pendingClearLock?.alertId === clearedLock.alertId) {
+      state.pendingClearLock = null;
+    }
+    showEntryMessage("Lock cleared from the screen, but local cleanup hit an error. " + readableError(error), "error");
   }
+}
+
+function afterLockScreenPaint(action) {
+  const run = () => window.setTimeout(action, 0);
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(run);
+    return;
+  }
+
+  run();
+}
+
+function applyLocalLockClear(clearedLock) {
+  const preservedInputs = snapshotMeasurementInputs();
+  const preservedMachineCounter = machineCounterValue();
+  const affectedPlanIndex = planIndexForLock(clearedLock);
+  state.preserveInspectionEntriesUntil = Date.now() + 10000;
+  const nextLock = clearActiveLockFromLocalContext(clearedLock);
+  restoreLockPanelDisplay();
+  renderLock(nextLock);
+  restoreMachineCounterValue(preservedMachineCounter);
+  restoreMeasurementInputSnapshot(preservedInputs);
+  releaseLockMeasurementForCorrection(clearedLock);
+  if (affectedPlanIndex >= 0) {
+    updatePlanStatus(affectedPlanIndex);
+  }
+
+  applyMachineCounterDueState();
+  updateInspectionSubmitState();
+  window.requestAnimationFrame(() => {
+    restoreMeasurementInputSnapshot(preservedInputs);
+    releaseLockMeasurementForCorrection(clearedLock);
+    if (!nextLock) {
+      focusLockMeasurementInput(clearedLock);
+    }
+  });
+  if (nextLock) {
+    showEntryMessage("Lock cleared locally. Another active lock still needs attention.", "error");
+  }
+}
+
+async function waitForPendingLockClear() {
+  if (!state.pendingLockClearPromise) {
+    return;
+  }
+
+  showEntryMessage("Finishing lock clear. Your corrected entry will save in a moment.", "ok");
+  await state.pendingLockClearPromise;
 }
 
 function clearActiveLockFromLocalContext(clearedLock) {
@@ -3352,7 +3637,7 @@ function clearActiveLockFromLocalContext(clearedLock) {
 
     return { ...context, activeLock: null };
   });
-  state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
+  state.activeLock = activeLockFromContexts();
   return state.activeLock;
 }
 
@@ -3377,6 +3662,22 @@ function focusLockMeasurementInput(lock) {
   input?.select?.();
 }
 
+function releaseLockMeasurementForCorrection(lock) {
+  const planIndex = planIndexForLock(lock);
+  if (planIndex < 0) {
+    return;
+  }
+
+  document.querySelectorAll(`.measurement-input[data-plan-index="${planIndex}"]`).forEach((input) => {
+    input.dataset.submitted = "false";
+    input.dataset.submitting = "false";
+    input.dataset.autoSubmitting = "false";
+    input.dataset.tabSubmitting = "false";
+    input.closest("label")?.classList.remove("measurement-submitted");
+    updateMeasurementDraft(input, { submitted: false });
+  });
+}
+
 async function refreshContextDataWithoutClearingEntries() {
   const { jobNum, resourceId } = selectedValues();
   if (!jobNum || !resourceId || !state.selectedPlans.length) {
@@ -3384,7 +3685,7 @@ async function refreshContextDataWithoutClearingEntries() {
   }
 
   state.contexts = await loadVariableContexts(jobNum, resourceId, state.selectedPlans);
-  state.activeLock = state.contexts.find((context) => context?.activeLock)?.activeLock || null;
+  state.activeLock = activeLockFromContexts();
   renderLock(state.activeLock);
   renderMeanSummary();
   renderTrendChoices();
@@ -5379,8 +5680,8 @@ function setupVariableRowTemplate() {
       </div>
     </section>
     <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="0.0001"></label>
-    <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="0.0001" required></label>
-    <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001" required></label>
+    <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="0.0001"></label>
+    <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001"></label>
     <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
     <label class="numeric-setup-field"><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
     <div class="setup-row-actions">
@@ -5599,8 +5900,8 @@ function updateSetupVariableType(row) {
   row.classList.toggle("attribute-row", isAttribute);
   unit.required = !isAttribute;
   nominal.required = false;
-  lsl.required = !isAttribute;
-  usl.required = !isAttribute;
+  lsl.required = false;
+  usl.required = false;
   if (isAttribute) {
     unit.value = "Accept/Reject";
     nominal.value = "1";
@@ -5648,12 +5949,21 @@ function loadSelectedPartSetup() {
   $("setupVariableRows").innerHTML = "";
   groupedPlans.forEach((group) => addSetupVariableRow(group.master, group.master.characteristicType));
   $("setupJobDataFieldRows").innerHTML = "";
-  (state.snapshot.partJobDataFields || [])
+  const setupJobDataFields = (state.snapshot.partJobDataFields || [])
     .filter((field) =>
       field.partNum.toLowerCase() === set.partNum.toLowerCase() &&
-      normalizeInspectionPhase(field.inspectionPhase) === normalizeInspectionPhase(firstPlan.inspectionPhase) &&
+      jobDataFieldAppliesToSelectedSet(field, { ...set, activePhase: firstPlan.inspectionPhase }) &&
       !isBuiltInOrPartStandardJobData(field.fieldName) &&
       !isRedundantJobDataField(field.fieldName))
+    .reduce((unique, field) => {
+      const key = String(field.fieldName || "").trim().toLowerCase();
+      const existing = unique.get(key);
+      if (!existing || (field.displayOrder ?? 0) < (existing.displayOrder ?? 0)) {
+        unique.set(key, field);
+      }
+      return unique;
+    }, new Map());
+  Array.from(setupJobDataFields.values())
     .forEach((field) => addSetupJobDataFieldRow(field));
   $("setupMaterialRows").innerHTML = "";
   (state.snapshot.partMaterialFields || [])
@@ -5908,8 +6218,8 @@ function setupVariableRows() {
     inspectionMethod: row.querySelector(".setup-method").value.trim(),
     phaseSettings: setupPhaseRows(row),
     nominal: optionalInputNumber(row.querySelector(".setup-nominal")),
-    lsl: Number(row.querySelector(".setup-lsl").value),
-    usl: Number(row.querySelector(".setup-usl").value),
+    lsl: optionalInputNumber(row.querySelector(".setup-lsl")),
+    usl: optionalInputNumber(row.querySelector(".setup-usl")),
     lcl: optionalInputNumber(row.querySelector(".setup-lcl")),
     ucl: optionalInputNumber(row.querySelector(".setup-ucl")),
     displayOrder: Number(row.querySelector(".setup-display-order").value) || index + 1
@@ -5995,7 +6305,7 @@ async function saveInspectionSetup(event) {
         method: "POST",
         body: JSON.stringify({
           partNum: baseRequest.partNum,
-          inspectionPhase: baseRequest.inspectionPhase,
+          inspectionPhase: baseRequest.inspectionPhase || "In Process",
           fieldName: field.fieldName,
           isRequired: field.isRequired,
           displayOrder: field.displayOrder,
@@ -6539,6 +6849,8 @@ $("jobTagsForm").addEventListener("submit", saveJobTags);
 $("materialChangeForm").addEventListener("submit", saveMaterialChange);
 $("jobNoteForm").addEventListener("submit", saveJobNote);
 $("overrideForm").addEventListener("submit", clearLock);
+$("clearLockButton").addEventListener("pointerdown", clearLock);
+$("clearLockButton").addEventListener("click", clearLock);
 $("failInspectionButton").addEventListener("click", endFailedInspection);
 $("refreshLockStatusButton").addEventListener("click", refreshLockStatus);
 $("resetLockFormButton").addEventListener("click", resetLockForm);

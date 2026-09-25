@@ -39,6 +39,7 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
         "Startup First Due",
         "Startup Frequency Unit",
         "Startup Drift Rule",
+        "Startup Order",
         "Setup Required",
         "Setup Sample Size",
         "Setup Frequency Type",
@@ -46,6 +47,7 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
         "Setup First Due",
         "Setup Frequency Unit",
         "Setup Drift Rule",
+        "Setup Order",
         "Coil Change Required",
         "Coil Change Sample Size",
         "Coil Change Frequency Type",
@@ -53,6 +55,7 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
         "Coil Change First Due",
         "Coil Change Frequency Unit",
         "Coil Change Drift Rule",
+        "Coil Change Order",
         "In Process Required",
         "In Process Sample Size",
         "In Process Frequency Type",
@@ -60,6 +63,7 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
         "In Process First Due",
         "In Process Frequency Unit",
         "In Process Drift Rule",
+        "In Process Order",
         "Spool Required",
         "Spool Sample Size",
         "Spool Frequency Type",
@@ -67,13 +71,15 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
         "Spool First Due",
         "Spool Frequency Unit",
         "Spool Drift Rule",
+        "Spool Order",
         "End of Spool Required",
         "End of Spool Sample Size",
         "End of Spool Frequency Type",
         "End of Spool Frequency",
         "End of Spool First Due",
         "End of Spool Frequency Unit",
-        "End of Spool Drift Rule"
+        "End of Spool Drift Rule",
+        "End of Spool Order"
     ];
 
     private static readonly string[] Phases = ["Startup", "Setup", "Coil Change", "In Process", "Spool", "End of Spool"];
@@ -242,6 +248,7 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
             row[$"{prefix} First Due"] = plan.Frequency.FirstDueValue?.ToString(CultureInfo.InvariantCulture) ?? "";
             row[$"{prefix} Frequency Unit"] = plan.Frequency.Unit.ToString();
             row[$"{prefix} Drift Rule"] = plan.AlertRuleSet;
+            row[$"{prefix} Order"] = plan.DisplayOrder.ToString(CultureInfo.InvariantCulture);
         }
     }
 

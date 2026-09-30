@@ -1344,6 +1344,10 @@ function firstFiniteValue(...values) {
 }
 
 function measurementEntryStarter(plan, context = null) {
+  if (suppressesDeviceMeasurementStarter(plan)) {
+    return "";
+  }
+
   const leadingZeroCounts = measurementEntryNumbers(plan, context)
     .filter((value) => value > 0 && value < 1)
     .map(leadingDecimalZeroCount)
@@ -1358,6 +1362,38 @@ function measurementEntryStarter(plan, context = null) {
   }
 
   return sharedZeroCount === 1 ? ".0" : "";
+}
+
+function suppressesDeviceMeasurementStarter(plan) {
+  const productGroup = String(plan?.productGroup || "").toLowerCase();
+  if (!productGroup.includes("ethicon")) {
+    return false;
+  }
+
+  const itemName = normalizedInspectionItemName(plan?.characteristicName);
+  const isDrilledNeedle = productGroup.includes("drilled");
+  const isNeedleBlank = productGroup.includes("needles") && !isDrilledNeedle;
+
+  if (isNeedleBlank) {
+    return inspectionItemStartsWith(itemName, "a dim") || inspectionItemStartsWith(itemName, "t dim");
+  }
+
+  if (isDrilledNeedle) {
+    return inspectionItemStartsWith(itemName, "t dim") || inspectionItemStartsWith(itemName, "hole depth");
+  }
+
+  return false;
+}
+
+function normalizedInspectionItemName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function inspectionItemStartsWith(itemName, prefix) {
+  return itemName === prefix || itemName.startsWith(`${prefix} `);
 }
 
 function measurementEntryDecimalPlaces(plan, context = null) {

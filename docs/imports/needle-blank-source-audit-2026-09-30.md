@@ -36,6 +36,13 @@ Corrected exact midpoint targets for Brazil 29 mil FS parts 61358 and 61372:
 
 - Raw * target changed from `.0304` to `.03035` wherever that source range is `.0299` to `.0308`.
 
+Corrected Cutting Edge needle blank phase mapping:
+
+- Removed plain `Spool` phase assignments from Cutting Edge inspection rows.
+- Confirmed Cutting Edge does not use a separate operator-facing `Spool` phase for these rows.
+- Moved `Tail Correct Orientation` into `Test Polish` / `End of Spool` with display order `20`, so the row is not orphaned and imports cleanly.
+- Local API verification after import shows Cutting Edge needle blanks only under `Setup`, `In Process`, and `End of Spool`, with no `Spool` or `Coil Change` inspection phase.
+
 ## Verification
 
 The corrected workbook was audited with a current-workbook source checker for both families.

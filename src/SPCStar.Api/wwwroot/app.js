@@ -1397,7 +1397,18 @@ function inspectionItemStartsWith(itemName, prefix) {
 }
 
 function measurementEntryDecimalPlaces(plan, context = null) {
-  return Math.max(0, ...measurementEntryNumbers(plan, context).map(decimalPlacesForNumber));
+  const inferredDecimals = Math.max(0, ...measurementEntryNumbers(plan, context).map(decimalPlacesForNumber));
+  return requiresThreeDecimalMeasurementEntry(plan) ? Math.max(inferredDecimals, 3) : inferredDecimals;
+}
+
+function requiresThreeDecimalMeasurementEntry(plan) {
+  const productGroup = String(plan?.productGroup || "").toLowerCase();
+  if (!productGroup.includes("ethicon") || !productGroup.includes("needles") || productGroup.includes("drilled")) {
+    return false;
+  }
+
+  const itemName = normalizedInspectionItemName(plan?.characteristicName);
+  return inspectionItemStartsWith(itemName, "needle cutoff") || inspectionItemStartsWith(itemName, "crimp tightness");
 }
 
 function measurementEntryNumbers(plan, context = null) {

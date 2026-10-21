@@ -80,25 +80,36 @@ public sealed class AppSettings
 {
     public string GlobalAlertRuleSet { get; set; } = "WesternElectric";
     public CustomDriftRuleSettings CustomDriftRule { get; set; } = new();
-    public CapabilityThresholdSettings CapabilityThresholds { get; set; } = new();
 }
 
 public sealed class CustomDriftRuleSettings
 {
+    public CustomWatchOptions Options { get; set; } = new();
     public string Name { get; set; } = "Custom Drift Rule";
     public int WindowSize { get; set; } = 4;
     public decimal SigmaThreshold { get; set; } = 1m;
     public int MinimumPointsBeyondThreshold { get; set; } = 4;
     public string Direction { get; set; } = "SameSide";
     public bool IncludeWesternElectric { get; set; }
-    public string WarningBehavior { get; set; } = "Lock";
-    public string Notes { get; set; } = "Triggers when the configured number of recent points are beyond the configured sigma threshold.";
+    public string WarningBehavior { get; set; } = "Warning";
+    public string Notes { get; set; } = "Uses consecutive completed inspection averages moving toward a specification limit. Individual samples determine out-of-spec lockouts.";
 }
 
-public sealed class CapabilityThresholdSettings
+public sealed class CustomWatchOptions
 {
-    public decimal YellowMinimum { get; set; } = 1.00m;
-    public decimal GreenMinimum { get; set; } = 1.33m;
+    public bool Enabled { get; set; } = true;
+    public bool TrendEnabled { get; set; } = true;
+    public bool NearLimitEnabled { get; set; } = true;
+    public bool RepeatedNearLimitEnabled { get; set; }
+    public string ZoneMode { get; set; } = "PercentSpan";
+    public decimal ZonePercent { get; set; } = 10m;
+    public decimal ZoneDistance { get; set; }
+    public int RepeatedCount { get; set; } = 3;
+    public int RepeatedWindow { get; set; } = 5;
+    public string Combination { get; set; } = "Any";
+    public bool ResetOnEqual { get; set; } = true;
+    public bool ResetOnReversal { get; set; } = true;
+    public int RecoveryInspections { get; set; } = 2;
 }
 
 public sealed class InspectionFrequency
@@ -125,10 +136,21 @@ public sealed class JobNote
     public required string OperatorUserId { get; set; }
     public required string NoteText { get; set; }
     public DateTimeOffset Timestamp { get; set; }
+    public List<JobNoteReply> Replies { get; set; } = [];
+}
+
+public sealed class JobNoteReply
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public Guid ClientRequestId { get; init; }
+    public required string UserName { get; init; }
+    public required string ReplyText { get; init; }
+    public DateTimeOffset Timestamp { get; init; }
 }
 
 public sealed class JobPhaseCompletion
 {
+    public bool WatchEvaluated { get; set; }
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string JobNum { get; set; }
     public required string PartNum { get; set; }
@@ -141,11 +163,14 @@ public sealed class JobPhaseCompletion
     public string OperatorShift { get; set; } = "";
     public DateTimeOffset CompletedAt { get; set; }
     public long? MachineCounter { get; set; }
+    [System.Text.Json.Serialization.JsonObjectCreationHandling(System.Text.Json.Serialization.JsonObjectCreationHandling.Populate)]
     public List<Guid> MeasurementIds { get; } = [];
 }
 
 public sealed class FailedInspection
 {
+    [System.Text.Json.Serialization.JsonObjectCreationHandling(System.Text.Json.Serialization.JsonObjectCreationHandling.Populate)]
+    public List<string> RequiredCharacteristicNames { get; } = [];
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string JobNum { get; set; }
     public required string PartNum { get; set; }
@@ -159,7 +184,12 @@ public sealed class FailedInspection
     public DateTimeOffset FailedAt { get; set; }
     public long? MachineCounter { get; set; }
     public string Reason { get; set; } = "";
+    public string CauseCategory { get; set; } = "";
+    public string CauseText { get; set; } = "";
+    public string SolutionText { get; set; } = "";
+    public string FailureDetail { get; set; } = "";
     public Guid? AlertId { get; set; }
+    [System.Text.Json.Serialization.JsonObjectCreationHandling(System.Text.Json.Serialization.JsonObjectCreationHandling.Populate)]
     public List<Guid> MeasurementIds { get; } = [];
 }
 
@@ -181,6 +211,7 @@ public sealed class PartJobDataField
     public Guid PartId { get; set; }
     public string InspectionPhase { get; set; } = "In Process";
     public required string FieldName { get; set; }
+    public string? Instruction { get; set; }
     public bool IsRequired { get; set; }
     public int DisplayOrder { get; set; }
 }
@@ -217,6 +248,7 @@ public sealed class Device
 
 public sealed class InspectionMeasurement
 {
+    public string WatchReason { get; set; } = "";
     public Guid Id { get; init; } = Guid.NewGuid();
     public string? ClientRecordId { get; set; }
     public string? DeviceId { get; set; }
@@ -228,6 +260,7 @@ public sealed class InspectionMeasurement
     public required string CharacteristicName { get; set; }
     public string InspectionPhase { get; set; } = "In Process";
     public decimal Value { get; set; }
+    public int? GagePinNumber { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public required string OperatorUserId { get; set; }
     public string OperatorShift { get; set; } = "";
@@ -271,6 +304,8 @@ public sealed class MachineCounterEditAudit
 
 public sealed class MaterialChangeLog
 {
+    public string MaterialName { get; set; } = "";
+    public string MaterialDescription { get; set; } = "";
     public Guid Id { get; init; } = Guid.NewGuid();
     public string? ClientRecordId { get; set; }
     public string? DeviceId { get; set; }
@@ -305,11 +340,15 @@ public sealed class RuleViolation
     public Guid AlertId { get; set; }
     public RuleTriggered RuleTriggered { get; set; }
     public DateTimeOffset DetectedAt { get; set; }
+    [System.Text.Json.Serialization.JsonObjectCreationHandling(System.Text.Json.Serialization.JsonObjectCreationHandling.Populate)]
     public List<Guid> MeasurementIds { get; } = [];
 }
 
 public sealed class ProcessAlert
 {
+    public string WatchScope { get; set; } = "";
+    public Guid? LastWatchCompletionId { get; set; }
+    public int NormalWatchInspections { get; set; }
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string JobNum { get; set; }
     public required string PartNum { get; set; }

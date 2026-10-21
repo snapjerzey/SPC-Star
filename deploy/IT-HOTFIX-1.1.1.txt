@@ -1,0 +1,25 @@
+SPC-Star Version 1.1.1 - Save Correction
+
+On the pilot server, close SPC-Star sessions, open PowerShell as Administrator,
+and run (adjust the USB drive letter as needed):
+
+    & "D:\SPCstar\UPDATE-SPCSTAR.ps1"
+
+Wait for "SPC-Star update complete." and "Installed version: 1.1.1".
+Refresh the browser, sign in, and check Version 1.1.1 beneath Inspection Console.
+
+This is a CODE-ONLY hotfix. It backs up existing data, updates application files,
+and restarts the service. There is no SPC-Star credential prompt, no workbook
+import, and no change to saved sample sizes, specs, inspection order or history.
+
+The fix allows sample-size edits to save for valid minimum-only or maximum-only
+specifications. It does not invent a missing limit. The actual 70311 pull-test
+Setup/Startup edit from 3 to 5 was verified in a disposable database, with the
+10 lb minimum, absent USL, In Process sample size and other variables unchanged.
+
+After installation, the user can save the desired 70311 sample-size correction
+in Parts & Inspections. This package does not perform that data edit itself.
+
+Do not reinstall or clear the database. If the script fails, retain the error and
+the pre-update backup. The successful completion marker records Version 1.1.1.
+VERSION.txt and SHA256SUMS.csv identify and verify this package.

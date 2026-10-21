@@ -1,0 +1,34 @@
+SPC-Star Pilot Update - October 20, 2026
+Version 1.1.0
+
+1. Have users finish their inspections and sign out before the update.
+2. On the pilot server, open PowerShell as Administrator.
+3. Run the command below, using the USB drive letter assigned on that server:
+
+   & "D:\SPCstar\UPDATE-SPCSTAR.ps1"
+
+4. Wait for: SPC-Star update complete. There is no SPC-Star login prompt.
+
+Do not run a second installer or import the workbook manually afterward.
+The default installed location is C:\Program Files\SPCstar. If the installation
+uses a different folder or port, pass -InstallRoot or -Port as appropriate.
+
+The script backs up existing server data before replacing application files,
+applies the bundled setup workbook locally while the service is stopped, then
+restarts the Windows service. Imports inside SPC-Star remain System Manager only.
+It does not copy the development database, test jobs, test users or seeded data.
+Existing pilot accounts and passwords remain in place. Accounts added only on
+the development computer are NOT transferred to the pilot.
+
+If the script reports an error, stop and keep the displayed error. Do not clear
+the database or delete its data folder. Completion is confirmed by both the
+console message and C:\Program Files\SPCstar\UPDATE-COMPLETE.txt with today's time.
+
+After updating, refresh the browser and sign in. Check:
+- The sign-in page and Inspection Console both display Version 1.1.0.
+- Setup > Users offers QA - Read only as a role.
+- Regular QA can open Admin > Change History, but not Archive.
+- A System Manager can open Admin > Archive and database maintenance controls.
+- Refreshing a signed-in browser tab keeps the login. New visits require login.
+
+SHA256SUMS.csv lists the package files and their hashes for verification.

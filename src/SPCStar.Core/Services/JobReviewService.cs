@@ -18,7 +18,9 @@ public sealed record JobInspectionMeasurementDto(
     string OperatorUserId,
     string OperatorShift,
     bool IsOutOfSpec,
-    bool IsOutOfControl);
+    bool IsOutOfControl,
+    bool IsWatch = false,
+    string WatchReason = "");
 
 public sealed record JobReviewDto(
     string PartNum,
@@ -45,7 +47,7 @@ public sealed class JobReviewService(
     QaSummaryExportService qaSummaryExportService,
     JobHistoryService jobHistoryService)
 {
-    public ServiceResult<JobReviewDto> Build(string partNum, string jobNum)
+    public ServiceResult<JobReviewDto> Build(string partNum, string jobNum, string? shift = null, DataReviewFilter? filter = null)
     {
         if (string.IsNullOrWhiteSpace(partNum))
         {
@@ -70,16 +72,32 @@ public sealed class JobReviewService(
             return ServiceResult<JobReviewDto>.Fail($"Job {job} is assigned to part {existingJob.PartNum}, not {part}.");
         }
 
-        var summary = qaSummaryExportService.BuildJobVariableMeans([job]);
+        var summary = qaSummaryExportService.BuildJobVariableMeans([job], shift, filter);
         if (!summary.Succeeded || summary.Value is null)
         {
             return ServiceResult<JobReviewDto>.Fail(summary.Errors);
         }
 
+        var variableIds = repository.Measurements.Where(reading => reading.JobNum.Equals(job, StringComparison.OrdinalIgnoreCase) &&
+            DataReviewFilter.Text(filter?.CharacteristicName, reading.CharacteristicName)).Select(reading => reading.Id).ToHashSet();
+        var history = jobHistoryService.GetForJob(job)
+            .Where(entry => string.IsNullOrWhiteSpace(shift) || entry.OperatorShift.Equals(shift.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Where(entry => filter == null || (filter.Context(entry.ProcessCode, entry.OperationSeq,
+                entry.InspectionPhase, entry.ResourceId, entry.Timestamp) &&
+                (string.IsNullOrWhiteSpace(filter.CharacteristicName) ||
+                    DataReviewFilter.Text(filter.CharacteristicName, entry.CharacteristicName) ||
+                    (entry.MeasurementIds ?? []).Any(variableIds.Contains))))
+            .ToArray();
+        var ledgerMeasurementIds = history
+            .Where(entry => entry.PartNum.Equals(part, StringComparison.OrdinalIgnoreCase) &&
+                entry.EntryType is "PhaseComplete" or "InspectionFailed")
+            .SelectMany(entry => entry.MeasurementIds ?? [])
+            .ToHashSet();
         var measurements = repository.Measurements
             .Where(measurement =>
                 measurement.JobNum.Equals(job, StringComparison.OrdinalIgnoreCase) &&
-                measurement.PartNum.Equals(part, StringComparison.OrdinalIgnoreCase))
+                measurement.PartNum.Equals(part, StringComparison.OrdinalIgnoreCase) &&
+                ledgerMeasurementIds.Contains(measurement.Id))
             .OrderByDescending(measurement => measurement.Timestamp)
             .Select(ToDto)
             .ToArray();
@@ -87,10 +105,10 @@ public sealed class JobReviewService(
         return ServiceResult<JobReviewDto>.Ok(new JobReviewDto(
             part,
             job,
-            qaSummaryExportService.BuildPartCapability(part).Value ?? [],
+            qaSummaryExportService.BuildPartCapability(part, shift, filter).Value ?? [],
             summary.Value,
             measurements,
-            jobHistoryService.GetForJob(job)));
+            history));
     }
 
     public ServiceResult<JobInspectionMeasurementDto> UpdateMeasurement(Guid measurementId, UpdateInspectionMeasurementRequest request)
@@ -198,7 +216,9 @@ public sealed class JobReviewService(
             measurement.OperatorUserId,
             measurement.OperatorShift,
             isOutOfSpec,
-            isOutOfControl);
+            isOutOfControl,
+            !string.IsNullOrWhiteSpace(measurement.WatchReason),
+            measurement.WatchReason);
     }
 
     private SpecLimit? FindSpecLimit(InspectionMeasurement measurement)

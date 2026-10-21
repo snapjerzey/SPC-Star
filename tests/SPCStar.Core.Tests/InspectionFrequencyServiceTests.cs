@@ -8,6 +8,97 @@ namespace SPCStar.Core.Tests;
 public sealed class InspectionFrequencyServiceTests
 {
     [Fact]
+    public void FailedInspectionRequiresImmediateRetryAtTheSameCounterUntilItPasses()
+    {
+        var repository = RepositoryWithPlan(FrequencyType.Quantity, 1500, FrequencyUnit.Pieces);
+        var now = DateTimeOffset.Parse("2026-01-01T08:00:00Z");
+        repository.JobPhaseCompletions.Add(Completion(now.AddMinutes(-10), 1500));
+        repository.FailedInspections.Add(Failure(now, 3000));
+        var request = Request(now: now.AddMinutes(1), currentQuantity: 3000, quantityAtLastInspection: 1500);
+        var retry = new InspectionFrequencyService(repository).Evaluate(request);
+        Assert.Equal(InspectionDueStatus.DueNow, retry.Status);
+        Assert.True(retry.RequiresReinspection);
+        Assert.True(new InspectionFrequencyService(repository).Evaluate(request).RequiresReinspection);
+        var reading = Measurement(now.AddMinutes(2)); repository.Measurements.Add(reading);
+        var completion = Completion(now.AddMinutes(2), 3000); completion.MeasurementIds.Add(reading.Id);
+        repository.JobPhaseCompletions.Add(completion);
+        var passed = new InspectionFrequencyService(repository).Evaluate(request with { QuantityAtLastInspection = 3000 });
+        Assert.False(passed.RequiresReinspection);
+        Assert.Equal(InspectionDueStatus.NotDue, passed.Status);
+        Assert.Equal(4500, passed.NextInspectionDueQuantity);
+    }
+
+    [Theory]
+    [InlineData("job")]
+    [InlineData("part")]
+    [InlineData("operation")]
+    [InlineData("machine")]
+    [InlineData("phase")]
+    public void FailedInspectionDoesNotMakeAnotherContextDue(string changed)
+    {
+        var repository = RepositoryWithPlan(FrequencyType.Quantity, 4500, FrequencyUnit.Pieces);
+        var failure = Failure(DateTimeOffset.Parse("2026-01-01T08:00:00Z"), 4500);
+        if (changed == "job") failure.JobNum = "OTHER";
+        if (changed == "part") failure.PartNum = "OTHER";
+        if (changed == "operation") failure.OperationSeq = 20;
+        if (changed == "machine") failure.ResourceId = "OTHER";
+        if (changed == "phase") failure.InspectionPhase = "Setup";
+        repository.FailedInspections.Add(failure);
+        Assert.False(new InspectionFrequencyService(repository).Evaluate(Request(currentQuantity: 3000)).RequiresReinspection);
+    }
+
+    [Fact]
+    public void RetryDoesNotPullInLaterFrequencyUnlessThatCheckWasEntered()
+    {
+        var repository = RepositoryWithPlan(FrequencyType.Quantity, 4500, FrequencyUnit.Pieces);
+        var failure = Failure(DateTimeOffset.Parse("2026-01-01T08:00:00Z"), 3000);
+        repository.FailedInspections.Add(failure);
+        var service = new InspectionFrequencyService(repository);
+        Assert.False(service.Evaluate(Request(currentQuantity: 3000)).RequiresReinspection);
+        var reading = Measurement(failure.FailedAt);
+        repository.Measurements.Add(reading);
+        failure.MeasurementIds.Add(reading.Id);
+        Assert.True(service.Evaluate(Request(currentQuantity: 3000)).RequiresReinspection);
+    }
+
+    [Fact]
+    public void UserErrorAndDraftReadingsDoNotCreateRetryRequirements()
+    {
+        var repository = RepositoryWithPlan(FrequencyType.Quantity, 4500, FrequencyUnit.Pieces);
+        var failure = Failure(DateTimeOffset.Parse("2026-01-01T08:00:00Z"), 4500);
+        failure.CauseCategory = "User Error";
+        repository.FailedInspections.Add(failure);
+        repository.Measurements.Add(Measurement(failure.FailedAt));
+        Assert.False(new InspectionFrequencyService(repository).Evaluate(Request(currentQuantity: 3000)).RequiresReinspection);
+    }
+
+    private static FailedInspection Failure(DateTimeOffset at, long counter) => new()
+    {
+        JobNum = "J100", PartNum = "P100", ProcessCode = "MOLD", OperationSeq = 10,
+        ResourceId = "PRESS1", InspectionPhase = "In Process", FailedByUserId = "line1",
+        FailedAt = at, MachineCounter = counter, CauseCategory = "Machine"
+    };
+
+    [Fact]
+    public void ExplicitFailedChecklistRetriesUnreachedChecksEvenBeforeTheirNextScheduledCount()
+    {
+        var repository = RepositoryWithPlan(FrequencyType.Quantity, 4500, FrequencyUnit.Pieces);
+        var failure = Failure(DateTimeOffset.Parse("2026-01-01T08:00:00Z"), 3000);
+        failure.RequiredCharacteristicNames.Add("Diameter");
+        repository.FailedInspections.Add(failure);
+        var result = new InspectionFrequencyService(repository).Evaluate(Request(currentQuantity: 3000));
+        Assert.True(result.RequiresReinspection);
+        Assert.Empty(failure.MeasurementIds);
+    }
+
+    private static JobPhaseCompletion Completion(DateTimeOffset at, long counter) => new()
+    {
+        JobNum = "J100", PartNum = "P100", ProcessCode = "MOLD", OperationSeq = 10,
+        ResourceId = "PRESS1", InspectionPhase = "In Process", CompletedByUserId = "operator1",
+        CompletedAt = at, MachineCounter = counter
+    };
+
+    [Fact]
     public void Evaluate_ReturnsNotConfigured_WhenPlanMissing()
     {
         var service = new InspectionFrequencyService(new InMemorySpcRepository());
@@ -31,7 +122,7 @@ public sealed class InspectionFrequencyServiceTests
     }
 
     [Fact]
-    public void Evaluate_QuantityBasedPlanIsDue_WhenCurrentQuantityPassesDueQuantity()
+    public void Evaluate_QuantityBasedPlanUsesTheFixedScheduleInsteadOfAnUnverifiedClientBaseline()
     {
         var repository = RepositoryWithPlan(FrequencyType.Quantity, 5000, FrequencyUnit.Pieces);
         var service = new InspectionFrequencyService(repository);
@@ -39,7 +130,7 @@ public sealed class InspectionFrequencyServiceTests
         var result = service.Evaluate(Request(currentQuantity: 12000, quantityAtLastInspection: 7000));
 
         Assert.Equal(InspectionDueStatus.DueNow, result.Status);
-        Assert.Equal(12000, result.NextInspectionDueQuantity);
+        Assert.Equal(5000, result.NextInspectionDueQuantity);
     }
 
     [Fact]

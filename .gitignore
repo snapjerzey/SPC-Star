@@ -11,3 +11,33 @@ TestResults/
 .dotnet-cli/
 .nuget-packages/
 .tmp/
+
+# Keep operational records, setup workbooks, imports and audit extracts local.
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.bak
+outputs/
+docs/imports/
+docs/schneider-import-mapping.md
+tests/SPCStar.Core.Tests/Fixtures/
+
+# Company certificate templates and source-audit tests require private inputs.
+src/SPCStar.Api/CertTemplates/
+tests/SPCStar.Core.Tests/CuttingEdgeVisualInspectionTests.cs
+tests/SPCStar.Core.Tests/JobMaterialPrerequisiteTests.cs
+tests/SPCStar.Core.Tests/L3SamplingTests.cs
+tests/SPCStar.Core.Tests/SchneiderSourceCorrectionsTests.cs
+tests/SPCStar.Core.Tests/SourceAlignmentTests.cs
+tools/SchneiderTestSeed/
+docs/validation/
+docs/sops/word/* - Updated *.docx
+tests/SPCStar.Core.Tests/ForensicSourceCorrectionTests.cs
+tests/SPCStar.Core.Tests/PrivateSourceTemplateTests.cs

@@ -11,12 +11,12 @@ var tests = new (string Name, Action Run)[]
     ("measurement rejects unknown inspection target", MeasurementRejectsUnknownInspectionTarget),
     ("measurement creates lock alert", MeasurementCreatesLockAlert),
     ("measurement records setup phase completion", MeasurementRecordsSetupPhaseCompletion),
-    ("job history backfills completed inspections", JobHistoryBackfillsCompletedInspections),
+    ("job history does not backfill completed inspections", JobHistoryDoesNotBackfillCompletedInspections),
     ("override rejects operator", OverrideRejectsOperator),
     ("override allows QA", OverrideAllowsQa),
     ("override rejects bad credentials", OverrideRejectsBadCredentials),
-    ("Archon override requires bypass reason", ArchonOverrideRequiresBypassReason),
-    ("Archon override allows bypass reason only", ArchonOverrideAllowsBypassReasonOnly),
+    ("Archon override requires User Error category", ArchonOverrideRequiresUserError),
+    ("Archon cannot bypass Machine lock", ArchonCannotBypassMachineLock),
     ("QA export requires characteristic", QaExportRequiresCharacteristic),
     ("QA export calculates summary CSV", QaExportCalculatesSummaryCsv),
     ("material change validates required fields", MaterialChangeValidatesRequiredFields),
@@ -154,7 +154,7 @@ static void MeasurementRecordsSetupPhaseCompletion()
     AssertEqual(2, repository.JobPhaseCompletions.OrderBy(item => item.CompletionNumber).Last().CompletionNumber);
 }
 
-static void JobHistoryBackfillsCompletedInspections()
+static void JobHistoryDoesNotBackfillCompletedInspections()
 {
     var repository = RepositoryWithSecurityAndLimits();
     foreach (var plan in repository.InspectionPlans)
@@ -172,13 +172,7 @@ static void JobHistoryBackfillsCompletedInspections()
 
     var history = new JobHistoryService(repository).GetForJob("J100");
     var completions = history.Where(item => item.EntryType == "PhaseComplete").OrderBy(item => item.Timestamp).ToArray();
-    AssertEqual(2, completions.Length);
-    var completion = completions[0];
-    AssertEqual("In Process", completion.InspectionPhase);
-    AssertEqual(1, completion.CompletionNumber);
-    AssertEqual(3, completion.MeasurementIds?.Count ?? 0);
-    AssertEqual(1, completions[1].CompletionNumber);
-    AssertEqual(3, completions[1].MeasurementIds?.Count ?? 0);
+    AssertEqual(0, completions.Length);
 }
 
 static void OverrideRejectsOperator()
@@ -186,7 +180,7 @@ static void OverrideRejectsOperator()
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
     var result = OverrideService(repository)
-        .Override(new AlertOverrideRequest(alert.Id, "operator1", "operator1", "Cause", "Fix", null, DateTimeOffset.UtcNow));
+        .Override(new AlertOverrideRequest(alert.Id, "operator1", "operator1", "Cause", "Fix", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
     AssertFalse(result.Succeeded);
 }
 
@@ -195,9 +189,9 @@ static void OverrideAllowsQa()
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
     var result = OverrideService(repository)
-        .Override(new AlertOverrideRequest(alert.Id, "qa1", "qa1", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
+        .Override(new AlertOverrideRequest(alert.Id, "qa1", "qa1", "", "", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
     AssertTrue(result.Succeeded);
-    AssertEqual(AlertStatus.Overridden, alert.Status);
+    AssertEqual(0, repository.Alerts.Count);
 }
 
 static void OverrideRejectsBadCredentials()
@@ -205,11 +199,11 @@ static void OverrideRejectsBadCredentials()
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
     var result = OverrideService(repository)
-        .Override(new AlertOverrideRequest(alert.Id, "qa1", "wrong", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
+        .Override(new AlertOverrideRequest(alert.Id, "qa1", "wrong", "", "", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
     AssertFalse(result.Succeeded);
 }
 
-static void ArchonOverrideRequiresBypassReason()
+static void ArchonOverrideRequiresUserError()
 {
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
@@ -218,15 +212,22 @@ static void ArchonOverrideRequiresBypassReason()
     AssertFalse(result.Succeeded);
 }
 
-static void ArchonOverrideAllowsBypassReasonOnly()
+static void ArchonCannotBypassMachineLock()
 {
     var repository = RepositoryWithSecurityAndLimits();
     var alert = AddAlert(repository);
     var result = OverrideService(repository)
-        .Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "", "", "System manager-approved bypass.", DateTimeOffset.UtcNow));
-    AssertTrue(result.Succeeded);
-    AssertEqual(AlertStatus.Overridden, alert.Status);
-    AssertEqual("System Manager Bypass", result.Value!.CauseCategory);
+        .Override(new AlertOverrideRequest(
+            alert.Id,
+            "Archon",
+            "archon",
+            "",
+            "",
+            "System manager-approved bypass.",
+            DateTimeOffset.UtcNow,
+            CauseCategory: "Machine"));
+    AssertFalse(result.Succeeded);
+    AssertEqual(AlertStatus.Active, alert.Status);
 }
 
 static void QaExportRequiresCharacteristic()

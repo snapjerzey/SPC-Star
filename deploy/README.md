@@ -57,6 +57,7 @@ This stops the Windows Service, creates a database backup, publishes the newest 
 It also installs or refreshes the `SPC-Star Daily Backup` scheduled task.
 
 For thumb-drive handoff patches, IT should run the update script from the root of the handoff package. The patch must preserve `C:\Program Files\SPCstar\data`, refresh the app files, restart the `SPC-Star` Windows Service, and verify `/health`.
+Run only the supplied `UPDATE-SPCSTAR.ps1` as Administrator for a packaged pilot patch; the source-project scripts above are a separate deployment path. The patch refreshes setup from its bundled current workbook using `replaceSetup=true` while retaining production history. Do not delete/reinstall or perform a second manual workbook import. The role SOPs in the app and `docs/sops` are updated with the app files, not separately installed on operator PCs.
 
 ## Backup Only
 

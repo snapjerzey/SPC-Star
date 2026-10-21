@@ -7,7 +7,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/spc-star-mark.svg" type="image/svg+xml">
   <meta name="theme-color" content="#0f766e">
-  <link rel="stylesheet" href="/styles.css?v=20260921-lock-clear-optimistic">
+  <link rel="stylesheet" href="/styles.css?v=1.4.3">
 </head>
 <body class="login-active">
   <main class="shell">
@@ -15,6 +15,7 @@
       <div>
         <p class="eyebrow">SPC Star</p>
         <h1>Inspection Console</h1>
+        <p class="app-version" data-app-version></p>
       </div>
       <div class="status-row">
         <span id="syncStatus" class="status-pill neutral">Online</span>
@@ -29,11 +30,12 @@
           <img src="/spc-star-mark.svg" alt="" class="login-welcome-mark">
           <p class="eyebrow">Welcome to</p>
           <h1>SPC-Star</h1>
+          <p class="app-version" data-app-version></p>
           <p>Inspection control, traceability, and process visibility.</p>
         </div>
         <div class="login-start-card">
           <h2>Getting Started</h2>
-          <p>Review the quick SOP for your role before signing in.</p>
+          <p>Review the SOP for your role before signing in.</p>
           <div class="login-sop-actions">
             <button id="showGettingStartedButton" type="button" class="secondary">Operator SOP</button>
             <button id="showLineTechSopButton" type="button" class="secondary">Line Tech SOP</button>
@@ -95,6 +97,8 @@
     <div id="navTabs" class="tab-row hidden">
       <button id="inspectionTab" type="button" class="tab active">Inspect</button>
       <button id="setupTab" type="button" class="tab">Setup</button>
+      <button id="dataTab" type="button" class="tab hidden">Data</button>
+      <button id="adminTab" type="button" class="tab hidden">Admin</button>
     </div>
 
     <section id="workPanel" class="workspace hidden">
@@ -106,7 +110,8 @@
           <form id="contextForm" class="job-data-form">
             <label>
               Job Number
-              <input id="jobNum" list="jobOptions" autocomplete="off" inputmode="text" required>
+              <input id="jobNum" list="workJobOptions" autocomplete="off" inputmode="text" required>
+              <datalist id="workJobOptions"></datalist>
               <datalist id="jobOptions"></datalist>
             </label>
             <label>
@@ -115,7 +120,8 @@
             </label>
             <label>
               Part Number
-              <input id="partNum" list="partOptions" autocomplete="off" inputmode="text" required>
+              <input id="partNum" list="workPartOptions" autocomplete="off" inputmode="text" required>
+              <datalist id="workPartOptions"></datalist>
               <datalist id="partOptions"></datalist>
             </label>
             <label>
@@ -167,7 +173,7 @@
           </div>
           <form id="overrideForm" class="override-form">
             <label>
-              Authorized user
+              <span id="lockSignoffUserLabel">Authorized user</span>
               <input id="overrideUserName" name="overrideUserName" autocomplete="username">
             </label>
             <label>
@@ -181,9 +187,6 @@
                 <option value="Tooling">Tooling</option>
                 <option value="Material">Material</option>
                 <option value="User Error">User Error</option>
-                <option value="Measurement Method">Measurement Method</option>
-                <option value="Process Drift">Process Drift</option>
-                <option value="Other">Other</option>
               </select>
             </label>
             <label id="causeTextLabel">
@@ -194,11 +197,7 @@
               Action taken
               <textarea id="solutionText" name="solutionText" rows="3"></textarea>
             </label>
-            <label id="systemManagerReasonLabel" class="hidden">
-              Bypass reason
-              <textarea id="bypassReason" name="bypassReason" rows="3"></textarea>
-            </label>
-            <button id="clearLockButton" type="submit">Clear Lock</button>
+            <button id="clearLockButton" type="submit" class="hidden">Clear Lock</button>
             <button type="button" id="failInspectionButton" class="danger-button">End Failed Inspection</button>
             <button type="button" id="refreshLockStatusButton" class="secondary">Refresh Lock Status</button>
             <button type="button" id="resetLockFormButton" class="secondary">Reset Unlock Form</button>
@@ -222,12 +221,20 @@
           </section>
 
           <form id="measurementForm" class="measurement-form hidden">
-            <label class="machine-counter-field">
-              Machine Counter
-              <input id="machineCounter" name="machineCounter" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" required>
-            </label>
+            <div class="machine-counter-prompt-row">
+              <label class="machine-counter-field">
+                <span class="machine-counter-label">Machine Counter</span>
+                <span class="machine-counter-input-row">
+                <input id="machineCounter" name="machineCounter" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" required>
+                  <strong id="machineCounterDueMessage" class="machine-counter-due-message" aria-live="polite"></strong>
+                </span>
+              </label>
+            </div>
             <div id="measurementVariableList" class="variable-list"></div>
-            <button id="completeInspectionButton" type="submit" class="inspection-submit-button hidden" disabled>Submit Inspection</button>
+            <div class="inspection-action-row">
+              <button id="completeInspectionButton" type="submit" class="inspection-submit-button hidden" disabled>Submit Inspection</button>
+              <button id="endInspectionButton" type="button" class="secondary danger-button inspection-end-button hidden">End Inspection</button>
+            </div>
           </form>
           <p id="entryMessage" class="message"></p>
 
@@ -276,8 +283,6 @@
         <button id="setupUsersSectionTab" type="button" class="setup-nav-button">Users</button>
         <button id="setupMachinesSectionTab" type="button" class="setup-nav-button">Machines</button>
         <button id="setupRulesSectionTab" type="button" class="setup-nav-button">Rules</button>
-        <button id="setupHistorySectionTab" type="button" class="setup-nav-button">History</button>
-        <button id="setupArchiveSectionTab" type="button" class="setup-nav-button">Archive</button>
       </div>
 
       <section id="setupInspectionSection" class="setup-section">
@@ -349,7 +354,7 @@
                     <option value="End of Spool">End of Spool</option>
                   </select>
                 </label>
-                <label>Sample size<input id="setupSampleSize" type="number" min="1" required></label>
+                <label>Sample size<input id="setupSampleSize" type="number" min="1" disabled></label>
                 <label>
                   Frequency type
                   <select id="setupFrequencyType">
@@ -359,7 +364,7 @@
                     <option value="Event">Event</option>
                   </select>
                 </label>
-                <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" required></label>
+                <label>Frequency value<input id="setupFrequencyValue" type="number" min="1" disabled></label>
                 <label>
                   Frequency unit
                   <select id="setupFrequencyUnit">
@@ -634,18 +639,6 @@
             <button type="submit">Save Global Rule</button>
           </form>
           <p id="globalRuleMessage" class="message"></p>
-          <form id="capabilityThresholdForm" class="capability-threshold-form">
-            <label>
-              Capability yellow starts at
-              <input id="capabilityYellowMinimum" type="number" min="0.01" max="10" step="0.01">
-            </label>
-            <label>
-              Capability green starts at
-              <input id="capabilityGreenMinimum" type="number" min="0.01" max="10" step="0.01">
-            </label>
-            <button type="submit" class="secondary">Save Capability Thresholds</button>
-          </form>
-          <p id="capabilityThresholdMessage" class="message"></p>
           <div class="rule-card-grid">
             <article class="rule-card" data-rule-key="GlobalDefault">
               <h3>Use Global Default</h3>
@@ -684,7 +677,7 @@
             </article>
             <article class="rule-card" data-rule-key="Custom">
               <h3>Custom Rule</h3>
-              <p>Reserved for configurable admin-defined behavior. Until the custom-rule editor is added, the default custom behavior triggers when the latest four points are beyond one sigma on the same side of center.</p>
+              <p>Warns when consecutive completed inspection averages move toward a specification limit. Individual out-of-spec samples still lock immediately.</p>
               <button type="button" class="secondary compact-button rule-detail-button">Configure</button>
             </article>
             <article class="rule-card" data-rule-key="SpecLimitOnly">
@@ -705,26 +698,27 @@
         </section>
       </section>
 
+    </section>
+
+    <section id="dataPanel" class="hidden">
+      <div class="setup-nav">
+        <button id="historyLedgerTab" type="button" class="setup-nav-button">Ledger</button>
+        <button id="historyQualityTab" type="button" class="setup-nav-button">Part Quality</button>
+        <button id="historyChartsTab" type="button" class="setup-nav-button">Charts</button>
+        <button id="historyIssuesTab" type="button" class="setup-nav-button">Top Issues</button>
+        <button id="setupCertSectionTab" type="button" class="setup-nav-button">Cert</button>
+      </div>
       <section id="setupHistorySection" class="setup-section hidden">
         <section class="panel">
-          <div class="panel-heading horizontal">
-            <div>
-              <h2>History</h2>
-            </div>
-            <div class="history-mode-tabs">
-              <button id="historyLedgerTab" type="button" class="history-mode-button active">Ledger</button>
-              <button id="historyChartsTab" type="button" class="history-mode-button">Charts</button>
-              <button id="historyIssuesTab" type="button" class="history-mode-button">Top Issues</button>
-              <button id="historyExportTab" type="button" class="history-mode-button">Export</button>
-            </div>
-          </div>
 
           <section id="historyLedgerView" class="history-view">
-            <div class="panel-heading horizontal tight">
+            <div class="panel-heading tight">
               <h3>Job Review</h3>
-              <div class="review-filter-bar">
-                <input id="partReviewFilter" list="partOptions" autocomplete="off" inputmode="text" placeholder="Part number">
-                <input id="reviewJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="Optional job number">
+              <div class="review-filter-bar data-filter-grid">
+                <input id="partReviewFilter" list="reviewPartOptions" autocomplete="off" inputmode="text" placeholder="Part number">
+                <datalist id="reviewPartOptions"></datalist>
+                <input id="reviewJobNum" list="reviewJobOptions" autocomplete="off" inputmode="text" placeholder="Optional job number">
+                <datalist id="reviewJobOptions"></datalist>
                 <select id="reviewOperationCode" aria-label="Ledger operation"></select>
                 <select id="reviewInspectionPhase" aria-label="Ledger inspection phase">
                   <option value="">All phases</option>
@@ -737,6 +731,17 @@
                 </select>
                 <input id="reviewFrom" type="datetime-local" aria-label="Ledger from date">
                 <input id="reviewTo" type="datetime-local" aria-label="Ledger to date">
+                <select id="reviewShift" aria-label="Ledger shift">
+                  <option value="">All shifts</option>
+                  <option>1st Half Days</option>
+                  <option>1st Half Nights</option>
+                  <option>2nd Half Days</option>
+                  <option>2nd Half Nights</option>
+                  <option>5 Day</option>
+                </select>
+                <select id="reviewMachine" aria-label="Ledger machine"></select>
+                <input id="reviewVariable" list="reviewVariableOptions" autocomplete="off" placeholder="All variables">
+                <datalist id="reviewVariableOptions"></datalist>
                 <button id="reviewLoadButton" type="button" class="secondary">Review Job</button>
                 <button id="ledgerExportXlsxButton" type="button" class="secondary">Export XLSX</button>
               </div>
@@ -755,15 +760,53 @@
             </div>
           </section>
 
+          <section id="historyQualityView" class="history-view hidden">
+            <h3>Part Quality</h3>
+            <form id="qualityForm" class="data-filter-grid">
+              <label>Part<input id="qualityPart" list="qualityPartOptions" autocomplete="off" required></label>
+              <datalist id="qualityPartOptions"></datalist>
+              <label>Job<input id="qualityJob" list="qualityJobOptions" autocomplete="off" placeholder="All jobs"></label>
+              <datalist id="qualityJobOptions"></datalist>
+              <label>Operation<select id="qualityOperation"></select></label>
+              <label>Phase<select id="qualityPhase"><option value="">All phases</option><option>Setup</option><option>Startup</option><option>In Process</option><option>Coil Change</option><option>Spool</option><option>End of Spool</option></select></label>
+              <label>Machine<select id="qualityMachine"></select></label>
+              <label>Shift<select id="qualityShift"><option value="">All shifts</option><option>1st Half Days</option><option>1st Half Nights</option><option>2nd Half Days</option><option>2nd Half Nights</option><option>5 Day</option></select></label>
+              <label>Variable<input id="qualityVariableFilter" list="qualityVariableOptions" autocomplete="off" placeholder="All variables"></label>
+              <datalist id="qualityVariableOptions"></datalist>
+              <label>From<input id="qualityFrom" type="datetime-local"></label>
+              <label>To<input id="qualityTo" type="datetime-local"></label>
+              <button type="submit" id="qualityLoad">Load Summary</button>
+            </form>
+            <p id="qualityMessage" class="message" role="status"></p>
+            <div id="qualityResults" class="hidden">
+              <h3 id="qualityPartHeading"></h3>
+              <dl id="qualityTotals" class="quality-totals"></dl>
+              <p id="qualityCoverage" class="message"></p>
+              <div class="panel-heading horizontal tight"><h3>Variables</h3><label class="quality-search">Find variable<input id="qualitySearch" type="search" autocomplete="off"></label></div>
+              <div class="quality-table-scroll"><table class="quality-table"><thead><tr><th>Variable</th><th>Operation</th><th>Inspections Checked</th><th>Failed</th><th>Failure Rate</th><th>Last Failure</th></tr></thead><tbody id="qualityVariables"></tbody></table></div>
+              <div class="panel-heading horizontal tight"><h3 id="qualityFailuresHeading">Variable Failures</h3>
+                <label class="quality-search">Variable<select id="qualityFailureVariable"><option value="">Select a variable</option></select></label>
+              </div>
+              <p id="qualityFailureMessage" class="message" role="status"></p>
+              <div id="qualityFailures"></div>
+              <div id="qualityFailurePager" class="quality-failure-pager hidden">
+                <button id="qualityFailuresPrevious" type="button" class="secondary">Previous</button>
+                <span id="qualityFailuresPage" role="status"></span>
+                <button id="qualityFailuresNext" type="button" class="secondary">Next</button>
+              </div>
+            </div>
+          </section>
+
           <section id="historyChartsView" class="history-view hidden">
             <div class="panel-heading tight">
               <h3>Charts</h3>
             </div>
-            <form id="reportForm" class="report-filter-form">
+            <form id="reportForm" class="report-filter-form data-filter-grid">
               <label>Part<input id="reportPartNum" list="partOptions" autocomplete="off"></label>
               <label>Job<input id="reportJobNum" list="jobOptions" autocomplete="off"></label>
               <label>Operation<select id="reportOperationCode"></select></label>
               <label>Machine<select id="reportResourceId"></select></label>
+              <label>Shift<select id="reportShift"></select></label>
               <label>Variable / Attribute<input id="reportCharacteristicName" list="reportCharacteristicOptions" autocomplete="off"></label>
               <datalist id="reportCharacteristicOptions"></datalist>
               <label>
@@ -791,32 +834,19 @@
               <button type="submit">Run Report</button>
             </form>
             <p id="reportMessage" class="message"></p>
+            <div class="chart-status-legend" aria-label="Chart point colors"><span class="chart-normal">Normal</span><span class="chart-watch">Watch</span><span class="chart-failed">Failed measurement</span></div>
             <div id="reportChartGrid" class="report-chart-grid"></div>
-          </section>
-
-          <section id="historyExportView" class="history-view hidden">
-            <div class="panel-heading tight">
-              <h3>Job Data Export</h3>
-            </div>
-            <form id="jobSummaryForm" class="job-summary-form">
-              <label>
-                Job Numbers
-                <input id="summaryJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="J100, J101">
-              </label>
-              <button type="submit">Pull Job Data</button>
-              <button id="jobSummaryCsvButton" type="button" class="secondary">CSV</button>
-            </form>
-            <p id="jobSummaryMessage" class="message"></p>
-            <div id="jobSummaryList" class="data-table empty">No job data loaded.</div>
           </section>
 
           <section id="historyIssuesView" class="history-view hidden">
             <div class="panel-heading tight">
-              <h3>Top Out-of-Spec / Drift Events</h3>
+              <h3>Top Out-of-Spec Events</h3>
             </div>
-            <form id="topIssuesForm" class="top-issues-form">
+            <form id="topIssuesForm" class="top-issues-form data-filter-grid">
               <label>Part<input id="topIssuesPartNum" list="partOptions" autocomplete="off" inputmode="text" placeholder="All parts"></label>
               <label>Job<input id="topIssuesJobNum" list="jobOptions" autocomplete="off" inputmode="text" placeholder="All jobs"></label>
+              <label>Operation<select id="topIssuesOperation"></select></label>
+              <label>Phase<select id="topIssuesPhase"></select></label>
               <label>Machine<select id="topIssuesResourceId"></select></label>
               <label>
                 Shift
@@ -845,11 +875,70 @@
               <button type="submit">Run Top Issues</button>
             </form>
             <p id="topIssuesMessage" class="message"></p>
-            <div id="topIssuesList" class="data-table empty">Run a top issues report to see repeat out-of-spec, drift, and rejected-attribute events.</div>
+            <div id="topIssuesList" class="data-table empty">Run a top issues report to see repeat out-of-spec and rejected-attribute events.</div>
           </section>
         </section>
       </section>
 
+      <section id="setupCertSection" class="setup-section hidden">
+        <section class="panel">
+          <div class="panel-heading horizontal">
+            <div>
+              <h2>Certificate Generation</h2>
+              <p>Preview certificate demand from approved shipment files before generating customer-ready cert workbooks.</p>
+            </div>
+          </div>
+          <form id="certPreviewForm" class="cert-preview-form">
+            <label>
+              Cert type
+              <select id="certType">
+                <option value="ethicon">Ethicon COA</option>
+                <option value="weldPin">Weld Pin Cert</option>
+              </select>
+            </label>
+            <div id="ethiconCertFields" class="cert-family-fields">
+              <label>
+                COA family
+              <select id="certFamily">
+                <option value="CE">CE / QF-E112</option>
+                <option value="TP">TP / QF-E113</option>
+              </select>
+              </label>
+              <label>
+                Ethicon shipment workbook
+                <input id="certShipmentFile" type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12">
+              </label>
+              <label>
+                Bihler shipment master
+                <input id="certMasterFile" type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12">
+              </label>
+            </div>
+            <div id="weldPinCertFields" class="cert-family-fields hidden">
+              <label>
+                Weld Pin request workbook
+                <input id="weldPinRequestFile" type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12">
+              </label>
+              <label>
+                Full-job Keyence CSV
+                <input id="weldPinKeyenceFile" type="file" accept=".csv,text/csv">
+              </label>
+            </div>
+            <button id="certPreviewButton" type="submit">Preview COAs</button>
+          </form>
+          <p id="certPreviewMessage" class="message"></p>
+          <div id="certPreviewSummary" class="cert-summary-grid hidden"></div>
+          <div id="certPreviewList" class="cert-preview-list empty">Load shipment files to preview required certs.</div>
+        </section>
+      </section>
+
+    </section>
+
+    <section id="adminPanel" class="hidden">
+      <div class="setup-nav">
+        <button id="setupArchiveSectionTab" type="button" class="setup-nav-button">Archive</button>
+        <button id="setupChangeHistorySectionTab" type="button" class="setup-nav-button">Change History</button>
+        <button id="setupNotesSectionTab" type="button" class="setup-nav-button">Notes</button>
+      </div>
       <section id="setupArchiveSection" class="setup-section hidden">
         <section class="panel">
           <div class="panel-heading horizontal">
@@ -860,11 +949,11 @@
           </div>
           <div class="archive-confirm-grid">
             <label>
-              Archon user
+              System Manager user
               <input id="manualBackupUserName" autocomplete="off" autocapitalize="none" spellcheck="false">
             </label>
             <label>
-              Archon password
+              System Manager password
               <input id="manualBackupPassword" type="password" autocomplete="off">
             </label>
             <button id="createManualBackupButton" type="button" class="secondary">Create Backup</button>
@@ -885,11 +974,11 @@
               <p>Keeps users, machines, parts, inspections, rules, specs, and control limits. Removes jobs, measurements, notes, locks, overrides, material changes, tags, and other history records.</p>
               <div class="stacked-form compact-form">
                 <label>
-                  Archon user
+                  System Manager user
                   <input id="clearHistoryUserName" autocomplete="off" autocapitalize="none" spellcheck="false">
                 </label>
                 <label>
-                  Archon password
+                  System Manager password
                   <input id="clearHistoryPassword" type="password" autocomplete="off">
                 </label>
                 <label>
@@ -905,11 +994,11 @@
               <p>Restores the newest database backup from the backup folder. The current database is quarantined first, then the live system reloads from that backup.</p>
               <div class="stacked-form compact-form">
                 <label>
-                  Archon user
+                  System Manager user
                   <input id="restoreBackupUserName" autocomplete="off" autocapitalize="none" spellcheck="false">
                 </label>
                 <label>
-                  Archon password
+                  System Manager password
                   <input id="restoreBackupPassword" type="password" autocomplete="off">
                 </label>
                 <label>
@@ -961,8 +1050,75 @@
           <div id="archiveResultPanel" class="archive-result-panel hidden"></div>
         </section>
       </section>
+      <section id="setupNotesSection" class="setup-section hidden">
+        <section class="panel">
+          <h2>Job Notes</h2>
+          <form id="adminNotesFilterForm" class="admin-notes-filters">
+            <label>Search<input id="adminNotesSearch" type="search" autocomplete="off"></label>
+            <label>Part<input id="adminNotesPart" autocomplete="off"></label>
+            <label>Job<input id="adminNotesJob" autocomplete="off"></label>
+            <label>Machine<input id="adminNotesMachine" autocomplete="off"></label>
+            <label>Posted by<input id="adminNotesUser" autocomplete="off"></label>
+            <label>Replied by<input id="adminNotesRepliedBy" autocomplete="off"></label>
+            <label class="admin-notes-date">From<input id="adminNotesFrom" type="datetime-local"></label>
+            <label class="admin-notes-date">To<input id="adminNotesTo" type="datetime-local"></label>
+            <div class="admin-notes-actions">
+              <button type="submit" class="secondary">Show Notes</button>
+              <button type="reset" class="secondary">Clear Filters</button>
+            </div>
+          </form>
+          <p id="adminNotesMessage" class="message" role="status"></p>
+          <div class="admin-notes-scroll">
+            <table class="admin-notes-table">
+              <thead><tr><th>Date / Time</th><th>Job</th><th>Part</th><th>Machine</th><th>Posted By</th><th>Note</th></tr></thead>
+              <tbody id="adminNotesRows"></tbody>
+            </table>
+          </div>
+          <div id="adminNotesPager" class="change-history-pager hidden">
+            <button id="adminNotesPrevious" type="button" class="secondary">Previous</button>
+            <span id="adminNotesPage" role="status"></span>
+            <button id="adminNotesNext" type="button" class="secondary">Next</button>
+          </div>
+        </section>
+      </section>
+      <section id="setupChangeHistorySection" class="setup-section hidden">
+        <section class="panel">
+          <h2>Change History</h2>
+          <form id="changeHistoryFilterForm" class="change-history-filters">
+            <label>Search<input id="changeHistorySearch" type="search" autocomplete="off"></label>
+            <label>Changed by<input id="changeHistoryUser" autocomplete="off"></label>
+            <label>Area<select id="changeHistoryArea"><option value="">All areas</option><option>Parts &amp; Inspections</option><option>Users</option><option>Machines</option><option>Rules</option><option>Imports</option><option>Inspection Corrections</option><option>Admin</option></select></label>
+            <label>Part<input id="changeHistoryPart" autocomplete="off"></label>
+            <label>From<input id="changeHistoryFrom" type="datetime-local"></label>
+            <label>To<input id="changeHistoryTo" type="datetime-local"></label>
+            <button type="submit" class="secondary">Show Changes</button>
+            <button id="changeHistoryExport" type="button" class="secondary">Export CSV</button>
+          </form>
+          <p id="changeHistoryMessage" class="message" role="status"></p>
+          <div class="change-history-scroll"><table class="change-history-table">
+            <thead><tr><th>Date / Time</th><th>Changed By</th><th>Area</th><th>Change</th></tr></thead>
+            <tbody id="changeHistoryRows"></tbody>
+          </table></div>
+          <div id="changeHistoryPager" class="change-history-pager hidden">
+            <button id="changeHistoryPrevious" type="button" class="secondary">Previous</button>
+            <span id="changeHistoryPage" role="status"></span>
+            <button id="changeHistoryNext" type="button" class="secondary">Next</button>
+          </div>
+        </section>
+      </section>
     </section>
   </main>
+  <dialog id="sessionSignInDialog" class="session-signin-dialog" aria-labelledby="sessionSignInTitle" aria-describedby="sessionSignInDescription">
+    <form id="sessionSignInForm">
+      <h2 id="sessionSignInTitle">Sign In Required</h2>
+      <p id="sessionSignInDescription">Your session is no longer valid. Sign in to continue. Your unsaved entries are still on this screen.</p>
+      <label>User<input id="sessionSignInUser" readonly autocomplete="username"></label>
+      <label>Password<input id="sessionSignInPassword" type="password" required autocomplete="current-password"></label>
+      <button type="submit">Sign In</button>
+      <p id="sessionSignInMessage" class="message" role="status"></p>
+      <button id="sessionSignOutButton" type="button" class="secondary">Sign Out</button>
+    </form>
+  </dialog>
   <section id="gettingStartedModal" class="modal-backdrop hidden">
     <div class="panel app-modal">
       <div class="panel-heading horizontal">
@@ -977,157 +1133,177 @@
         <button id="sopSpanishButton" type="button" class="compact-button sop-language-button">Español</button>
       </div>
       <div id="sopEnglishBody" class="sop-body">
-        <h3>Purpose</h3>
-        <p>This SOP explains how operators should use SPC-Star to enter inspection results, record job information, and respond to inspection issues during production.</p>
-
-        <h3>Scope</h3>
-        <p>This applies to operators using SPC-Star during startup, setup, in-process, spool, or other assigned inspections.</p>
-
-        <h3>1. Log in</h3>
-        <ol>
-          <li>Open SPC-Star.</li>
-          <li>Enter your username.</li>
-          <li>Enter your password.</li>
-          <li>Select your correct shift.</li>
-          <li>Click Sign In.</li>
-        </ol>
-        <p>If you cannot log in, contact your line tech, QA, or supervisor.</p>
-
-        <h3>2. Start a job inspection</h3>
-        <ol>
-          <li>Enter the job number.</li>
-          <li>Select the machine you are running.</li>
-          <li>Enter or scan the part number.</li>
-          <li>Select the correct operation.</li>
-          <li>Select the correct inspection phase.</li>
-          <li>Click Load.</li>
-        </ol>
-        <p>SPC-Star will load the inspection items required for that part, operation, and inspection phase.</p>
-
-        <h3>3. Enter job data</h3>
-        <p>Complete any required job data fields shown on the screen. These may include lot numbers, coil numbers, wire shipment numbers, serial numbers, spool numbers, or other required job information.</p>
-        <p>Some job data may stay the same during the job. Update it when the material, coil, spool, lot, or required job information changes.</p>
-
-        <h3>4. Record measurements and attributes</h3>
-        <p>For measured variables, enter the required measurement in each field, use the correct gauge, tool, or inspection device listed, and follow the required sample size shown for that inspection item.</p>
-        <p>For accept/reject attributes, select the lot disposition. If one required attribute fails, reject the attribute for that inspection.</p>
-        <p>Do not skip required fields. If a field is required, SPC-Star will not allow the inspection to continue until it is completed.</p>
-
-        <h3>5. Out-of-spec or process drift alerts</h3>
-        <p>If SPC-Star detects an out-of-spec measured value or a rejected attribute, the inspection will lock. Process drift is shown as a warning beside the inspection item so it can be reviewed before parts move out of specification.</p>
-        <ol>
-          <li>Stop entering inspection data if a lock screen appears.</li>
-          <li>Notify a line tech, QA, or supervisor.</li>
-          <li>Do not continue production inspection entries on a locked inspection until the issue is reviewed.</li>
-          <li>The authorized person must review the issue, document the cause and solution when required, and unlock or end the failed inspection.</li>
-        </ol>
-        <p>Do not attempt to bypass or ignore a lockout. If the inspection failed partway through, the authorized response is to end the current inspection as failed and start a fresh inspection.</p>
-
-        <h3>6. Material changes</h3>
-        <ol>
-          <li>Enter the new material lot information in the material section.</li>
-          <li>Confirm the information is correct before continuing inspections.</li>
-          <li>Add a note if there was an issue, concern, or special circumstance related to the material change.</li>
-        </ol>
-
-        <h3>7. Job notes</h3>
-        <p>Use job notes to record important information that may help the next operator, line tech, QA, or supervisor.</p>
-        <p>Examples include machine issues, tooling changes, material concerns, inspection problems, corrective actions, setup concerns, or anything unusual during the job.</p>
-        <p>Notes should be clear, factual, and professional.</p>
-
-        <h3>8. Review job history</h3>
-        <p>The job history area shows inspection activity, notes, lock events, material changes, machine counter records, and other job records. Operators should review the history when taking over a job or when trying to understand recent issues.</p>
-        <p>The inspection capability and trend areas use saved job history for the loaded job, machine, operation, phase, and inspection item. The colored status on the inspection card reflects the current entry being made.</p>
-
-        <h3>9. Sign out</h3>
-        <ol>
-          <li>Confirm your measurement entries, required job data, and Machine Counter are complete.</li>
-          <li>Click Submit Inspection when the inspection is complete.</li>
-          <li>Add any needed job notes.</li>
-          <li>Click Sign Out.</li>
-        </ol>
-        <p>Always sign out so the next user does not enter inspection data under your name.</p>
-
-        <h3>10. Questions or problems</h3>
-        <p>If SPC-Star does not load correctly, shows the wrong inspection items, rejects an entry, or displays information that does not match the inspection plan, notify a line tech, QA, or supervisor.</p>
-        <p>Do not guess or enter incorrect information to move forward.</p>
-      </div>
+<p>Updated October 21, 2026.</p>
+<p>Use this procedure to load a job, record its inspections, correct entry mistakes and report problems.</p>
+<h3>1. Open SPC-Star and sign in</h3>
+<p>Open the SPC-Star address provided for your work area. The sign-in page has Operator SOP, Line Tech SOP and QA SOP buttons. Select English or Spanish in the open SOP.</p>
+<ol>
+<li>Enter your own User name and Password.</li>
+<li>Select the Shift you are actually working and click Sign In.</li>
+<li>Check your name at the top. Never enter inspections under another person&#39;s account or share your password.</li>
+</ol>
+<p>Use Change password on the sign-in page to change your password: enter your username, current password and new password twice, then Save password. Ask QA for a reset if you cannot sign in.</p>
+<h3>2. Select and load the correct inspection</h3>
+<ol>
+<li>In Inspect, enter Job Number and select the Machine you are running.</li>
+<li>Enter or scan Part Number. Part and job suggestions narrow to matching records. If the intended job is absent, check the number with your line tech; do not use a different job.</li>
+<li>Select the Operation for the work performed. A separate operation, such as Test Polish, has its own inspections.</li>
+<li>Select the required Inspection Phase and click Load.</li>
+<li>Check the job, machine, part, operation and phase above Inspection Items before entering results.</li>
+</ol>
+<p>Complete and submit the required initial inspection before moving to the next phase. If SPC-Star blocks a phase, read the message and finish the missing inspection. Setup, Startup, In Process, Coil Change, Spool and End of Spool are not interchangeable. Not every operation uses every phase. Do not select an unrelated phase to bypass a blocked inspection.</p>
+<h3>3. Save job data and issue materials</h3>
+<p>Complete the part-specific fields under Job Data. Click Save Job Data and check the confirmation. For Wire Shipment Number, compare the number with the material identification before saving. Job data remains across phases and later sign-ins until changed and saved.</p>
+<ol>
+<li>In Materials, read every material name, part number and description.</li>
+<li>At job start, enter each required lot and select Material issue at job start. Click Save Material Lot.</li>
+<li>Check that Current lot shows the saved lot for every required row. Required initial lots must be saved before inspection entry begins.</li>
+<li>When material changes, enter the replacement lot in the correct row, select Material change and click Save Material Lot. Check Current lot again.</li>
+</ol>
+<p>Separate rows require separate entries, including internal and supplier lot fields for the same part. Saved lots remain valid across phases and sign-ins until replaced. Do not reissue unchanged lots for every inspection. Ask your line tech or QA to arrange a recorded correction if a saved lot is wrong.</p>
+<h3>4. Enter Machine Counter and Box</h3>
+<p>Enter the current Machine Counter completely. Read the message directly beside it: it shows whether inspection is due or the next count at which it is due. Press Tab or Enter to continue through the displayed inspection order. Different items can have different frequencies; follow their due messages.</p>
+<p>Enter the complete Box # when required. Use Tab or Enter when finished. These are count/identification fields, not dimensions. Do not change a count to force a different inspection schedule.</p>
+<p>Use the machine&#39;s actual counter, not a count starting at zero for the job. A job can begin at any number. Counts must not go backward. After a tooling changeover, perform the required Setup and Startup before resuming In Process.</p>
+<p>Quantity checks stack from the run&#39;s starting counter. For example, if the starting counter is 100 and checks are required every 2,000, 4,000 and 8,000 parts: at 2,100 do the 2,000 checks; at 4,100 do the 2,000 and 4,000 checks; at 8,100 do all three groups. Use the frequencies displayed for your part. A late inspection or Coil Change does not move these scheduled points. Follow the separate repeat instructions below after a failure.</p>
+<h3>5. Read the inspection item</h3>
+<p>Work in the displayed order. Read the item name, requirement, tool, unit, phase, sample size and frequency. Check the sample labels for sides, legs, spindles or other locations so each reading goes in the correct field.</p>
+<p>LSL is the lowest acceptable reading and USL the highest. A reading equal to either limit passes. A minimum-only item has no upper limit; a maximum-only item has no lower limit. A blank Target is not a missing operator entry. LCL/UCL, if shown, are process-control limits, not substitutes for specification limits.</p>
+<p>If a requirement, limit, sample count or phase looks wrong, stop and ask your line tech or QA. Do not invent a limit or enter a convenient number to continue.</p>
+<h3>6. Enter measurements and attributes</h3>
+<ol>
+<li>Measure with the listed tool and enter the actual reading, including decimal places and trailing zeros.</li>
+<li>If a decimal prefix is provided, complete that reading rather than adding a second prefix. Device-fed fields should receive the full device reading without an added prefix.</li>
+<li>A dimension advances after the expected decimals and a one-second pause. Another digit restarts the pause. Tab or Enter finishes the entry when needed, including readings with fewer digits. Check the value before moving on.</li>
+<li>For an attribute, inspect the required quantity and select one Accept or Reject for the lot. Any checked piece failing requires Reject. The choice advances to the next entry.</li>
+<li>Complete every required sample and location. Never copy a reading into another sample unless it is that sample&#39;s actual result.</li>
+</ol>
+<p>For a keyboard-connected indicator, select the sample field and send the reading. If Connect Gauge appears for a configured serial gauge, click it, choose the assigned device and check the connection status. Use Disconnect when finished. If a reading appears in the wrong field or is joined to an existing prefix, stop and ask for help; do not change device settings yourself.</p>
+<p>Where Hole Diameter uses a pin entry, use the assigned gage block and enter the pin used. SPC-Star stores that pin&#39;s configured diameter. Pins 1 through 6 pass; pin 7 fails. Where Removal is calculated, enter the matching Raw and Polished readings and check the calculated result; do not overwrite it.</p>
+<h3>7. Understand the colored rail</h3>
+<p>Green OK means the current result is acceptable. Yellow WATCH means the configured rule detected drift or a result near a limit. Read its reason and notify your line tech or QA. WATCH alone does not lock inspection; it returns to OK when the configured recovery conditions are met.</p>
+<p>Red means a failed reading or rejected attribute. Corrected entries are evaluated using their new values. Grey NEW or EDIT is not proof of acceptance or submission; read any message and finish or correct the entry.</p>
+<h3>8. Correct an entry mistake after a lock</h3>
+<ol>
+<li>Read the lock message to identify the item and failed value.</li>
+<li>For your own mistaken entry, not an actual bad part, select User Error yourself. Enter your own username and password and click Clear Lock. You do not need Line Tech access to correct your own entry mistake.</li>
+<li>Correct the reading immediately and continue that same inspection. User Error does not count as a failed inspection.</li>
+</ol>
+<p>Do not use User Error to accept a genuinely out-of-spec part. If the lock remains or correction is not possible, read the error and ask your line tech or QA. Do not keep trying to submit against an active lock.</p>
+<h3>9. Record an actual failed inspection</h3>
+<ol>
+<li>Stop entry and call your Line Tech for an actual failed inspection.</li>
+<li>The Line Tech selects Machine, Tooling or Material, enters factual Cause details and Action taken, and enters their username/password to sign off.</li>
+<li>The Line Tech clicks End Failed Inspection. Check the confirmation and fresh blank inspection for the same job, operation and phase. Ask QA to review the saved failure if confirmation is unclear.</li>
+<li>An operator may perform this signoff and enter the failure details only if their supervisor has approved Line Tech access and that access is assigned to their account. Otherwise the Line Tech must do it.</li>
+</ol>
+<p>These causes do not allow Clear Lock. Resolve the actual process problem and follow work instructions before starting again. Ending a failed inspection does not authorize release of nonconforming parts.</p>
+<p>After resolving the problem, repeat the failed inspection immediately at the current Machine Counter, even if that count has not changed. Do not wait for the next scheduled count. The failed inspection does not satisfy the requirement; successful submission of the repeat returns it to the normal schedule.</p>
+<p>If the inspection has genuinely failed but no lock is open, the red End Inspection button opens the same failure form. Have the Line Tech enter the details and sign off as above. This records a failure; it is not a cancel or pause button.</p>
+<h3>10. Submit and verify</h3>
+<ol>
+<li>Check Machine Counter, Box # when required, saved job data/materials and every required sample.</li>
+<li>Click Submit Inspection once and wait for the success confirmation.</li>
+<li>Read the submission message. If it shows an error or does not confirm success, stop and notify your line tech or QA.</li>
+<li>Start the next inspection only after receiving the success confirmation.</li>
+</ol>
+<p>Numbering continues for the same job, operation and phase after sign-in on another day. Green fields or readings on screen do not mean the inspection was submitted. If submission fails, follow the message or contact your line tech/QA. Do not create a replacement inspection until you know the first one&#39;s status.</p>
+<h3>11. Trend and job notes</h3>
+<p>Trend shows saved job readings for the selected variable. Select the variable and chart type to review changes over the job. Job Capability summarizes saved measurements; it does not authorize accepting an individual bad reading. Ask your line tech or QA to investigate a concerning trend.</p>
+<p>Use the Note field on the inspection screen and click Submit Note. Check the save confirmation. Notes remain associated with the job across phases and can explain adjustments, repairs or concerns. Ask QA to review saved records when needed. Notes do not replace the failure form&#39;s cause and action fields.</p>
+<p>Read notes and responses in Job History on the Inspect screen. A note with a new response moves to the top when Job History is loaded again, including after submitting an inspection. The original note keeps its author and date; the response shows who replied and when. Replies do not appear automatically while you leave the screen unchanged. Reload the job when no inspection entry is in progress to check for responses. Operators do not have access to the separate Data reporting tabs.</p>
+<h3>12. Handoff, connection problems and sign out</h3>
+<p>Before leaving, make sure you received the success confirmations for submitted inspections, material changes and notes. Tell the next operator about unfinished work or unresolved issues. Do not assume an unfinished entry transferred to another device or was submitted; ask QA to confirm saved status before re-entering anything.</p>
+<p>If SPC-Star is offline or reports pending/rejected entries, stop and notify your line tech or QA. After the connection returns, have QA confirm saved status before continuing. Never assume a pending entry is saved.</p>
+<p>Click Sign Out when finished or handing over the station. The next person must use their own account.</p>
+<p>A browser refresh or routine server restart normally keeps a valid sign-in. If Sign In Required appears, enter your own password in that prompt. Your current entries stay on the screen. After signing in, retry the save or submission that was interrupted; it is not sent automatically. Do not refresh or sign out to dismiss the prompt, because that can discard unsaved work.</p>
+</div>
       <div id="sopSpanishBody" class="sop-body hidden" lang="es">
-        <h3>Propósito</h3>
-        <p>Este SOP explica cómo los operadores deben usar SPC-Star para ingresar resultados de inspección, registrar información del trabajo y responder a problemas de inspección durante la producción.</p>
-
-        <h3>Alcance</h3>
-        <p>Esto aplica a operadores que usan SPC-Star durante inspecciones de arranque, preparación, en proceso, carrete u otras inspecciones asignadas.</p>
-
-        <h3>1. Iniciar sesión</h3>
-        <ol>
-          <li>Abra SPC-Star.</li>
-          <li>Ingrese su nombre de usuario.</li>
-          <li>Ingrese su contraseña.</li>
-          <li>Seleccione su turno correcto.</li>
-          <li>Haga clic en Sign In.</li>
-        </ol>
-        <p>Si no puede iniciar sesión, contacte a su técnico de línea, QA o supervisor.</p>
-
-        <h3>2. Iniciar una inspección de trabajo</h3>
-        <ol>
-          <li>Ingrese el número de trabajo.</li>
-          <li>Seleccione la máquina que está operando.</li>
-          <li>Ingrese o escanee el número de parte.</li>
-          <li>Seleccione la operación correcta.</li>
-          <li>Seleccione la fase de inspección correcta.</li>
-          <li>Haga clic en Load.</li>
-        </ol>
-        <p>SPC-Star cargará los puntos de inspección requeridos para esa parte, operación y fase de inspección.</p>
-
-        <h3>3. Ingresar datos del trabajo</h3>
-        <p>Complete cualquier campo requerido que aparezca en la pantalla. Esto puede incluir números de lote, números de bobina, números de embarque de alambre, números de serie, números de carrete u otra información requerida del trabajo.</p>
-        <p>Algunos datos del trabajo pueden permanecer iguales durante el trabajo. Actualícelos cuando cambie el material, bobina, carrete, lote u otra información requerida.</p>
-
-        <h3>4. Registrar mediciones y atributos</h3>
-        <p>Para variables medidas, ingrese la medición requerida en cada campo, use el calibrador, herramienta o dispositivo de inspección listado, y siga el tamaño de muestra requerido para ese punto de inspección.</p>
-        <p>Para atributos de aceptar/rechazar, seleccione la disposición del lote. Si un atributo requerido falla, rechace el atributo para esa inspección.</p>
-        <p>No omita campos requeridos. Si un campo es requerido, SPC-Star no permitirá continuar la inspección hasta que esté completo.</p>
-
-        <h3>5. Alertas fuera de especificación o deriva del proceso</h3>
-        <p>Si SPC-Star detecta una medición fuera de especificación o un atributo rechazado, la inspección se bloqueará. La deriva del proceso se muestra como advertencia junto al punto de inspección para que pueda revisarse antes de que las piezas salgan de especificación.</p>
-        <ol>
-          <li>Deje de ingresar datos si aparece una pantalla de bloqueo.</li>
-          <li>Notifique a un técnico de línea, QA o supervisor.</li>
-          <li>No continúe ingresando inspecciones en una inspección bloqueada hasta que el problema sea revisado.</li>
-          <li>La persona autorizada debe revisar el problema, documentar la causa y solución cuando sea requerido, y desbloquear o terminar la inspección fallida.</li>
-        </ol>
-        <p>No intente evitar o ignorar un bloqueo. Si la inspección falló a mitad del proceso, la respuesta autorizada es terminar la inspección actual como fallida y empezar una inspección nueva.</p>
-
-        <h3>6. Cambios de material</h3>
-        <ol>
-          <li>Ingrese la nueva información de lote de material en la sección de materiales.</li>
-          <li>Confirme que la información sea correcta antes de continuar con las inspecciones.</li>
-          <li>Agregue una nota si hubo un problema, inquietud o circunstancia especial relacionada con el cambio de material.</li>
-        </ol>
-
-        <h3>7. Notas del trabajo</h3>
-        <p>Use las notas del trabajo para registrar información importante que pueda ayudar al siguiente operador, técnico de línea, QA o supervisor.</p>
-        <p>Ejemplos incluyen problemas de máquina, cambios de herramental, inquietudes de material, problemas de inspección, acciones correctivas, problemas de preparación o cualquier situación inusual durante el trabajo.</p>
-        <p>Las notas deben ser claras, objetivas y profesionales.</p>
-
-        <h3>8. Revisar historial del trabajo</h3>
-        <p>El área de historial del trabajo muestra actividad de inspección, notas, eventos de bloqueo, cambios de material, registros del contador de máquina y otros registros del trabajo. Los operadores deben revisar el historial al tomar un trabajo o cuando intentan entender problemas recientes.</p>
-        <p>Las áreas de capacidad y tendencia usan el historial guardado para el trabajo, máquina, operación, fase y punto de inspección cargados. El color de la tarjeta de inspección refleja la entrada actual que se está haciendo.</p>
-
-        <h3>9. Cerrar sesión</h3>
-        <ol>
-          <li>Confirme que sus mediciones, datos requeridos del trabajo y Machine Counter estén completos.</li>
-          <li>Haga clic en Submit Inspection cuando la inspección esté completa.</li>
-          <li>Agregue cualquier nota necesaria del trabajo.</li>
-          <li>Haga clic en Sign Out.</li>
-        </ol>
-        <p>Siempre cierre sesión para que el siguiente usuario no ingrese datos de inspección bajo su nombre.</p>
-
-        <h3>10. Preguntas o problemas</h3>
-        <p>Si SPC-Star no carga correctamente, muestra puntos de inspección incorrectos, rechaza una entrada o muestra información que no coincide con el plan de inspección, notifique a un técnico de línea, QA o supervisor.</p>
-        <p>No adivine ni ingrese información incorrecta para continuar.</p>
-      </div>
+<p>Actualizado el 21 de octubre de 2026.</p>
+<p>Use este procedimiento para cargar un trabajo, registrar inspecciones, corregir errores de entrada e informar problemas.</p>
+<h3>1. Abrir SPC-Star e iniciar sesión</h3>
+<p>Abra la dirección de SPC-Star indicada para su área. La pantalla inicial ofrece Operator SOP, Line Tech SOP y QA SOP. Seleccione English o Spanish dentro del documento. Los nombres de botones se conservan como aparecen en el programa.</p>
+<ol>
+<li>Introduzca su propio User y Password.</li>
+<li>Seleccione el Shift que realmente está trabajando y pulse Sign In.</li>
+<li>Compruebe su nombre arriba. Nunca registre inspecciones en la cuenta de otra persona ni comparta su contraseña.</li>
+</ol>
+<p>Para cambiar la contraseña, seleccione Change password en la pantalla inicial. Introduzca usuario, contraseña actual y la nueva dos veces; pulse Save password. Si no puede entrar, solicite a QA un restablecimiento.</p>
+<h3>2. Seleccionar y cargar la inspección correcta</h3>
+<ol>
+<li>En Inspect, introduzca Job Number y seleccione la Machine que utiliza.</li>
+<li>Introduzca o escanee Part Number. Las sugerencias de pieza y trabajo muestran registros relacionados. Si no aparece el trabajo esperado, confirme el número con el técnico; no elija otro trabajo.</li>
+<li>Seleccione la Operation del trabajo realizado. Una operación distinta, como Test Polish, tiene sus propias inspecciones.</li>
+<li>Seleccione Inspection Phase y pulse Load.</li>
+<li>Verifique trabajo, máquina, pieza, operación y fase sobre Inspection Items antes de registrar resultados.</li>
+</ol>
+<p>Complete y envíe la inspección inicial requerida antes de pasar a la siguiente fase. Si SPC-Star bloquea una fase, lea el mensaje y termine la inspección pendiente. Setup, Startup, In Process, Coil Change, Spool y End of Spool no son intercambiables. No todas las operaciones usan todas las fases. No seleccione una fase ajena para evitar el bloqueo.</p>
+<h3>3. Guardar datos del trabajo y lotes</h3>
+<p>Complete los campos específicos en Job Data. Pulse Save Job Data y compruebe la confirmación. Para Wire Shipment Number, compare el número con la identificación del material. Los datos permanecen entre fases e inicios de sesión hasta que se cambien y guarden.</p>
+<ol>
+<li>En Materials, lea el nombre, número de pieza y descripción de cada fila.</li>
+<li>Al comenzar el trabajo, introduzca cada lote requerido y seleccione Material issue at job start. Pulse Save Material Lot.</li>
+<li>Compruebe Current lot en todas las filas requeridas. Los lotes iniciales deben estar guardados antes de comenzar la inspección.</li>
+<li>Cuando cambie el material, introduzca el nuevo lote en su fila, seleccione Material change y pulse Save Material Lot. Revise Current lot nuevamente.</li>
+</ol>
+<p>Cada fila requiere su propio dato, incluso los campos de lote interno y de proveedor de la misma pieza. Los lotes guardados siguen vigentes entre fases y sesiones hasta reemplazarlos. No vuelva a registrar un lote sin cambios en cada inspección. Pida al técnico o QA una corrección registrada si un lote guardado es incorrecto.</p>
+<h3>4. Introducir Machine Counter y Box</h3>
+<p>Introduzca el Machine Counter completo. Lea el mensaje inmediatamente a su lado: indica si corresponde inspeccionar o el próximo conteo requerido. Tab o Enter continúa según el orden mostrado. Distintos elementos pueden tener frecuencias diferentes; siga sus mensajes.</p>
+<p>Introduzca el Box # completo cuando corresponda. Use Tab o Enter al terminar. Son campos de conteo/identificación, no dimensiones. No cambie un conteo para forzar otro calendario de inspección.</p>
+<p>Use el contador real de la máquina, no un conteo desde cero para el trabajo. El trabajo puede comenzar en cualquier número. El conteo no debe retroceder. Después de un cambio de herramental, realice Setup y Startup requeridos antes de continuar In Process.</p>
+<p>Los controles por cantidad se acumulan desde el contador inicial de la corrida. Por ejemplo, con inicio en 100 y frecuencias de 2,000, 4,000 y 8,000 piezas: en 2,100 haga los controles de 2,000; en 4,100 los de 2,000 y 4,000; en 8,100 los tres grupos. Use las frecuencias indicadas para su pieza. Una inspección tardía o Coil Change no desplaza estos puntos. Para una falla, siga las instrucciones de repetición abajo.</p>
+<h3>5. Leer el elemento de inspección</h3>
+<p>Siga el orden mostrado. Lea nombre, requisito, herramienta, unidad, fase, tamaño de muestra y frecuencia. Compruebe las etiquetas de lados, patas, husillos u otras posiciones para registrar cada lectura en su campo.</p>
+<p>LSL es la lectura mínima aceptable y USL la máxima. Un valor igual al límite pasa. Un requisito de mínimo solamente no tiene límite superior; uno de máximo solamente no tiene inferior. Un Target vacío no requiere que el operador lo complete. LCL/UCL, si aparecen, son límites de control del proceso, no sustitutos de los límites de especificación.</p>
+<p>Si un requisito, límite, muestra o fase parece incorrecto, deténgase y consulte al técnico o QA. No invente límites ni escriba un número conveniente para continuar.</p>
+<h3>6. Introducir mediciones y atributos</h3>
+<ol>
+<li>Mida con la herramienta indicada e introduzca el valor real, incluidos decimales y ceros finales.</li>
+<li>Si hay un prefijo decimal, complete esa lectura sin agregar otro prefijo. Los campos alimentados por dispositivo deben recibir la lectura completa sin un prefijo adicional.</li>
+<li>Una dimensión avanza después de los decimales esperados y una pausa de un segundo. Otro dígito reinicia la pausa. Tab o Enter termina la entrada cuando sea necesario, incluso con menos dígitos. Revise el valor antes de continuar.</li>
+<li>Para atributos, inspeccione la cantidad requerida y seleccione un Accept o Reject para el lote. Si falla cualquier pieza revisada, seleccione Reject. La selección avanza al siguiente campo.</li>
+<li>Complete cada muestra y posición requerida. No copie lecturas a otras muestras salvo que sean sus resultados reales.</li>
+</ol>
+<p>Para un indicador conectado como teclado, seleccione la muestra y transmita la lectura. Si aparece Connect Gauge para un medidor serial configurado, púlselo, elija el dispositivo asignado y compruebe su estado. Use Disconnect al terminar. Si el dato aparece en otro campo o unido a un prefijo, deténgase y pida ayuda; no cambie la configuración del dispositivo.</p>
+<p>Cuando Hole Diameter use entrada de pasador, utilice el bloque asignado e introduzca el pasador usado. SPC-Star guarda su diámetro configurado. Los pasadores 1 a 6 pasan; el 7 falla. Cuando Removal sea calculado, introduzca Raw y Polished correspondientes y revise el resultado; no lo sobrescriba.</p>
+<h3>7. Interpretar la franja de color</h3>
+<p>Verde OK significa resultado actual aceptable. Amarillo WATCH indica deriva o proximidad a un límite según la regla configurada. Lea la razón y avise al técnico o QA. WATCH por sí solo no bloquea; vuelve a OK al cumplir la recuperación configurada.</p>
+<p>Rojo significa lectura fallida o atributo rechazado. Una corrección se evalúa con el nuevo valor. Gris NEW o EDIT no confirma aceptación ni envío; lea el mensaje y complete o corrija la entrada.</p>
+<h3>8. Corregir un error de entrada bloqueado</h3>
+<ol>
+<li>Lea el mensaje para identificar elemento y valor fallido.</li>
+<li>Para un error de entrada propio, no una pieza realmente mala, seleccione User Error usted mismo. Introduzca su usuario y contraseña y pulse Clear Lock. No necesita acceso Line Tech para corregir su propio error.</li>
+<li>Corrija la lectura inmediatamente y continúe la misma inspección. User Error no cuenta como inspección fallida.</li>
+</ol>
+<p>No use User Error para aceptar producto realmente fuera de especificación. Si el bloqueo permanece o no puede corregir, lea el mensaje y consulte al técnico o QA. No siga intentando enviar contra un bloqueo activo.</p>
+<h3>9. Registrar una inspección realmente fallida</h3>
+<ol>
+<li>Detenga la entrada y llame al Line Tech por una falla real.</li>
+<li>El Line Tech selecciona Machine, Tooling o Material, completa Cause details y Action taken con hechos e introduce su usuario/contraseña para aprobar la falla.</li>
+<li>El Line Tech pulsa End Failed Inspection. Compruebe confirmación e inspección vacía del mismo trabajo, operación y fase. Si el estado no es claro, solicite a QA revisar la falla guardada.</li>
+<li>Un operador solo puede registrar los detalles y aprobar la falla si su supervisor autorizó acceso Line Tech y ese acceso está asignado a su cuenta. En caso contrario debe hacerlo el Line Tech.</li>
+</ol>
+<p>Estas categorías no permiten Clear Lock. Resuelva el problema real y siga las instrucciones antes de comenzar de nuevo. Terminar una inspección fallida no autoriza liberar producto no conforme.</p>
+<p>Después de resolver el problema, repita la inspección inmediatamente con el Machine Counter actual, aunque no haya cambiado. No espere el próximo conteo programado. Una falla no satisface el requisito; enviar correctamente la repetición restablece el calendario normal.</p>
+<p>Si realmente falló pero no hay bloqueo abierto, End Inspection rojo abre el mismo formulario. El Line Tech introduce los detalles y aprueba como se indicó. Registra una falla; no sirve para cancelar o pausar.</p>
+<h3>10. Enviar y verificar</h3>
+<ol>
+<li>Revise Machine Counter, Box # cuando corresponda, datos/lotes guardados y todas las muestras.</li>
+<li>Pulse Submit Inspection una vez y espere la confirmación de éxito.</li>
+<li>Lea el mensaje de envío. Si muestra un error o no confirma éxito, deténgase y avise al técnico o QA.</li>
+<li>Comience la siguiente solamente después de recibir confirmación de éxito.</li>
+</ol>
+<p>La numeración continúa para el mismo trabajo, operación y fase al volver a entrar otro día. Campos verdes o lecturas en pantalla no significan que se envió. Si falla el envío, siga el mensaje o consulte al técnico/QA. No cree una inspección de reemplazo sin conocer el estado de la anterior.</p>
+<h3>11. Trend y notas</h3>
+<p>Trend muestra lecturas guardadas del trabajo para la variable seleccionada. Elija variable y tipo de gráfico para revisar cambios. Job Capability resume mediciones; no autoriza aceptar una lectura mala. Consulte al técnico o QA sobre tendencias preocupantes.</p>
+<p>Use el campo Note de la pantalla de inspección y pulse Submit Note. Compruebe la confirmación. Las notas permanecen asociadas al trabajo entre fases y explican ajustes, reparaciones o problemas. Solicite a QA revisar registros guardados cuando haga falta. No sustituyen causa y acción en el formulario de falla.</p>
+<p>Lea notas y respuestas en Job History de Inspect. Una nota con respuesta nueva pasa al principio cuando se carga nuevamente Job History, incluso después de enviar una inspección. La nota conserva autor y fecha; la respuesta muestra quién respondió y cuándo. Las respuestas no aparecen automáticamente mientras la pantalla permanece sin actualizar. Recargue el trabajo cuando no esté introduciendo una inspección para revisar respuestas. Los operadores no tienen acceso a las pestañas de informes de Data.</p>
+<h3>12. Relevo, conexión y salida</h3>
+<p>Antes de salir, confirme que recibió mensajes de éxito para inspecciones enviadas, cambios de material y notas. Informe trabajo incompleto o problemas pendientes. No suponga que una entrada sin terminar se transfirió a otro equipo o fue enviada; solicite a QA confirmar su estado antes de repetirla.</p>
+<p>Si SPC-Star está sin conexión o indica entradas pendientes/rechazadas, deténgase y avise al técnico o QA. Al volver la conexión, solicite a QA confirmar lo guardado antes de continuar. Una entrada pendiente no confirma guardado.</p>
+<p>Pulse Sign Out al terminar o entregar la estación. La siguiente persona debe usar su cuenta.</p>
+<p>Actualizar el navegador o reiniciar normalmente el servidor conserva una sesión válida. Si aparece Sign In Required, introduzca su propia contraseña en ese cuadro. Las entradas actuales permanecen en pantalla. Después de entrar, repita el guardado o envío interrumpido; no se envía automáticamente. No actualice ni cierre sesión para quitar el cuadro, porque puede perder trabajo sin guardar.</p>
+</div>
     </div>
   </section>
   <section id="lineTechSopModal" class="modal-backdrop hidden">
@@ -1144,187 +1320,125 @@
         <button id="lineTechSopSpanishButton" type="button" class="compact-button sop-language-button">Español</button>
       </div>
       <div id="lineTechSopEnglishBody" class="sop-body">
-        <h3>Purpose</h3>
-        <p>This SOP explains how line techs should use SPC-Star to support production inspections, respond to lockouts, document issues, and help maintain inspection traceability.</p>
-
-        <h3>Scope</h3>
-        <p>This applies to line techs using SPC-Star while supporting startup, setup, in-process, spool, material change, troubleshooting, and corrective action activities.</p>
-
-        <h3>1. Log in</h3>
-        <ol>
-          <li>Open SPC-Star.</li>
-          <li>Enter your username.</li>
-          <li>Enter your password.</li>
-          <li>Select your correct shift.</li>
-          <li>Click Sign In.</li>
-        </ol>
-        <p>Line techs may perform operator-level inspections when assigned, and may also clear certain inspection lockouts when authorized.</p>
-
-        <h3>2. Support job startup and setup</h3>
-        <ol>
-          <li>Confirm the operator selected the correct job number.</li>
-          <li>Confirm the correct machine is selected.</li>
-          <li>Confirm the correct part number is entered or scanned.</li>
-          <li>Confirm the correct operation and inspection phase are selected.</li>
-          <li>Confirm required job data is complete before inspections continue.</li>
-        </ol>
-        <p>If anything does not match the job paperwork or inspection plan, stop and resolve the mismatch before production continues.</p>
-
-        <h3>3. Perform inspections when needed</h3>
-        <p>Line techs may enter inspection results when running a machine, covering for an operator, or assisting production.</p>
-        <ol>
-          <li>Use the correct inspection phase.</li>
-          <li>Follow the listed sample size.</li>
-          <li>Use the tool or inspection method shown in SPC-Star.</li>
-          <li>Enter measured variables exactly as read.</li>
-          <li>Enter accept/reject attributes accurately.</li>
-          <li>Do not skip required fields.</li>
-        </ol>
-        <p>All entries made under your login are traceable to you.</p>
-
-        <h3>4. Respond to lockouts</h3>
-        <p>SPC-Star locks an inspection when a measured value is out of specification or an attribute is rejected. Process drift appears as a warning beside the inspection item and should be reviewed, but it does not create the full lock screen.</p>
-        <ol>
-          <li>Review the lockout message.</li>
-          <li>Identify which variable or attribute caused the lock.</li>
-          <li>Determine whether the issue is related to Machine, Tooling, Material, user error, measurement method, process drift, or another cause.</li>
-          <li>Inspect the part, machine, tooling, material, and measurement method as needed.</li>
-          <li>Do not clear the lock until the issue has been reviewed and a corrective action has been taken.</li>
-        </ol>
-        <p>If the inspection failed partway through and should not be continued, use the lock-screen option to end the current inspection as failed and start a fresh inspection for the same job context.</p>
-
-        <h3>5. Clear a lockout</h3>
-        <p>Only clear a lockout when the issue has been reviewed and production can safely continue.</p>
-        <ol>
-          <li>Enter your authorized username and password.</li>
-          <li>Select the correct cause category.</li>
-          <li>Enter clear cause details when required.</li>
-          <li>Enter the corrective action or solution when required.</li>
-          <li>Confirm the information is accurate.</li>
-          <li>Clear the lock.</li>
-        </ol>
-        <p>The lock-clear record becomes part of the job history. Do not enter vague notes such as fixed or ok. Explain what happened and what was done.</p>
-
-        <h3>6. Document corrective actions</h3>
-        <p>Use job notes to document anything important during the job, including machine adjustments, tooling changes, material concerns, inspection failures, process drift, measurement method concerns, repairs, troubleshooting steps, operator concerns, or supervisor/QA involvement.</p>
-        <p>Notes should be clear, factual, and useful to the next person reviewing the job.</p>
-
-        <h3>7. Material changes</h3>
-        <ol>
-          <li>Confirm the correct material is being used.</li>
-          <li>Confirm the new lot number is entered.</li>
-          <li>Verify that the change is documented in SPC-Star.</li>
-          <li>Add a job note if there was a material issue, concern, or unusual condition.</li>
-        </ol>
-        <p>Material change records help preserve traceability.</p>
-
-        <h3>8. Review job history</h3>
-        <p>Before clearing an issue or taking over a job, review the job history. Job history may include inspection entries, operator notes, line tech notes, lockouts, lock-clear actions, material changes, and edited inspection records.</p>
-        <p>Use the history to understand what has already happened before making adjustments or clearing locks.</p>
-
-        <h3>9. Escalate when needed</h3>
-        <p>Escalate to QA, supervision, or management if the same issue repeats, parts continue to trend toward a limit, the cause is unclear, a customer requirement may be affected, material traceability is questionable, inspection data appears incorrect, the inspection plan appears wrong, or you are unsure whether production should continue.</p>
-        <p>Do not clear a lockout just to keep production moving if the issue has not been understood.</p>
-
-        <h3>10. Sign out</h3>
-        <ol>
-          <li>Confirm required notes are entered.</li>
-          <li>Confirm any lockout actions are documented.</li>
-          <li>Sign out of SPC-Star.</li>
-        </ol>
-        <p>Always sign out so another user does not enter data under your name.</p>
-      </div>
+<p>Updated October 21, 2026.</p>
+<h3>1. Sign in and identify the work</h3>
+<p>Open SPC-Star, enter your own username/password, select your working shift and Sign In. Check the displayed user. Change password is on the sign-in page; ask QA for a reset if needed. Never share credentials or leave your account for someone else.</p>
+<p>Use the Operator SOP for the complete entry procedure. Line techs may inspect, make authorized User Error corrections and sign off failed inspections using their own accounts. Line Tech access does not include Setup or Data reports. Do not use another person&#39;s login to obtain an unavailable function.</p>
+<h3>2. Check the job before supporting production</h3>
+<ol>
+<li>Confirm Job Number, Machine, Part Number, Operation and Inspection Phase against the assigned work.</li>
+<li>Click Load and check the context above Inspection Items. Different operations have separate requirements.</li>
+<li>Confirm the required initial inspection is submitted before advancing phases. Read a phase-block message rather than bypassing it.</li>
+<li>Ask QA to review earlier saved inspections or failure records when those records are needed for troubleshooting.</li>
+</ol>
+<p>The part/job fields suggest matching records. If the intended job is missing, confirm the numbers and access with QA; do not choose an unrelated job or phase to obtain an entry screen.</p>
+<h3>3. Confirm job data and materials</h3>
+<p>Check required job data and Save Job Data confirmation. Verify Wire Shipment Number against the material identification. Saved job data persists across phases and sign-ins until changed and saved.</p>
+<p>Review every material field and Current lot. Required initial lots must be saved with Material issue at job start before entry begins. For a replacement, select Material change, enter the new lot in the correct row and Save Material Lot. Check the displayed Current lot afterward.</p>
+<p>Separate rows represent separate inputs or lot identities even if part numbers match. Do not combine supplier/internal lots or assume one row covers another. Ask QA to correct a wrong saved lot; do not invent another material issue to hide the mistake.</p>
+<h3>4. Support measurement entry</h3>
+<p>Check Machine Counter and the adjacent due message. Items can have different frequencies. Tab/Enter follows the displayed order. Enter a complete Box # where required; do not alter counters to force due inspections.</p>
+<p>Use the machine&#39;s actual counter. It may start at any number and must not go backward. After a tooling changeover, complete the required Setup and Startup before In Process. Checks stack from the run&#39;s starting counter: with a start of 100, checks every 2,000/4,000/8,000 fall at 2,100, 4,100 and 8,100, including the smaller groups due at each point. A late inspection or Coil Change does not move the schedule. A failure requires an immediate repeat, as described below.</p>
+<p>Follow item order, tool, units, limits and sample/location labels. Enter the actual measurement including trailing zeros. Automatic advance waits one second after the expected decimals; another digit restarts the pause. Tab/Enter completes the entry when needed. Box # is not limited to a fixed digit count and is completed with Tab/Enter.</p>
+<p>Attributes use one Accept/Reject lot choice, but the operator still checks the required sample quantity. Any sample failing requires Reject.</p>
+<p>For indicators, select the field before transmission and verify the full reading without an added prefix. Connect Gauge is for a configured serial gauge; select the assigned device and check status. Ask QA to check the machine profile if output is wrong. Do not guess baud rates or reduce precision to make entry work.</p>
+<p>For Hole Diameter pin entry, check the assigned block. SPC-Star stores the corresponding diameter; pin 7 fails. For calculated Removal, check the matching Raw and Polished readings: Removal is Raw minus Polished. Do not overwrite a calculated result with a convenient number.</p>
+<h3>5. Interpret OK, WATCH and failure</h3>
+<p>Green OK reflects the current accepted result. Yellow WATCH warns of drift or a result near a limit. Read its reason, review Trend and investigate before bad parts are produced. WATCH is advisory, not a lock or failed-inspection count. Recovery follows the configured rule; one normal reading does not necessarily clear it.</p>
+<p>Red identifies a failed reading or rejected attribute. The lock message identifies the item and violation. LSL/USL are acceptance limits, not adjustable troubleshooting settings. Do not change limits, counts or rules to clear a production problem.</p>
+<h3>6. Clear only an entry mistake</h3>
+<ol>
+<li>For their own mistaken entry, the operator selects User Error, enters their own credentials and clicks Clear Lock. Line Tech access is not required for their own entry correction.</li>
+<li>Assist if the operator needs help confirming the actual reading. An authorized Line Tech or QA may clear another user&#39;s mistaken entry using their own credentials.</li>
+<li>Cause details and Action taken are not required for User Error.</li>
+<li>Have the operator correct immediately, check the new status and continue the same inspection.</li>
+</ol>
+<p>User Error does not count as a failed inspection or a separate lock-clear event. The corrected inspection must still be submitted. If the clear or submission is rejected, read the returned message; a closed panel alone is not proof the server accepted the request.</p>
+<p>Refresh Lock Status checks the current server lock. Reset Unlock Form clears the form entries, not the lock. Neither bypasses a failed inspection.</p>
+<h3>7. End a genuinely failed inspection</h3>
+<ol>
+<li>Select Machine, Tooling or Material according to the actual problem.</li>
+<li>Enter Cause details describing the condition found. Do not guess; state when the specific cause is still unknown.</li>
+<li>Enter Action taken describing the actual response. Follow the normal nonconforming-product instructions outside SPC-Star as well.</li>
+<li>Enter your Line Tech username/password to sign off, then click End Failed Inspection. Check confirmation and the blank inspection in the same job context. Ask QA to verify the saved failure if status is unclear.</li>
+<li>Resolve the process problem before starting the fresh inspection.</li>
+</ol>
+<p>Clear Lock is unavailable for these categories. If there is no active lock but the current inspection has failed, use the red End Inspection button and complete its failure form. It is not a cancel button for an unfinished draft that has not failed. A failed ending does not authorize release of bad product.</p>
+<p>The Line Tech enters the failure details and signs off. An operator may do this only with supervisor-approved Line Tech access assigned to their account. After the problem is resolved, repeat immediately using the current Machine Counter, including the same count as the failure. The repeat remains due until a successful inspection; unrelated items retain their own frequencies.</p>
+<h3>8. Verify submission and numbering</h3>
+<p>Have the operator finish required entries, click Submit Inspection and check the success message. If success is not confirmed, stop and ask QA to check the saved status. Saved individual readings are not a submitted inspection.</p>
+<p>Numbers continue separately for the job, part, operation and phase across sign-ins. Submitted completions and explicitly ended failures count; unsubmitted drafts do not. Investigate apparent duplicates before making replacement entries. After quantity-based submission, check the next-due message against each item&#39;s frequency.</p>
+<h3>9. Review the inspection screen and record what was done</h3>
+<p>Review the current inspection, lock message and material Current lot. Give QA the details needed to investigate saved readings or correct material records. Line Tech access does not include Data reports.</p>
+<p>Trend can show Individuals, Run Chart, Moving Range, Histogram or Control / Spec Limits. These show reading order, adjacent changes, distribution or configured boundaries. The legend distinguishes normal, WATCH and failed measurements; a red point identifies a failed reading, not every reading in that job.</p>
+<p>Job Capability summarizes saved readings across phases and machines for that job/operation/variable. Read the data counts and limits before drawing conclusions. A blank index can mean insufficient data, zero variation, a one-sided specification or conflicting limits. Capability never authorizes accepting an individual bad part.</p>
+<p>Use the inspection screen&#39;s Note field and Submit Note for adjustments, findings and unresolved concerns. Check the save confirmation. Notes remain associated with the job across phases. Ask QA to retrieve saved notes or export records when needed.</p>
+<p>Job History on Inspect shows notes and responses. When history loads again, including after an inspection is submitted, a note with a new response moves to the top. The note keeps its original author/date; each response shows its own author/date. Responses do not update automatically. Reload the job when no entry is in progress to check for replies. Ask QA to respond through the central notes list.</p>
+<h3>10. Escalate and hand off</h3>
+<p>Escalate repeated failures, wrong requirements, missing measurements, unexpected numbering, incorrect material identities, device errors, failed submissions or unavailable correction fields. Give QA the job, part, operation, phase, inspection number, item, value, message and time. Do not reconstruct missing records or guess data.</p>
+<p>For pending/offline entries, ask QA to verify saved status after connection returns. Before switching computers or handing off, check submission confirmations and communicate unfinished work. Sign Out before the next person uses the station.</p>
+<p>A browser refresh or routine server restart normally keeps a valid sign-in. If Sign In Required appears, enter your password in that prompt; the current entries stay on screen. Retry the interrupted save or submission after signing in. It is not sent automatically. Do not refresh or sign out to dismiss the prompt and risk losing unsaved work.</p>
+</div>
       <div id="lineTechSopSpanishBody" class="sop-body hidden" lang="es">
-        <h3>Propósito</h3>
-        <p>Este SOP explica cómo los técnicos de línea deben usar SPC-Star para apoyar las inspecciones de producción, responder a bloqueos, documentar problemas y mantener la trazabilidad de inspección.</p>
-
-        <h3>Alcance</h3>
-        <p>Esto aplica a técnicos de línea que usan SPC-Star mientras apoyan actividades de arranque, preparación, en proceso, carrete, cambio de material, solución de problemas y acciones correctivas.</p>
-
-        <h3>1. Iniciar sesión</h3>
-        <ol>
-          <li>Abra SPC-Star.</li>
-          <li>Ingrese su nombre de usuario.</li>
-          <li>Ingrese su contraseña.</li>
-          <li>Seleccione su turno correcto.</li>
-          <li>Haga clic en Sign In.</li>
-        </ol>
-        <p>Los técnicos de línea pueden realizar inspecciones de nivel operador cuando sean asignados, y también pueden liberar ciertos bloqueos de inspección cuando estén autorizados.</p>
-
-        <h3>2. Apoyar el arranque y la preparación del trabajo</h3>
-        <ol>
-          <li>Confirme que el operador seleccionó el número de trabajo correcto.</li>
-          <li>Confirme que la máquina correcta está seleccionada.</li>
-          <li>Confirme que el número de parte correcto fue ingresado o escaneado.</li>
-          <li>Confirme que la operación y la fase de inspección correctas están seleccionadas.</li>
-          <li>Confirme que los datos requeridos del trabajo estén completos antes de continuar con las inspecciones.</li>
-        </ol>
-        <p>Si algo no coincide con la documentación del trabajo o el plan de inspección, deténgase y resuelva la diferencia antes de que continúe la producción.</p>
-
-        <h3>3. Realizar inspecciones cuando sea necesario</h3>
-        <p>Los técnicos de línea pueden ingresar resultados de inspección cuando están operando una máquina, cubriendo a un operador o asistiendo producción.</p>
-        <ol>
-          <li>Use la fase de inspección correcta.</li>
-          <li>Siga el tamaño de muestra indicado.</li>
-          <li>Use la herramienta o método de inspección mostrado en SPC-Star.</li>
-          <li>Ingrese las variables medidas exactamente como fueron leídas.</li>
-          <li>Ingrese los atributos de aceptar/rechazar con precisión.</li>
-          <li>No omita campos requeridos.</li>
-        </ol>
-        <p>Todas las entradas hechas bajo su inicio de sesión son trazables a usted.</p>
-
-        <h3>4. Responder a bloqueos</h3>
-        <p>SPC-Star bloquea una inspección cuando una medición está fuera de especificación o un atributo es rechazado. La deriva del proceso aparece como advertencia junto al punto de inspección y debe revisarse, pero no crea la pantalla completa de bloqueo.</p>
-        <ol>
-          <li>Revise el mensaje de bloqueo.</li>
-          <li>Identifique qué variable o atributo causó el bloqueo.</li>
-          <li>Determine si el problema está relacionado con máquina, herramental, material, error del usuario, método de medición, deriva del proceso u otra causa.</li>
-          <li>Inspeccione la parte, máquina, herramental, material y método de medición según sea necesario.</li>
-          <li>No libere el bloqueo hasta que el problema haya sido revisado y se haya tomado una acción correctiva.</li>
-        </ol>
-        <p>Si la inspección falló a mitad del proceso y no debe continuarse, use la opción de la pantalla de bloqueo para terminar la inspección actual como fallida e iniciar una inspección nueva para el mismo trabajo.</p>
-
-        <h3>5. Liberar un bloqueo</h3>
-        <p>Libere un bloqueo solo cuando el problema haya sido revisado y la producción pueda continuar de manera segura.</p>
-        <ol>
-          <li>Ingrese su nombre de usuario y contraseña autorizados.</li>
-          <li>Seleccione la categoría de causa correcta.</li>
-          <li>Ingrese detalles claros de la causa cuando sea requerido.</li>
-          <li>Ingrese la acción correctiva o solución cuando sea requerido.</li>
-          <li>Confirme que la información sea correcta.</li>
-          <li>Libere el bloqueo.</li>
-        </ol>
-        <p>El registro de liberación del bloqueo pasa a formar parte del historial del trabajo. No escriba notas vagas como fixed u ok. Explique qué ocurrió y qué se hizo.</p>
-
-        <h3>6. Documentar acciones correctivas</h3>
-        <p>Use las notas del trabajo para documentar cualquier información importante durante el trabajo, incluyendo ajustes de máquina, cambios de herramental, inquietudes de material, fallas de inspección, deriva del proceso, dudas sobre el método de medición, reparaciones, pasos de solución de problemas, inquietudes del operador o participación de supervisor/QA.</p>
-        <p>Las notas deben ser claras, objetivas y útiles para la siguiente persona que revise el trabajo.</p>
-
-        <h3>7. Cambios de material</h3>
-        <ol>
-          <li>Confirme que se está usando el material correcto.</li>
-          <li>Confirme que se ingresó el nuevo número de lote.</li>
-          <li>Verifique que el cambio esté documentado en SPC-Star.</li>
-          <li>Agregue una nota del trabajo si hubo un problema de material, inquietud o condición inusual.</li>
-        </ol>
-        <p>Los registros de cambio de material ayudan a preservar la trazabilidad.</p>
-
-        <h3>8. Revisar historial del trabajo</h3>
-        <p>Antes de liberar un problema o tomar un trabajo, revise el historial del trabajo. El historial puede incluir entradas de inspección, notas de operadores, notas de técnicos de línea, bloqueos, liberaciones de bloqueo, cambios de material y registros de inspección editados.</p>
-        <p>Use el historial para entender qué ya ocurrió antes de hacer ajustes o liberar bloqueos.</p>
-
-        <h3>9. Escalar cuando sea necesario</h3>
-        <p>Escale a QA, supervisión o gerencia si el mismo problema se repite, las partes continúan acercándose a un límite, la causa no está clara, un requisito del cliente puede estar afectado, la trazabilidad del material está en duda, los datos de inspección parecen incorrectos, el plan de inspección parece incorrecto o no está seguro si la producción debe continuar.</p>
-        <p>No libere un bloqueo solo para mantener la producción en movimiento si el problema no se ha entendido.</p>
-
-        <h3>10. Cerrar sesión</h3>
-        <ol>
-          <li>Confirme que las notas requeridas estén ingresadas.</li>
-          <li>Confirme que cualquier acción de bloqueo esté documentada.</li>
-          <li>Cierre sesión en SPC-Star.</li>
-        </ol>
-        <p>Siempre cierre sesión para que otro usuario no ingrese datos bajo su nombre.</p>
-      </div>
+<p>Actualizado el 21 de octubre de 2026.</p>
+<h3>1. Entrar e identificar el trabajo</h3>
+<p>Abra SPC-Star, introduzca su usuario/contraseña, seleccione su turno y pulse Sign In. Compruebe el usuario mostrado. Change password está en la pantalla inicial; pida a QA un restablecimiento si hace falta. No comparta credenciales ni deje su cuenta a otra persona.</p>
+<p>Use el SOP del operador para el procedimiento completo. El técnico puede inspeccionar, corregir User Error autorizados y aprobar fallas con su propia cuenta. El acceso Line Tech no incluye Setup ni los informes de Data. No use otra cuenta para obtener funciones no disponibles. Los nombres de botones se conservan como aparecen en el programa.</p>
+<h3>2. Comprobar el trabajo</h3>
+<ol>
+<li>Confirme Job Number, Machine, Part Number, Operation e Inspection Phase según el trabajo asignado.</li>
+<li>Pulse Load y compruebe el contexto sobre Inspection Items. Cada operación tiene sus propios requisitos.</li>
+<li>Confirme el envío de la inspección inicial antes de avanzar de fase. Lea el bloqueo de fase en vez de evitarlo.</li>
+<li>Solicite a QA revisar inspecciones o fallas anteriores cuando esos registros sean necesarios para investigar.</li>
+</ol>
+<p>Los campos de pieza/trabajo sugieren registros relacionados. Si no aparece el trabajo, confirme números y acceso con QA; no seleccione un trabajo o fase ajeno para obtener una pantalla.</p>
+<h3>3. Confirmar datos y materiales</h3>
+<p>Revise datos requeridos y confirmación de Save Job Data. Compare Wire Shipment Number con la identificación del material. Los datos permanecen entre fases y sesiones hasta cambiarlos y guardarlos.</p>
+<p>Revise cada fila y Current lot. Los lotes iniciales requeridos se guardan con Material issue at job start antes de inspeccionar. Para reemplazos, seleccione Material change, introduzca el lote en su fila y Save Material Lot. Compruebe Current lot después.</p>
+<p>Filas separadas representan materiales o identidades de lote distintas aunque coincida el número de pieza. No combine lotes internos/de proveedor ni suponga que una fila cubre otra. Solicite a QA corregir un lote guardado incorrecto; no invente otra entrega para ocultarlo.</p>
+<h3>4. Ayudar con mediciones</h3>
+<p>Revise Machine Counter y su mensaje de vencimiento. Los elementos pueden tener frecuencias distintas. Tab/Enter sigue el orden mostrado. Introduzca Box # completo cuando corresponda; no modifique conteos para forzar inspecciones.</p>
+<p>Use el contador real de la máquina; puede comenzar en cualquier número y no debe retroceder. Después de cambiar herramental, complete Setup y Startup requeridos antes de In Process. Los controles se acumulan desde el inicio de la corrida: con inicio en 100, controles de 2,000/4,000/8,000 corresponden en 2,100, 4,100 y 8,100, incluyendo en cada punto los grupos menores que también vencen. Una inspección tardía o Coil Change no desplaza el calendario. Una falla requiere repetición inmediata, como se explica abajo.</p>
+<p>Siga orden, herramienta, unidades, límites y etiquetas de muestra/posición. Introduzca la lectura real con ceros finales. El avance automático espera un segundo después de los decimales esperados; otro dígito reinicia la pausa. Tab/Enter termina la entrada. Box # no tiene un número fijo de dígitos y termina con Tab/Enter.</p>
+<p>Los atributos usan un Accept/Reject por lote, pero se revisa toda la muestra requerida. Cualquier pieza fallida requiere Reject.</p>
+<p>Para indicadores, seleccione el campo antes de transmitir y compruebe la lectura completa sin prefijo añadido. Connect Gauge corresponde a medidores seriales configurados; seleccione el dispositivo y revise estado. Pida a QA revisar el perfil si el formato es incorrecto. No adivine velocidad serial ni reduzca precisión para continuar.</p>
+<p>Para Hole Diameter por pasador, confirme el bloque asignado. Se guarda el diámetro correspondiente; pasador 7 falla. Para Removal calculado, revise Raw y Polished emparejados: Removal es Raw menos Polished. No reemplace el cálculo por un valor conveniente.</p>
+<h3>5. Interpretar OK, WATCH y falla</h3>
+<p>Verde OK refleja el resultado aceptado actual. Amarillo WATCH avisa de deriva o proximidad al límite. Lea la razón, revise Trend e investigue antes de producir piezas malas. WATCH no es bloqueo ni falla contada. Su recuperación depende de la regla; una lectura normal no siempre lo elimina.</p>
+<p>Rojo identifica lectura fallida o atributo rechazado. El bloqueo indica elemento y violación. LSL/USL son límites de aceptación, no ajustes para solucionar el bloqueo. No cambie límites, cantidades ni reglas para ocultar un problema.</p>
+<h3>6. Liberar solamente un error de entrada</h3>
+<ol>
+<li>Para un error propio, el operador selecciona User Error, introduce sus credenciales y pulsa Clear Lock. No necesita acceso Line Tech para corregir su entrada.</li>
+<li>Ayude si necesita confirmar la medición. Line Tech o QA autorizado puede liberar el error de otro usuario con sus propias credenciales.</li>
+<li>User Error no requiere Cause details ni Action taken.</li>
+<li>El operador corrige inmediatamente, comprueba el nuevo estado y continúa la misma inspección.</li>
+</ol>
+<p>User Error no cuenta como falla ni evento separado de liberación. La inspección corregida todavía debe enviarse. Si la liberación o envío se rechaza, lea el mensaje; cerrar el panel no prueba aceptación del servidor.</p>
+<p>Refresh Lock Status consulta el bloqueo del servidor. Reset Unlock Form borra campos del formulario, no el bloqueo. Ninguno evita una falla.</p>
+<h3>7. Terminar una inspección realmente fallida</h3>
+<ol>
+<li>Seleccione Machine, Tooling o Material según el problema real.</li>
+<li>En Cause details describa la condición encontrada. No adivine; indique si la causa específica sigue desconocida.</li>
+<li>En Action taken describa la respuesta real. Siga también el procedimiento de producto no conforme fuera de SPC-Star.</li>
+<li>Introduzca su usuario/contraseña Line Tech para aprobar y pulse End Failed Inspection. Compruebe confirmación e inspección vacía del mismo contexto. Si el estado no es claro, solicite a QA verificar la falla guardada.</li>
+<li>Resuelva el problema antes de comenzar otra inspección.</li>
+</ol>
+<p>Estas categorías no permiten Clear Lock. Sin bloqueo activo, use End Inspection rojo y complete el formulario si realmente falló. No sirve para cancelar un borrador sin falla. Terminar una inspección fallida no autoriza liberar producto malo.</p>
+<p>El Line Tech introduce detalles y aprueba la falla. Un operador solo puede hacerlo con acceso Line Tech aprobado por su supervisor y asignado a su cuenta. Después de resolver el problema, repita inmediatamente con el Machine Counter actual, incluso el mismo conteo. La repetición queda pendiente hasta completar una inspección aprobada; otros elementos conservan sus frecuencias.</p>
+<h3>8. Verificar envío y numeración</h3>
+<p>El operador completa lo requerido, pulsa Submit Inspection y comprueba confirmación de éxito. Si no se confirma, deténgase y solicite a QA revisar el estado guardado. Lecturas individuales no equivalen a inspección enviada.</p>
+<p>La numeración continúa por trabajo, pieza, operación y fase entre sesiones. Cuentan envíos completados y fallas terminadas explícitamente; borradores no. Investigue aparentes duplicados antes de reemplazarlos. Después de una inspección por cantidad, revise el próximo conteo según la frecuencia de cada elemento.</p>
+<h3>9. Revisar la pantalla de inspección y documentar</h3>
+<p>Revise la inspección actual, mensaje de bloqueo y Current lot. Proporcione a QA los datos necesarios para investigar lecturas guardadas o corregir material. Line Tech no tiene acceso a los informes de Data.</p>
+<p>Trend ofrece Individuals, Run Chart, Moving Range, Histogram y Control / Spec Limits para orden de lecturas, cambios adyacentes, distribución o límites configurados. La leyenda distingue normal, WATCH y medición fallida; un punto rojo no significa que fallaron todas las lecturas del trabajo.</p>
+<p>Job Capability resume lecturas guardadas entre fases/máquinas para el trabajo/operación/variable. Revise cantidades y límites antes de concluir. Un índice vacío puede significar pocos datos, variación cero, especificación unilateral o límites incompatibles. Capacidad no autoriza aceptar una pieza mala.</p>
+<p>Use el campo Note de inspección y Submit Note para ajustes, hallazgos y pendientes. Compruebe confirmación. Las notas permanecen asociadas al trabajo entre fases. Solicite a QA recuperar notas guardadas o exportar registros cuando haga falta.</p>
+<p>Job History en Inspect muestra notas y respuestas. Al cargar nuevamente el historial, incluso después de enviar una inspección, una nota con respuesta nueva aparece al principio. La nota conserva autor y fecha; cada respuesta muestra su autor y fecha. No se actualiza automáticamente. Recargue el trabajo cuando no haya entradas en curso para revisar respuestas. Para responder desde la lista central de notas, solicite a QA.</p>
+<h3>10. Escalar y entregar el puesto</h3>
+<p>Avise a QA sobre fallas repetidas, requisitos incorrectos, datos faltantes, numeración inesperada, materiales incorrectos, errores del dispositivo o de envío y campos no editables. Indique trabajo, pieza, operación, fase, inspección, elemento, valor, mensaje y hora. No reconstruya registros ni adivine datos.</p>
+<p>Después de entradas pendientes/sin conexión, solicite a QA verificar lo guardado al volver el servicio. Antes de cambiar equipo o entregar el puesto, revise confirmaciones e informe trabajo incompleto. Pulse Sign Out antes del siguiente usuario.</p>
+<p>Actualizar el navegador o reiniciar normalmente el servidor conserva una sesión válida. Si aparece Sign In Required, introduzca su contraseña en ese cuadro; las entradas actuales permanecen en pantalla. Repita el guardado o envío interrumpido después de entrar. No se envía automáticamente. No actualice ni cierre sesión para quitar el cuadro y arriesgar trabajo sin guardar.</p>
+</div>
     </div>
   </section>
   <section id="qaSopModal" class="modal-backdrop hidden">
@@ -1341,145 +1455,191 @@
         <button id="qaSopSpanishButton" type="button" class="compact-button sop-language-button">Espanol</button>
       </div>
       <div id="qaSopEnglishBody" class="sop-body">
-        <h3>Purpose</h3>
-        <p>This SOP explains how QA should use SPC-Star to review inspection data, export records, maintain setup information manually, and respond to quality-related lockouts and drift warnings.</p>
-
-        <h3>Scope</h3>
-        <p>This applies to QA personnel using SPC-Star for inspection review, job history review, reports, setup maintenance, user maintenance, machine maintenance, drift-rule settings, and normal lock clearing.</p>
-
-        <h3>1. Log in</h3>
-        <ol>
-          <li>Open SPC-Star.</li>
-          <li>Enter your username and password.</li>
-          <li>Select your correct shift.</li>
-          <li>Click Sign In.</li>
-        </ol>
-        <p>All activity completed under your login is traceable to your user account.</p>
-
-        <h3>2. Review inspection data</h3>
-        <ol>
-          <li>Open Setup, then History.</li>
-          <li>Use Ledger to review inspection records, notes, lock events, material changes, and edit history.</li>
-          <li>Use Charts to review trends by part, job, machine, operation, and inspection item.</li>
-          <li>Use Top Issues to review repeat out-of-spec, drift, or rejected-attribute events.</li>
-          <li>Use Export to pull data needed for review, documentation, reporting, or customer support.</li>
-        </ol>
-        <p>Inspection capability and trend views should be reviewed as saved job-history data for the selected job, machine, operation, phase, and inspection item.</p>
-
-        <h3>3. Maintain setup manually</h3>
-        <p>QA may manually create or update parts, operations, job data fields, materials, variables, attributes, sample sizes, frequencies, and drift-rule selections.</p>
-        <ol>
-          <li>Confirm the inspection plan source before making changes.</li>
-          <li>Confirm the correct part number, product group, operation, and inspection phase.</li>
-          <li>Enter variables and attributes in the correct inspection order.</li>
-          <li>Confirm sample sizes, frequencies, limits, methods, tools used, and phase requirements before saving.</li>
-          <li>Review the inspection screen after changes to confirm the operator view is correct.</li>
-        </ol>
-
-        <h3>4. User and machine maintenance</h3>
-        <p>QA may manually add or edit users, assign roles, assign product group access, assign shifts, reset passwords, and maintain machine records.</p>
-        <p>Only assign access that matches the employee's role, training, and product group authorization.</p>
-
-        <h3>5. Rules and custom rules</h3>
-        <p>QA may update the global drift detection rule, adjust capability thresholds, and configure custom rule behavior when required by the quality plan.</p>
-        <p>Rule changes affect inspection behavior. Review the rule description before saving changes and confirm that the selected rule is appropriate for the product and process.</p>
-
-        <h3>6. Lock clearing</h3>
-        <p>QA may clear lockouts through the normal correction workflow. QA does not have Archon/System Manager bypass access.</p>
-        <ol>
-          <li>Review the lock message and affected inspection item.</li>
-          <li>Confirm whether the issue is out of specification, rejected-attribute, or related to a drift warning.</li>
-          <li>Select the correct cause category.</li>
-          <li>Enter clear cause details when required.</li>
-          <li>Enter the action taken or required corrective action when required.</li>
-          <li>Clear the lock only when the issue has been reviewed and production may continue.</li>
-        </ol>
-
-        <h3>7. Import restriction</h3>
-        <p>QA should not bulk import parts, users, or machines from workbooks unless specifically assigned that controlled update. Bulk import is restricted to System Manager access because a bad workbook can change large amounts of setup data at once.</p>
-        <p>If a bulk import is needed, prepare or review the file, then escalate it to Archon/System Manager for loading.</p>
-
-        <h3>8. Data integrity</h3>
-        <p>Do not delete or change inspection setup, users, machines, limits, or rule settings unless the change is intentional, verified, and traceable to the correct source.</p>
-        <p>If inspection data appears incorrect, review the job history and edit audit trail before making corrections.</p>
-
-        <h3>9. Sign out</h3>
-        <ol>
-          <li>Finish any setup, review, or export activity.</li>
-          <li>Confirm changes were saved correctly.</li>
-          <li>Click Sign Out.</li>
-        </ol>
-      </div>
+<p>Updated October 21, 2026.</p>
+<h3>1. Sign in and navigate</h3>
+<p>Sign in using your own username/password and actual shift. Check the displayed user. Change password is on the sign-in page; enter current and new passwords, confirm and Save password.</p>
+<p>Inspect is the production-entry screen. Setup provides Parts &amp; Inspections, Users, Machines and Rules according to permissions. Data provides Ledger, Part Quality, Charts and Top Issues. Use the Operator SOP for the full inspection process and the Line Tech SOP for troubleshooting. Never borrow credentials for an unavailable function.</p>
+<p>QA can export information. Data and configuration imports are not available to QA.</p>
+<p>Admin provides Notes and Change History for QA. QA - Read only can view and export Data but cannot edit inspection records, maintain setup, or post responses in Admin &gt; Notes. The maintenance and correction steps below require regular QA access.</p>
+<h3>2. Review an inspection with an operator</h3>
+<p>Confirm Job Number, Machine, Part Number, Operation and Inspection Phase, then Load. Complete the required initial inspection before advancing phases. Do not use another operation/phase to bypass a blocked load.</p>
+<p>Check Save Job Data and Save Material Lot confirmations. Issue required initial lots with Material issue at job start; use Material change for replacements. Job data and lots persist across phases and sign-ins until changed and saved. Distinguish each material field by name as well as part number, especially supplier/internal lot fields. Verify Current lot after saving.</p>
+<p>Machine Counter controls quantity-based due messages. Box # is entered completely. Follow item order and sample/location labels. Saved LSL/USL precision controls the expected measurement decimals; advance waits one second for further typing. Tab/Enter finishes an entry. Connected indicators must deliver the full reading without an added prefix.</p>
+<p>Use the actual machine counter, which can start at any number and must not go backward. Required Setup and Startup establish the current run after a tooling changeover. Quantity checks stack from that starting count: if it is 100, 2,000-part checks fall at 2,100; at 4,100 include both the 2,000- and 4,000-part checks; at 8,100 include the 2,000-, 4,000- and 8,000-part checks. Use only the frequencies configured for the part. Late or extra inspections and Coil Change do not shift these scheduled points.</p>
+<p>Attributes use one Accept/Reject for the lot while retaining the required quantity to check. Calculated Removal uses corresponding Raw minus Polished readings. Pin-based Hole Diameter stores the diameter associated with the entered pin and assigned block. Do not alter a requirement to make an incorrect entry pass.</p>
+<p>When performing an inspection, finish all required fields, click Submit Inspection and check the success confirmation and Job History. Numbering continues by job, operation and phase across sign-ins. On-screen readings or a pending request are not proof of submission.</p>
+<h3>3. Correct User Error or end a failed inspection</h3>
+<ol>
+<li>Read the lock message and verify the failed measurement or attribute.</li>
+<li>An operator clears their own entry mistake by selecting User Error and entering their own credentials to Clear Lock. Line Tech access is not required. A Line Tech or QA can assist with another user&#39;s entry mistake. Correct immediately and continue the same inspection. Cause/action text is not required; it does not count as a failure or separate lock-clear event.</li>
+<li>For a real failure, the Line Tech selects Machine, Tooling or Material, enters Cause details and Action taken, and signs off with their credentials before End Failed Inspection. QA may also perform this authorized signoff. An operator may do so only with supervisor-approved Line Tech access assigned to their account. Clear Lock is unavailable for these categories.</li>
+<li>Verify the red failed record, retained readings/reason and fresh blank inspection in the same job/operation/phase.</li>
+</ol>
+<p>End Inspection opens the failure form when no lock is active. It is not a cancel button. Follow the separate process for nonconforming product; the software does not authorize product release. Refresh Lock Status rechecks the server; Reset Unlock Form clears the form, not the lock. Investigate any returned rejection instead of assuming success.</p>
+<p>A failed inspection remains due for an immediate repeat after resolving the problem. Use the current Machine Counter, even if unchanged; do not wait for the next scheduled count. A successful repeat restores the normal schedule. Checks not involved in the failed inspection keep their own frequencies.</p>
+<h3>4. Maintain Parts &amp; Inspections</h3>
+<ol>
+<li>Open Setup &gt; Parts &amp; Inspections. Choose the existing part under Edit Existing Part and Load Part before editing.</li>
+<li>Check Part number, Part description, Product group and Operation. Maintain Blank Code/Hole Size where applicable. Finished goods, blanks and input materials need their correct descriptions.</li>
+<li>Use Job Data Fields for required persistent job information. Maintain the field names, required settings and operator instructions for that part.</li>
+<li>Use Materials for each input&#39;s label, part number, description and Required setting. Keep separate inputs and lot identities in separate rows; never combine different material part numbers on one line.</li>
+<li>Use Inspection Items for name, Variable/Attribute type, Requirement / context, Tool and Unit. Retain source instructions. Set actual required phases, physical samples, measurement locations, order and frequency for that operation.</li>
+<li>Enter LSL/USL from the current approved inspection sheet and confirmed requirements, including trailing zeros. Leave absent targets and one-sided limits blank. Do not calculate midpoint targets or copy specs into LCL/UCL. Use control limits only when supplied by the source.</li>
+<li>Select the appropriate drift rule. Save Part Inspection, read the confirmation, reload the part and verify its operator display.</li>
+</ol>
+<p>Verify changes against the current approved source, not an old setup export or backup. Export Parts &amp; Inspections provides a setup copy; QA does not import configuration.</p>
+<p>A minimum-only reading passes at or above LSL; a maximum-only reading passes at or below USL; two-sided readings at either limit pass. Preserve limit decimals rather than adding precision workarounds. Clear resets the setup form without saving.</p>
+<p>Follow source sheets and confirmed operating decisions for phases. Test Polish is a separate operation. Multiple sides/locations need their own readings. One attribute lot choice does not reduce the physical sample requirement.</p>
+<h3>5. Maintain Users and Machines</h3>
+<p>In Users, expand the appropriate access-level group and select an account, or select New User. Enter username, an available access level, shift and allowed product groups. Save User and check the result. Only assign access levels offered to your account. Reset Password applies to the selected user; provide it only to that person. Use Delete User only for intentional account maintenance, not correcting inspection records. Do not create shared accounts or assign access beyond the person&#39;s work/training. Export Users provides a reference list; bulk import is not a QA function.</p>
+<p>Assign Line Tech access to an operator only after their supervisor approves it. Use the person&#39;s own account; do not share a Line Tech login to obtain signoff.</p>
+<p>In Machines, select a machine or New Machine. Check Machine ID, Description and Allowed product groups. Blank group restrictions allow all groups. Save Machine, then verify the operator&#39;s available list. Select Keyboard input or Serial text gauge to match the equipment; use the device&#39;s specified baud rate, not a guess. Export Machines provides a reference list. Delete removes a machine record, not job history.</p>
+<h3>6. Select a drift rule</h3>
+<p>In Setup &gt; Rules, choose Global default rule set and Save Global Rule. Items using Use Global Default inherit it; explicit item rules override it. Review Details before selecting a rule. A global change may affect many parts.</p>
+<p>Spec Limit Only checks measured values against specifications without drift patterns. No Automatic Rule disables measured-variable automatic checks and must not be selected casually; rejected attributes still lock. Other families use their displayed patterns and data requirements. Do not invent control limits for a rule.</p>
+<h3>7. Configure Custom Rule</h3>
+<p>Click Configure on Custom Rule. Set its name and the following controls, then review the summary and Save Custom Protocol:</p>
+<ol>
+<li>Enable custom Watch rules enables its advisory warnings. Disabling it does not remove individual out-of-spec checks for an item using Custom Rule.</li>
+<li>Directional Drift uses one variable average per completed inspection. Select consecutive completed inspections and upper, lower or either-limit direction. The first average starts comparison; later averages must move in the selected direction. Choose whether equal averages and reversing averages restart the count.</li>
+<li>Near Specification Limits checks individual samples in a warning zone. Use percent of LSL-to-USL span or exact distance inside a limit. One-sided specs require exact distance because no two-sided span exists.</li>
+<li>Repeated Near-Limit Inspections sets how many of the last completed inspections contain a warning-zone sample. Upper/lower results count separately.</li>
+<li>Show Watch when uses Any or All enabled conditions. With All, the combined warning is evaluated on submission.</li>
+<li>Normal completed inspections before OK sets recovery. All enabled conditions must clear; a new warning restarts recovery.</li>
+<li>Add protocol notes and verify the item uses Custom Rule or inherits a Custom global default.</li>
+</ol>
+<p>Sides/spindles remain separate variables. Incomplete/failed inspections do not count as completed trend averages; sample size one uses its reading. WATCH is yellow and advisory; individual out-of-spec samples still lock under Custom Rule. WATCH returns to OK after configured recovery. Warning measurements are yellow in Ledger/export; standalone WATCH events are not added to Job History.</p>
+<h3>8. Data &gt; Ledger and corrections</h3>
+<p>Ledger, Part Quality, Charts and Top Issues use the same filters: Part, Job, Operation, Phase, Machine, Shift, Variable, From and To. Selections carry between these tabs. Blank optional fields and All options include every matching value. Run the selected view after changing filters; Ledger Export XLSX uses the Ledger selection.</p>
+<ol>
+<li>Open Data &gt; Ledger. Enter a part, a job or both. Suggestions link matching parts/jobs.</li>
+<li>Choose Operation, Phase, Shift and dates as needed, then Review Job. All shifts includes every shift. The selected shift applies to Ledger history, capability summaries and Export XLSX. A part-only review covers matching jobs; a selected job shows Job Capability and Inspection / Job History.</li>
+<li>Open Details for readings and context, not only Machine Counter. Check operator, time, operation, phase and sample identities.</li>
+<li>Review red failures for the failed reading/attribute, violation, cause category, original Cause details and Action taken. User Error and standalone WATCH are not genuine failed inspections.</li>
+<li>Use authorized history edits for saved readings/Machine Counter, or Edit Lot for a material record. Check the saved change. Do not create a new inspection or guessed link to repair old data.</li>
+<li>Export XLSX exports the selected review. Check filters and use Job Notes for saved notes from the selected job/date scope, including other phases.</li>
+</ol>
+<p>Numbering continues by job, part, operation and phase across sign-ins. Only submitted completions and explicitly ended failures count. Unsubmitted readings cannot become invented completions. Partial failures contain only readings actually taken. Escalate missing links; do not reconstruct them from timestamps.</p>
+<h3>9. Data &gt; Part Quality</h3>
+<p>Enter Part and optional Job, Operation, Phase, Machine, Shift and dates, then Load Summary. Read finalized-inspection totals and variable rows in inspection order. Find variable narrows the table.</p>
+<p>Select a variable row or use the Variable selector for its failures. Review phase, readings, violation, cause category, cause details, action, notes, job, machine, counter and operator. Previous/Next shows more failures for that variable rather than every failure in the system.</p>
+<p>Part pass rate is passed finalized inspections divided by finalized inspections, not scrap rate. Variable counts reflect inspections actually checking the variable, not sample fields or all produced pieces. Unreached variables in a partial failure are not counted as inspected. Missing-data notices require investigation, not invented readings or reasons.</p>
+<h3>10. Charts and Job Capability</h3>
+<p>In Data &gt; Charts, choose part/job and any available operation, machine, variable, phase/date filters. Choose chart type and Run Report. Check whether the report covers one phase or All phases. Variables follow inspection order.</p>
+<p>Individuals and Run Chart show readings in order. Moving Range shows adjacent changes; Histogram shows distribution; Control / Spec Limits shows configured boundaries. The legend marks normal, yellow WATCH and red failed measurements. A red point means that measurement failed, not all readings in the inspection.</p>
+<p>Job Capability displays minimum, maximum, mean, standard deviation and available Cp/Cpk/Pp/Ppk. The inspection panel and Ledger job summary include saved readings across phases/machines for the same job, operation and variable. Genuine failures remain; unsubmitted drafts are not completed data. Compare identical filters and limits before comparing reports.</p>
+<p>Cp/Cpk use within-inspection variation; Pp/Ppk use overall variation. Missing limits, little data, zero variation or differing phase limits can leave indices blank. One-sided specs can support Cpk/Ppk but not two-sided Cp/Pp. Indices are not a global pass/fail verdict or product-release authorization; review stability and process suitability.</p>
+<h3>11. Top Issues and exports</h3>
+<p>In Data &gt; Top Issues, select the available part/job/machine/shift/variable/date filters and result limit, then Run Top Issues. Use it for recurring out-of-spec or rejected-attribute events. Custom WATCH and User Error corrections are excluded. Review explanations in Ledger or Part Quality.</p>
+<p>Ledger &gt; Export XLSX provides detailed inspection records and Job Notes.</p>
+<h3>12. Read and respond to job notes</h3>
+<ol>
+<li>Open Admin &gt; Notes. Use Search to find note or response text. Part, Job, Machine, Posted by and Replied by narrow the list. Click Show Notes after changing filters; Clear Filters removes them.</li>
+<li>From and To apply to the original note&#39;s date, not the response date. Leave them blank when searching for a recent response to an older note. Use Previous/Next for more notes.</li>
+<li>Read the original note and its responses. Click Reply, enter the response and click Send Response. Check the saved response and your displayed name/date. Responses are limited to 1,000 characters.</li>
+<li>The original author, note and date remain unchanged. Responses cannot be edited or deleted here. The operator sees the response under that note in Inspect &gt; Job History after history loads again, including after submitting an inspection. It does not appear automatically on an unchanged screen.</li>
+</ol>
+<p>Notes do not replace failure Cause details or Action taken. A response provides information; it does not clear a lock, correct a reading or complete an inspection.</p>
+<h3>13. Review Change History</h3>
+<p>Open Admin &gt; Change History. Filter by Search, Changed by, Area, Part, From or To, then click Show Changes. Review who saved the change, when, what was changed and the old/new values where provided. Use Previous/Next for more entries or Export CSV for the selected results. Imports appear as summary entries. This view is read-only; it does not undo changes. Unsaved form edits are not logged.</p>
+<h3>14. Save, escalate and sign out</h3>
+<p>Read every save confirmation. Escalate problems with job, part, operation, phase, inspection number, item, actual value, time and message. Pending/offline readings are not submitted inspections. Do not delete history, invent entries or change specs to bypass a failure.</p>
+<p>Before handoff, save notes and corrections and communicate unresolved problems. Sign Out when finished.</p>
+<p>A browser refresh or routine server restart normally preserves a valid sign-in. If Sign In Required appears, enter your own password in that prompt. Current entries remain on screen. Retry the interrupted action after signing in; the software does not automatically replay a failed save or submission. Do not refresh or sign out to dismiss the prompt and risk losing unsaved work.</p>
+</div>
       <div id="qaSopSpanishBody" class="sop-body hidden" lang="es">
-        <h3>Proposito</h3>
-        <p>Este SOP explica como QA debe usar SPC-Star para revisar datos de inspeccion, exportar registros, mantener informacion de configuracion manualmente y responder a bloqueos y advertencias de deriva relacionados con calidad.</p>
-
-        <h3>Alcance</h3>
-        <p>Esto aplica a personal de QA que usa SPC-Star para revisar inspecciones, historial de trabajos, reportes, mantenimiento de configuracion, usuarios, maquinas, reglas de deriva y liberacion normal de bloqueos.</p>
-
-        <h3>1. Iniciar sesion</h3>
-        <ol>
-          <li>Abra SPC-Star.</li>
-          <li>Ingrese su usuario y contrasena.</li>
-          <li>Seleccione su turno correcto.</li>
-          <li>Haga clic en Sign In.</li>
-        </ol>
-        <p>Toda actividad realizada con su usuario queda trazable a su cuenta.</p>
-
-        <h3>2. Revisar datos de inspeccion</h3>
-        <ol>
-          <li>Abra Setup y luego History.</li>
-          <li>Use Ledger para revisar registros de inspeccion, notas, bloqueos, cambios de material e historial de edicion.</li>
-          <li>Use Charts para revisar tendencias por parte, trabajo, maquina, operacion y punto de inspeccion.</li>
-          <li>Use Top Issues para revisar eventos repetidos fuera de especificacion, deriva o atributos rechazados.</li>
-          <li>Use Export para obtener datos necesarios para revision, documentacion, reportes o soporte al cliente.</li>
-        </ol>
-        <p>Las vistas de capacidad y tendencia deben revisarse como historial guardado para el trabajo, maquina, operacion, fase y punto de inspeccion seleccionados.</p>
-
-        <h3>3. Mantener configuracion manualmente</h3>
-        <p>QA puede crear o actualizar manualmente partes, operaciones, campos de datos del trabajo, materiales, variables, atributos, tamanos de muestra, frecuencias y reglas de deriva.</p>
-        <ol>
-          <li>Confirme la fuente del plan de inspeccion antes de hacer cambios.</li>
-          <li>Confirme el numero de parte, grupo de producto, operacion y fase de inspeccion correctos.</li>
-          <li>Ingrese variables y atributos en el orden correcto de inspeccion.</li>
-          <li>Confirme tamanos de muestra, frecuencias, limites, metodos, herramientas usadas y requisitos por fase antes de guardar.</li>
-          <li>Revise la pantalla de inspeccion despues de los cambios para confirmar que la vista del operador sea correcta.</li>
-        </ol>
-
-        <h3>4. Mantenimiento de usuarios y maquinas</h3>
-        <p>QA puede agregar o editar usuarios manualmente, asignar roles, asignar acceso a grupos de producto, asignar turnos, restablecer contrasenas y mantener registros de maquinas.</p>
-        <p>Asigne solo el acceso que corresponda al rol, entrenamiento y autorizacion de grupo de producto del empleado.</p>
-
-        <h3>5. Reglas y reglas personalizadas</h3>
-        <p>QA puede actualizar la regla global de deteccion de deriva, ajustar limites de capacidad y configurar reglas personalizadas cuando el plan de calidad lo requiera.</p>
-        <p>Los cambios de reglas afectan el comportamiento de inspeccion. Revise la descripcion de la regla antes de guardar y confirme que sea apropiada para el producto y proceso.</p>
-
-        <h3>6. Liberacion de bloqueos</h3>
-        <p>QA puede liberar bloqueos mediante el flujo normal de correccion. QA no tiene acceso de bypass de Archon/System Manager.</p>
-        <ol>
-          <li>Revise el mensaje de bloqueo y el punto de inspeccion afectado.</li>
-          <li>Confirme si el problema esta fuera de especificacion, relacionado con un atributo rechazado o relacionado con una advertencia de deriva.</li>
-          <li>Seleccione la categoria de causa correcta.</li>
-          <li>Ingrese detalles claros de la causa cuando sea requerido.</li>
-          <li>Ingrese la accion tomada o accion correctiva requerida cuando sea requerido.</li>
-          <li>Libere el bloqueo solo cuando el problema haya sido revisado y la produccion pueda continuar.</li>
-        </ol>
-
-        <h3>7. Restriccion de importacion</h3>
-        <p>QA no debe importar partes, usuarios o maquinas de forma masiva desde libros de Excel a menos que se le asigne especificamente esa actualizacion controlada. La importacion masiva esta restringida a acceso de System Manager porque un archivo incorrecto puede cambiar muchos datos de configuracion a la vez.</p>
-        <p>Si se necesita una importacion masiva, prepare o revise el archivo y escale la carga a Archon/System Manager.</p>
-
-        <h3>8. Integridad de datos</h3>
-        <p>No elimine ni cambie configuracion de inspeccion, usuarios, maquinas, limites o reglas a menos que el cambio sea intencional, verificado y trazable a la fuente correcta.</p>
-        <p>Si los datos de inspeccion parecen incorrectos, revise el historial del trabajo y la auditoria de edicion antes de hacer correcciones.</p>
-
-        <h3>9. Cerrar sesion</h3>
-        <ol>
-          <li>Termine cualquier actividad de configuracion, revision o exportacion.</li>
-          <li>Confirme que los cambios se guardaron correctamente.</li>
-          <li>Haga clic en Sign Out.</li>
-        </ol>
-      </div>
+<p>Actualizado el 21 de octubre de 2026.</p>
+<h3>1. Entrar y navegar</h3>
+<p>Entre con su usuario/contraseña y turno real. Compruebe el usuario mostrado. Change password está en la pantalla inicial; complete contraseñas actual/nueva y confirmación, luego Save password.</p>
+<p>Inspect es la pantalla de producción. Setup ofrece Parts &amp; Inspections, Users, Machines y Rules según permisos. Data ofrece Ledger, Part Quality, Charts y Top Issues. Use el SOP del operador para inspeccionar y el del técnico para resolver problemas. No tome credenciales prestadas. Los nombres de controles se conservan como aparecen en el programa.</p>
+<p>QA puede exportar información. La importación de datos y configuración no está disponible para QA.</p>
+<p>Admin ofrece Notes y Change History para QA. QA - Read only puede consultar y exportar Data, pero no editar registros, mantener configuración ni responder en Admin &gt; Notes. Los pasos de mantenimiento y corrección siguientes requieren acceso QA regular.</p>
+<h3>2. Revisar con el operador</h3>
+<p>Confirme Job Number, Machine, Part Number, Operation e Inspection Phase; pulse Load. Complete la inspección inicial antes de avanzar de fase. No use otra operación/fase para evitar un bloqueo.</p>
+<p>Compruebe confirmaciones de Save Job Data y Save Material Lot. Registre lotes iniciales con Material issue at job start y reemplazos con Material change. Datos y lotes permanecen entre fases/sesiones hasta cambiarlos y guardarlos. Distinga filas por nombre además del número, especialmente lotes internos/de proveedor. Revise Current lot después.</p>
+<p>Machine Counter controla los mensajes por cantidad. Box # se escribe completo. Siga orden y posiciones de muestra. La precisión guardada de LSL/USL determina decimales esperados; el avance espera un segundo para más dígitos. Tab/Enter termina la entrada. Los indicadores deben transmitir el valor completo sin prefijo añadido.</p>
+<p>Use el contador real de la máquina; puede comenzar en cualquier número y no debe retroceder. Setup y Startup requeridos establecen la corrida actual después de cambiar herramental. Los controles se acumulan desde ese inicio: con inicio en 100, los de 2,000 vencen en 2,100; en 4,100 se incluyen los de 2,000 y 4,000; en 8,100 los de 2,000, 4,000 y 8,000. Use las frecuencias configuradas para la pieza. Inspecciones tardías o adicionales y Coil Change no desplazan estos puntos.</p>
+<p>Los atributos usan un Accept/Reject por lote sin reducir la muestra física. Removal calculado usa Raw menos Polished correspondientes. Hole Diameter por pasador guarda su diámetro según bloque asignado. Nunca cambie un requisito para aceptar una lectura incorrecta.</p>
+<p>Al inspeccionar, complete los campos, pulse Submit Inspection y compruebe confirmación y Job History. La numeración continúa por trabajo, operación y fase entre sesiones. Lecturas en pantalla o solicitudes pendientes no prueban envío.</p>
+<h3>3. Corregir User Error o terminar una falla</h3>
+<ol>
+<li>Lea el mensaje y confirme medición o atributo fallido.</li>
+<li>El operador libera su propio error seleccionando User Error e introduciendo sus credenciales en Clear Lock. No necesita acceso Line Tech. Line Tech o QA puede ayudar con el error de otro usuario. Corrija inmediatamente y continúe la misma inspección. No requiere causa/acción ni cuenta como falla o liberación separada.</li>
+<li>Para falla real, el Line Tech selecciona Machine, Tooling o Material, completa Cause details y Action taken y aprueba con sus credenciales antes de End Failed Inspection. QA también puede aprobar. Un operador solo puede hacerlo con acceso Line Tech aprobado por su supervisor y asignado a su cuenta. No permiten Clear Lock.</li>
+<li>Compruebe registro rojo, lecturas/motivo conservados e inspección vacía del mismo trabajo/operación/fase.</li>
+</ol>
+<p>End Inspection abre el formulario sin bloqueo activo; no cancela borradores. Siga el procedimiento separado de producto no conforme; el programa no autoriza liberar producto. Refresh Lock Status consulta al servidor; Reset Unlock Form borra el formulario, no el bloqueo. Investigue cualquier rechazo.</p>
+<p>Una inspección fallida queda pendiente para repetir inmediatamente al resolver el problema. Use el Machine Counter actual aunque no cambió; no espere el próximo conteo. Una repetición aprobada restablece el calendario normal. Los elementos ajenos a la falla mantienen sus propias frecuencias.</p>
+<h3>4. Mantener Parts &amp; Inspections</h3>
+<ol>
+<li>Abra Setup &gt; Parts &amp; Inspections. Seleccione la pieza existente en Edit Existing Part y Load Part antes de editar.</li>
+<li>Revise Part number, Part description, Product group y Operation. Mantenga Blank Code/Hole Size cuando correspondan. Productos terminados, blancos y materiales requieren sus descripciones correctas.</li>
+<li>Use Job Data Fields para información persistente requerida. Mantenga nombres, requisitos e instrucciones del operador para esa pieza.</li>
+<li>En Materials, mantenga etiqueta, número, descripción y Required por entrada. Separe materiales e identidades de lote; no combine números distintos en una fila.</li>
+<li>En Inspection Items, mantenga nombre, tipo Variable/Attribute, Requirement / context, Tool y Unit. Conserve instrucciones de origen. Configure fases, muestras físicas, posiciones, orden y frecuencia reales de esa operación.</li>
+<li>Copie LSL/USL de la hoja vigente aprobada y requisitos confirmados, con ceros finales. Deje vacíos targets o límites ausentes. No calcule puntos medios ni copie especificaciones a LCL/UCL. Solo use límites de control presentes en origen.</li>
+<li>Seleccione regla de deriva, pulse Save Part Inspection, lea confirmación, recargue y verifique la pantalla del operador.</li>
+</ol>
+<p>Verifique cambios contra la fuente vigente aprobada, no una exportación o respaldo antiguo. Export Parts &amp; Inspections genera una copia; QA no importa configuración.</p>
+<p>Un mínimo pasa a partir de LSL inclusive; un máximo hasta USL inclusive; ambos extremos de un rango pasan. Mantenga precisión en los límites sin trucos adicionales. Clear reinicia el formulario sin guardar.</p>
+<p>Siga hojas y decisiones operativas confirmadas para fases. Test Polish es una operación separada. Lados/posiciones requieren lecturas propias. Una selección por lote no reduce la muestra física del atributo.</p>
+<h3>5. Mantener Users y Machines</h3>
+<p>En Users, expanda el grupo del nivel de acceso y seleccione una cuenta, o New User. Introduzca usuario, nivel disponible, turno y grupos permitidos. Save User y verifique. Asigne solamente niveles ofrecidos a su cuenta. Reset Password afecta al usuario seleccionado; comuníquelo solo a esa persona. Delete User es mantenimiento intencional, no corrección de historia. No cree cuentas compartidas ni conceda acceso ajeno al trabajo/capacitación. Export Users genera referencia; importar masivamente no es función de QA.</p>
+<p>Asigne acceso Line Tech a un operador solamente con aprobación de su supervisor. Use su cuenta personal; no comparta un usuario Line Tech para aprobar fallas.</p>
+<p>En Machines, seleccione registro o New Machine. Revise Machine ID, Description y Allowed product groups. Sin restricciones de grupo permite todos. Save Machine y compruebe la lista del operador. Seleccione Keyboard input o Serial text gauge según equipo y la velocidad serial indicada por el dispositivo. Export Machines genera referencia. Delete elimina una máquina, no el historial del trabajo.</p>
+<h3>6. Seleccionar regla de deriva</h3>
+<p>En Setup &gt; Rules, seleccione Global default rule set y Save Global Rule. Los elementos Use Global Default heredan; una selección explícita la reemplaza. Revise Details antes de elegir. Un cambio global puede afectar muchas piezas.</p>
+<p>Spec Limit Only evalúa especificaciones sin patrones de deriva. No Automatic Rule desactiva controles automáticos de variables medidas y no debe seleccionarse sin revisión; atributos rechazados todavía bloquean. Otras familias usan sus patrones/requisitos mostrados. No invente límites de control para una regla.</p>
+<h3>7. Configurar Custom Rule</h3>
+<p>Pulse Configure en Custom Rule. Defina nombre y controles, revise resumen y pulse Save Custom Protocol:</p>
+<ol>
+<li>Enable custom Watch rules activa avisos. Desactivarlo no elimina la evaluación individual fuera de especificación de un elemento con Custom Rule.</li>
+<li>Directional Drift usa un promedio por variable e inspección completada. Seleccione cantidad consecutiva y dirección superior, inferior o ambas. El primer promedio inicia comparación; los siguientes deben avanzar en esa dirección. Elija si promedios iguales o inversión reinician el conteo.</li>
+<li>Near Specification Limits revisa muestras individuales en zona de aviso. Use porcentaje del rango LSL-USL o distancia exacta dentro del límite. Una especificación unilateral necesita distancia exacta, no porcentaje de un rango inexistente.</li>
+<li>Repeated Near-Limit Inspections define cuántas de las últimas inspecciones completadas contienen una muestra en zona. Superior/inferior cuentan por separado.</li>
+<li>Show Watch when usa Any o All condiciones activas. Con All se evalúa la combinación al enviar.</li>
+<li>Normal completed inspections before OK define recuperación. Deben despejarse todas las condiciones; un nuevo aviso reinicia recuperación.</li>
+<li>Añada notas y confirme que el elemento usa Custom Rule o hereda una regla global Custom.</li>
+</ol>
+<p>Lados/husillos permanecen separados. Inspecciones incompletas/fallidas no cuentan como promedios completados; muestra uno usa su lectura. WATCH es amarillo y orientativo; valores individuales fuera de límites bloquean con Custom Rule. Recupera OK según configuración. Las mediciones con aviso aparecen amarillas en Ledger/export; no se añade evento WATCH separado a Job History.</p>
+<h3>8. Data &gt; Ledger y correcciones</h3>
+<p>Ledger, Part Quality, Charts y Top Issues usan los mismos filtros: Part, Job, Operation, Phase, Machine, Shift, Variable, From y To. La selección se conserva entre estas pestañas. Los campos opcionales vacíos y las opciones All incluyen todos los valores coincidentes. Ejecute la vista seleccionada después de cambiar filtros; Export XLSX usa la selección de Ledger.</p>
+<ol>
+<li>Abra Data &gt; Ledger. Introduzca pieza, trabajo o ambos. Las sugerencias relacionan registros coincidentes.</li>
+<li>Filtre Operation, Phase, Shift y fechas; pulse Review Job. All shifts incluye todos los turnos. Shift filtra el historial, los resúmenes de capacidad y Export XLSX. Solo pieza incluye sus trabajos; trabajo seleccionado muestra Job Capability e Inspection / Job History.</li>
+<li>Abra Details para lecturas y contexto, no solo Machine Counter. Revise usuario, hora, operación, fase y muestras.</li>
+<li>En fallas rojas revise valor/atributo, violación, categoría, Cause details original y Action taken. User Error y WATCH aislado no son fallas reales.</li>
+<li>Use edición autorizada para lecturas/Machine Counter, o Edit Lot para material. Verifique cambio. No cree otra inspección ni enlaces supuestos para reparar datos viejos.</li>
+<li>Export XLSX usa la revisión seleccionada. Compruebe filtros; Job Notes incluye notas dentro del trabajo/fechas seleccionados, también de otras fases.</li>
+</ol>
+<p>La numeración continúa por trabajo, pieza, operación y fase. Solo cuentan envíos completados y fallas terminadas explícitamente. Lecturas sin envío no generan completados. Una falla parcial contiene solo lecturas tomadas. Escale enlaces ausentes; no reconstruya por hora.</p>
+<h3>9. Data &gt; Part Quality</h3>
+<p>Introduzca Part y opcional Job, Operation, Phase, Machine, Shift y fechas; Load Summary. Revise totales finalizados y variables en orden. Find variable filtra tabla.</p>
+<p>Seleccione fila o Variable para sus fallas. Revise fase, lecturas, violación, categoría, detalles, acción, notas, trabajo, máquina, contador y operador. Previous/Next muestra más fallas de esa variable, no todas las del sistema.</p>
+<p>El porcentaje de aprobación de pieza usa inspecciones finalizadas aprobadas dividido entre finalizadas, no desperdicio. Las variables cuentan inspecciones que realmente las revisaron, no campos ni toda la producción. Variables no alcanzadas en falla parcial no cuentan inspeccionadas. Avisos de datos faltantes requieren investigar, no inventar lecturas o motivos.</p>
+<h3>10. Charts y Job Capability</h3>
+<p>En Data &gt; Charts elija pieza/trabajo y filtros disponibles de operación, máquina, variable, fase y fechas. Seleccione gráfico y Run Report. Revise fase específica frente a All phases. Variables siguen orden configurado.</p>
+<p>Individuals y Run Chart muestran lecturas ordenadas. Moving Range muestra cambios adyacentes; Histogram distribución; Control / Spec Limits límites. La leyenda indica normal, WATCH amarillo y medición fallida roja. Un punto rojo no significa falla de todas las lecturas.</p>
+<p>Job Capability muestra mínimo, máximo, promedio, desviación e índices Cp/Cpk/Pp/Ppk disponibles. Panel de inspección y Ledger incluyen lecturas entre fases/máquinas del mismo trabajo/operación/variable. Fallas reales permanecen; borradores sin envío no son datos completados. Compare filtros y límites iguales.</p>
+<p>Cp/Cpk usan variación interna; Pp/Ppk variación global. Límites ausentes, pocos datos, variación cero o límites distintos por fase pueden dejar índices vacíos. Una especificación unilateral permite Cpk/Ppk, no Cp/Pp bilaterales. Índices no son veredicto global ni autorización de liberar producto; revise estabilidad y proceso.</p>
+<h3>11. Top Issues y exportaciones</h3>
+<p>En Data &gt; Top Issues seleccione filtros disponibles de pieza/trabajo/máquina/turno/variable/fechas y cantidad, luego Run Top Issues. Úselo para eventos fuera de especificación o atributos rechazados repetidos. Excluye Custom WATCH y correcciones User Error. Revise motivos en Ledger o Part Quality.</p>
+<p>Ledger &gt; Export XLSX contiene detalles de las inspecciones y Job Notes.</p>
+<h3>12. Leer y responder notas del trabajo</h3>
+<ol>
+<li>Abra Admin &gt; Notes. Search busca texto de notas o respuestas. Part, Job, Machine, Posted by y Replied by limitan la lista. Pulse Show Notes después de cambiar filtros; Clear Filters los borra.</li>
+<li>From y To filtran la fecha de la nota original, no la respuesta. Déjelos vacíos para buscar una respuesta reciente a una nota antigua. Previous/Next muestra más notas.</li>
+<li>Lea nota y respuestas. Pulse Reply, escriba y pulse Send Response. Compruebe la respuesta guardada con su nombre y fecha. El máximo es 1,000 caracteres.</li>
+<li>Autor, nota y fecha originales no cambian. Aquí no se editan ni borran respuestas. El operador ve la respuesta bajo la nota en Inspect &gt; Job History al cargar nuevamente el historial, incluso después de enviar una inspección. No aparece automáticamente en una pantalla sin actualizar.</li>
+</ol>
+<p>Las notas no reemplazan Cause details ni Action taken de la falla. Responder no libera un bloqueo, corrige una lectura ni completa una inspección.</p>
+<h3>13. Revisar Change History</h3>
+<p>Abra Admin &gt; Change History. Filtre Search, Changed by, Area, Part, From o To y pulse Show Changes. Revise quién guardó, cuándo, qué cambió y los valores anteriores/nuevos disponibles. Previous/Next muestra más entradas; Export CSV exporta resultados seleccionados. Las importaciones aparecen resumidas. La vista es de solo lectura y no deshace cambios. Ediciones sin guardar no se registran.</p>
+<h3>14. Guardar, escalar y salir</h3>
+<p>Lea confirmaciones. Informe problemas con trabajo, pieza, operación, fase, inspección, elemento, valor real, hora y mensaje. Lecturas pendientes/sin conexión no son inspecciones enviadas. No borre historia, invente datos ni cambie límites para evitar fallas.</p>
+<p>Antes de entregar, guarde notas/correcciones e informe problemas pendientes. Pulse Sign Out al terminar.</p>
+<p>Actualizar el navegador o reiniciar normalmente el servidor conserva una sesión válida. Si aparece Sign In Required, introduzca su contraseña en ese cuadro. Las entradas actuales permanecen en pantalla. Repita la acción interrumpida después de entrar; no se repite automáticamente un guardado o envío fallido. No actualice ni cierre sesión para quitar el cuadro y arriesgar trabajo sin guardar.</p>
+</div>
     </div>
   </section>
   <section id="ruleDetailModal" class="modal-backdrop hidden">
@@ -1494,32 +1654,39 @@
       <div id="ruleDetailBody" class="rule-detail-body"></div>
       <form id="customRuleForm" class="custom-rule-form hidden">
         <label>Protocol name<input id="customRuleName"></label>
-        <label>Recent point window<input id="customWindowSize" type="number" min="2" max="25"></label>
-        <label>Sigma threshold<input id="customSigmaThreshold" type="number" min="0.1" max="6" step="0.1"></label>
-        <label>Minimum points beyond threshold<input id="customMinimumPoints" type="number" min="1" max="25"></label>
+        <label class="custom-rule-toggle"><input id="customEnabled" type="checkbox">Enable custom Watch rules</label>
+        <h3 class="full-width-field">Directional Drift</h3>
+        <label class="custom-rule-toggle"><input id="customTrendEnabled" type="checkbox">Watch directional drift</label>
+        <label>Consecutive completed inspections<input id="customWindowSize" type="number" min="2" max="25" required></label>
         <label>
           Direction
           <select id="customDirection">
-            <option value="SameSide">Same side of center</option>
-            <option value="Above">Above center only</option>
-            <option value="Below">Below center only</option>
-            <option value="EitherSide">Either side of center</option>
+            <option value="SameSide">Toward either specification limit</option>
+            <option value="Above">Toward upper specification limit</option>
+            <option value="Below">Toward lower specification limit</option>
           </select>
         </label>
-        <label>
-          Include Western Electric checks
-          <select id="customIncludeWesternElectric">
-            <option value="false">No</option>
-            <option value="true">Yes</option>
-          </select>
-        </label>
-        <label>
-          Response behavior
-          <select id="customWarningBehavior">
-            <option value="Lock">Lock inspection</option>
-          </select>
-        </label>
-        <label class="full-width-field">Protocol notes<textarea id="customRuleNotes" rows="4"></textarea></label>
+        <label class="custom-rule-toggle"><input id="customResetOnEqual" type="checkbox">Equal averages restart the trend count</label>
+        <label class="custom-rule-toggle"><input id="customResetOnReversal" type="checkbox">Reversing averages restart the trend count</label>
+        <h3 class="full-width-field">Near Specification Limits</h3>
+        <label class="custom-rule-toggle"><input id="customNearLimitEnabled" type="checkbox">Watch any individual sample near a limit</label>
+        <label>Warning zone units<select id="customZoneMode"><option value="PercentSpan">Percent of LSL-to-USL span</option><option value="Distance">Exact distance inside the limit</option></select></label>
+        <label id="customZonePercentLabel">Warning zone at each limit (%)<input id="customZonePercent" type="number" min="0.01" max="49.99" step="0.01"></label>
+        <label id="customZoneDistanceLabel">Warning distance (measurement units)<input id="customZoneDistance" type="number" min="0" step="any"></label>
+        <p class="full-width-field">Percent mode requires both specification limits. For a one-sided specification, use an exact distance. Limits themselves are never changed.</p>
+        <h3 class="full-width-field">Repeated Near-Limit Inspections</h3>
+        <label class="custom-rule-toggle"><input id="customRepeatedEnabled" type="checkbox">Watch repeated near-limit results</label>
+        <label>Qualifying inspections<input id="customRepeatedCount" type="number" min="1" max="25"></label>
+        <label>Out of the last completed inspections<input id="customRepeatedWindow" type="number" min="2" max="25"></label>
+        <p class="full-width-field">An inspection qualifies if any valid sample is in the warning zone. Upper and lower results are counted separately.</p>
+        <h3 class="full-width-field">Trigger and Recovery</h3>
+        <label>Show Watch when<select id="customCombination"><option value="Any">Any enabled condition is met</option><option value="All">All enabled conditions are met</option></select></label>
+        <label>Normal completed inspections before OK<input id="customRecoveryInspections" type="number" min="1" max="25"></label>
+        <p class="full-width-field">Recovery requires all enabled conditions to be clear. Any new warning resets recovery. With All selected, the combined warning is evaluated on inspection submission.</p>
+        <p class="full-width-field">Basis: one average per variable per completed inspection. Separate sides and spindles remain separate. Sample size 1 uses that reading. Incomplete and failed inspections do not count.</p>
+        <p id="customRuleSummary" class="full-width-field" aria-live="polite"></p>
+        <p class="full-width-field">Drift: yellow Watch warning only. Out of spec: any individual sample below LSL or above USL locks immediately; values equal to a limit pass. Control limits are not required.</p>
+        <label class="full-width-field">Protocol notes<textarea id="customRuleNotes" rows="2"></textarea></label>
         <button type="submit">Save Custom Protocol</button>
       </form>
       <p id="customRuleMessage" class="message"></p>
@@ -1577,7 +1744,7 @@
       });
     })();
   </script>
-  <script src="/app.js?v=20260925-lock-prehide-submit-race-fix"></script>
+  <script src="/app.js?v=1.4.3"></script>
 </body>
 </html>
 

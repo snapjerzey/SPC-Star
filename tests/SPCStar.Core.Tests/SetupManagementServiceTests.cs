@@ -7,6 +7,108 @@ namespace SPCStar.Core.Tests;
 
 public sealed class SetupManagementServiceTests
 {
+    [Theory]
+    [InlineData("Setup", true)]
+    [InlineData("Startup", true)]
+    [InlineData("In Process", true)]
+    [InlineData("Setup", false)]
+    [InlineData("Startup", false)]
+    [InlineData("In Process", false)]
+    public void OneSidedSpecAllowsSampleSizeEditWithoutAddingLimitsOrChangingOtherPlans(string phase, bool minimumOnly)
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        var request = Request("Schneider Production", "Pull Test", inspectionPhase: phase) with
+        {
+            Nominal = null, Lsl = minimumOnly ? 10m : null, Usl = minimumOnly ? null : 10m,
+            Lcl = null, Ucl = null, SampleSize = 3
+        };
+        var created = service.UpsertInspectionSetup(request);
+        Assert.True(created.Succeeded, string.Join(" | ", created.Errors));
+        Assert.True(service.UpsertInspectionSetup(Request("Schneider Production", "Other check", inspectionPhase: phase)).Succeeded);
+        var before = System.Text.Json.JsonSerializer.Serialize(repository.InspectionPlans.Skip(1));
+        var order = repository.InspectionPlans[0].DisplayOrder;
+        var result = service.UpsertInspectionSetup(request with { SampleSize = 5 });
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var plan = repository.InspectionPlans[0];
+        Assert.Equal(5, plan.SampleSize);
+        Assert.Equal(request.Lsl, plan.Lsl);
+        Assert.Equal(request.Usl, plan.Usl);
+        Assert.Null(plan.Nominal);
+        Assert.Equal(order, plan.DisplayOrder);
+        Assert.DoesNotContain(repository.ControlLimits, item => item.CharacteristicName == "Pull Test");
+        Assert.Equal(before, System.Text.Json.JsonSerializer.Serialize(repository.InspectionPlans.Skip(1)));
+    }
+
+    [Theory]
+    [InlineData(10, 10)]
+    [InlineData(11, 10)]
+    public void PairedLimitsStillRejectEqualOrReversedBounds(int lsl, int usl)
+    {
+        var repository = new InMemorySpcRepository();
+        var result = new SetupManagementService(repository).UpsertInspectionSetup(
+            Request("Schneider Production", "Check") with { Lsl = lsl, Usl = usl });
+        Assert.False(result.Succeeded);
+        Assert.Contains("LSL must be less than USL.", result.Errors);
+        Assert.Empty(repository.InspectionPlans);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(7)]
+    public void SpecOnlyEditDoesNotNormalizeOrChangeAnyOrder(int? submittedOrder)
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        service.UpsertInspectionSetup(Request("Schneider Production", "First"));
+        service.UpsertInspectionSetup(Request("Schneider Production", "Second"));
+        repository.InspectionPlans[0].DisplayOrder = 7;
+        repository.InspectionPlans[1].DisplayOrder = 22;
+        var before = repository.InspectionPlans.Select(item => item.DisplayOrder).ToArray();
+        var result = service.UpsertInspectionSetup(Request("Schneider Production", "First") with { Usl = 2.6m, DisplayOrder = submittedOrder });
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(before, repository.InspectionPlans.Select(item => item.DisplayOrder));
+        Assert.Equal(2.6m, result.Value!.Usl);
+    }
+
+    [Fact]
+    public void UnitlessToteFieldDoesNotBlockSavingAnUnrelatedSpecLimit()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        var tote = Request("Schneider Production", "Tote #") with { PartNum = "61033", UnitOfMeasure = "", Nominal = null, Lsl = null, Usl = null, Lcl = null, Ucl = null };
+        Assert.True(service.UpsertInspectionSetup(tote).Succeeded);
+        var height = Request("Schneider Production", "Overall Height") with { PartNum = "61033", Nominal = null, Lsl = .30m, Usl = .32m, Lcl = null, Ucl = null };
+        Assert.True(service.UpsertInspectionSetup(height).Succeeded);
+        Assert.True(service.UpsertInspectionSetup(tote).Succeeded);
+        var result = service.UpsertInspectionSetup(height with { Usl = .31m });
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(.31m, result.Value!.Usl);
+        Assert.Equal("", repository.Characteristics.Single(item => item.Name == "Tote #").UnitOfMeasure);
+    }
+
+    [Fact]
+    public void CustomWatch_AllOptionsRoundTrip_AndInvalidSettingsDoNotActivateRule()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupManagementService(repository);
+        var rule = new CustomDriftRuleSetupDto("Watch", 5, 1m, 5, "Below", false, "Lock", "Test",
+            new CustomWatchOptions { TrendEnabled = false, NearLimitEnabled = true, RepeatedNearLimitEnabled = true,
+                ZoneMode = "Distance", ZoneDistance = .001m, RepeatedCount = 2, RepeatedWindow = 4,
+                Combination = "All", ResetOnEqual = false, ResetOnReversal = false, RecoveryInspections = 3 });
+        var result = service.UpdateSettings(new("Custom", rule));
+        Assert.True(result.Succeeded);
+        var saved = new SetupQueryService(repository).GetSetupSnapshot().Settings.CustomDriftRule;
+        Assert.Equal("Warning", saved.WarningBehavior);
+        Assert.Equal(.001m, saved.Options!.ZoneDistance);
+        Assert.Equal("All", saved.Options.Combination);
+        Assert.Equal(3, saved.Options.RecoveryInspections);
+        Assert.False(saved.Options.ResetOnEqual);
+        var invalid = service.UpdateSettings(new("WesternElectric", rule with { Options = new CustomWatchOptions { RecoveryInspections = 0 } }));
+        Assert.False(invalid.Succeeded);
+        Assert.Equal("Custom", repository.Settings.GlobalAlertRuleSet);
+    }
+
     [Fact]
     public void UpsertUser_CreatesUserWithSelectedRole()
     {
@@ -319,7 +421,7 @@ public sealed class SetupManagementServiceTests
     }
 
     [Fact]
-    public void UpdateSettings_SavesCapabilityThresholds()
+    public void UpdateSettings_RejectsRetiredGlobalCapabilityThresholds()
     {
         var repository = new InMemorySpcRepository();
         var service = new SetupManagementService(repository);
@@ -328,9 +430,8 @@ public sealed class SetupManagementServiceTests
             "WesternElectric",
             CapabilityThresholds: new CapabilityThresholdSetupDto(1.10m, 1.50m)));
 
-        Assert.True(result.Succeeded);
-        Assert.Equal(1.10m, repository.Settings.CapabilityThresholds.YellowMinimum);
-        Assert.Equal(1.50m, repository.Settings.CapabilityThresholds.GreenMinimum);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors,error=>error.Contains("removed"));
     }
 
     [Fact]
@@ -344,7 +445,7 @@ public sealed class SetupManagementServiceTests
             CapabilityThresholds: new CapabilityThresholdSetupDto(1.33m, 1.00m)));
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("green minimum", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error => error.Contains("removed", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -423,7 +524,7 @@ public sealed class SetupManagementServiceTests
         Assert.Equal(4m, result.Value.Usl);
         Assert.Equal(3, result.Value.SampleSize);
         Assert.Equal(3m, repository.SpecLimits.Single().Nominal);
-        Assert.Equal(3m, repository.ControlLimits.Single().CenterLine);
+        Assert.Empty(repository.ControlLimits);
     }
 
     [Fact]
@@ -456,7 +557,7 @@ public sealed class SetupManagementServiceTests
 
         Assert.True(initial.Succeeded, string.Join(" | ", initial.Errors));
         Assert.Single(repository.SpecLimits);
-        Assert.Single(repository.ControlLimits);
+        Assert.Empty(repository.ControlLimits);
 
         var result = service.UpsertInspectionSetup(new UpsertInspectionSetupRequest(
             "61055",

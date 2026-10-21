@@ -16,18 +16,28 @@ const state = {
   currentShift: "1st Half Days",
   setupSection: "Inspection",
   historyView: "Ledger",
+  qualityResult: null,
+  qualityRequest: 0,
+  qualityVariable: "",
+  qualityQuery: null,
+  qualityFailureRequest: 0,
   historyFilters: {
     partNum: "",
     jobNum: ""
   },
   phaseGateHistoryCache: new Map(),
+  completedMachineCounterBaselines: new Map(),
   inspectionDrafts: new Map(),
+  inspectionDraftSaveTimer: null,
+  inspectionInputUiTimer: null,
   preserveInspectionEntriesUntil: 0,
   inspectionSubmitting: false,
   pendingLockClearPromise: null,
   pendingLockClearAlertId: "",
   pendingClearLock: null,
   suppressedClearedLockIds: new Set(),
+  manualFailureDialog: false,
+  materialIssueBlocked: false,
   device: {
     serialPort: null,
     serialReader: null,
@@ -46,11 +56,80 @@ const WORK_CONTEXT_STORAGE_KEY = "spc-star-work-context";
 const INSPECTION_DRAFT_STORAGE_KEY = "spc-star-inspection-drafts";
 const PENDING_COMPLETIONS_STORAGE_KEY = "spc-star-pending-completions";
 
+async function sessionFetch(path, options = {}) {
+  const user = state.user;
+  const isAuthRequest = String(path).startsWith("/auth/");
+  if (user && state.sessionInvalid && !isAuthRequest) throw new Error("Sign in again to continue. Your unsaved entries have been kept.");
+  const response = await fetch(path, options);
+  if (user && !isAuthRequest && state.user?.sessionToken === user.sessionToken && [401, 403].includes(response.status)) {
+    let invalid = response.status === 401;
+    if (!invalid) {
+      // A permission denial must not be mistaken for an expired login.
+      try {
+        const check = await fetch(`/auth/me?userName=${encodeURIComponent(user.userName)}`, {
+          cache: "no-store", headers: { "X-SPCStar-User": user.userName, "X-SPCStar-Session": user.sessionToken }
+        });
+        invalid = check.status === 401;
+      } catch { /* A network outage does not invalidate a session. */ }
+    }
+    if (invalid && state.user?.sessionToken === user.sessionToken) requestSessionSignIn();
+  }
+  return response;
+}
+
+function requestSessionSignIn() {
+  if (!state.user || state.sessionInvalid) return;
+  state.sessionInvalid = true;
+  try {
+    clearSavedSession();
+    saveCurrentWorkContext();
+    saveInspectionDrafts();
+  } catch { /* Keep the current form in place even if browser storage is unavailable. */ }
+  $("sessionSignInUser").value = state.user.userName;
+  $("sessionSignInPassword").value = "";
+  $("sessionSignInMessage").textContent = "";
+  $("sessionSignInDialog").showModal();
+  $("sessionSignInPassword").focus();
+}
+
+async function renewSession(event) {
+  event.preventDefault();
+  const button = $("sessionSignInForm").querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const response = await fetch("/auth/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userName: state.user.userName, password: $("sessionSignInPassword").value })
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Incorrect password. Your entries are still here. Try again." : "Unable to sign in. Try again.");
+    const user = await response.json();
+    state.user = user;
+    state.sessionInvalid = false;
+    saveRefreshSession();
+    setStatus($("userBadge"), `${user.userName} (${formatRoleList(user.roles)}) / ${state.currentShift}`, "ok");
+    configureSetupAccess();
+    if (state.activePanel === "inspect" && !hasPermission("CanEnterInspections")) showPanel("data");
+    else if (state.activePanel !== "inspect" && !setupSectionAccess(state.setupSection)) showPanel("inspect");
+    $("sessionSignInPassword").value = "";
+    $("sessionSignInDialog").close();
+  } catch (error) {
+    $("sessionSignInMessage").textContent = readableError(error);
+    $("sessionSignInMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
-  const response = await fetch(path, {
-    headers: { ...(isFormData ? {} : { "Content-Type": "application/json" }), ...(options.headers || {}) },
-    ...options
+  const response = await sessionFetch(path, {
+    ...options,
+    headers: { ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(state.user ? {
+        "X-SPCStar-User": state.user.userName,
+        "X-SPCStar-Session": state.user.sessionToken,
+        ...(path.startsWith("/setup/") && state.setupSaving && state.setupChangeGroup ? { "X-SPCStar-Change-Group":state.setupChangeGroup } : {})
+      } : {}), ...(options.headers || {}) }
   });
   if (!response.ok) {
     const text = await response.text();
@@ -67,6 +146,15 @@ async function api(path, options = {}) {
 function setStatus(element, text, kind = "neutral") {
   element.textContent = text;
   element.className = `status-pill ${kind}`;
+}
+
+async function loadApplicationVersion() {
+  let label = "Version unavailable";
+  try {
+    const health = await api("/health", { cache: "no-store" });
+    if (health.version) label = `Version ${health.version}`;
+  } catch { /* Do not block sign-in when the server is unavailable. */ }
+  document.querySelectorAll("[data-app-version]").forEach(element => { element.textContent = label; });
 }
 
 function inspectionSets() {
@@ -209,6 +297,7 @@ function planUsesMachineCounterFrequency(plan) {
 }
 
 function planIsDueAtCurrentMachineCounter(plan) {
+  if (machineCounterBelowJobMinimum()) return false;
   if (!planUsesMachineCounterFrequency(plan)) {
     return true;
   }
@@ -218,9 +307,36 @@ function planIsDueAtCurrentMachineCounter(plan) {
   }
 
   const counter = Number(machineCounterValue());
-  const every = Math.max(Number(plan.frequencyValue || 0), 1);
-  const firstDue = Math.max(Number(plan.firstDueValue || every), 1);
-  return counter >= firstDue;
+  if (planRequiresReinspection(plan)) return true;
+  const nextDue = nextMachineCounterDueForPlan(plan);
+  return nextDue !== null && counter >= nextDue;
+}
+
+function planRequiresReinspection(plan) {
+  const index = state.selectedPlans.findIndex(candidate => candidate === plan ||
+    (plan.id && candidate.id === plan.id) ||
+    (plan.characteristicName && candidate.characteristicName === plan.characteristicName &&
+      candidate.partNum === plan.partNum && candidate.processCode === plan.processCode &&
+      candidate.operationSeq === plan.operationSeq && candidate.inspectionPhase === plan.inspectionPhase));
+  return index >= 0 && state.contexts[index]?.frequencyStatus?.requiresReinspection === true;
+}
+
+function minimumJobMachineCounter() {
+  const jobNum = $("jobNum").value.trim().toLowerCase();
+  const cached = state.jobMachineCounterMinimumCache;
+  if (cached?.jobNum === jobNum && cached.history === state.jobNotes && cached.contexts === state.contexts) return cached.value;
+  const saved = (state.jobNotes || []).filter(entry =>
+    String(entry.jobNum || "").trim().toLowerCase() === jobNum &&
+    ["PhaseComplete", "InspectionFailed"].includes(entry.entryType))
+    .map(entry => Number(entry.machineCounter) || 0);
+  const value = Math.max(0, ...saved, ...(state.contexts || []).map(context => Number(context?.minimumMachineCounter) || 0));
+  state.jobMachineCounterMinimumCache = { jobNum, history: state.jobNotes, contexts: state.contexts, value };
+  return value;
+}
+
+function machineCounterBelowJobMinimum() {
+  const value = machineCounterValue();
+  return value !== "" && Number.isFinite(Number(value)) && Number(value) < minimumJobMachineCounter();
 }
 
 function selectedSetNeedsMachineCounter(set) {
@@ -304,6 +420,37 @@ function invalidatePhaseGateHistory(jobNum) {
   state.phaseGateHistoryCache.delete(jobNum.trim().toLowerCase());
 }
 
+function completionBaselineKey({ jobNum }) {
+  return String(jobNum || "").trim().toLowerCase();
+}
+
+function recordCompletedMachineCounterBaseline(counter) {
+  if (!Number.isFinite(Number(counter))) {
+    return;
+  }
+
+  const { jobNum, resourceId, set } = selectedValues();
+  const key = completionBaselineKey({ jobNum, resourceId, set });
+  if (!key) {
+    return;
+  }
+
+  state.completedMachineCounterBaselines.set(key, Math.max(Number(counter), state.completedMachineCounterBaselines.get(key) || 0));
+}
+
+function latestCompletedMachineCounterBaseline() {
+  const jobNum = $("jobNum").value.trim();
+  const key = completionBaselineKey({ jobNum });
+  const localBaseline = key ? state.completedMachineCounterBaselines.get(key) || 0 : 0;
+  const historyBaseline = Math.max(0, ...(state.jobNotes || [])
+    .filter((entry) =>
+      entry.entryType === "PhaseComplete" &&
+      String(entry.jobNum || "").toLowerCase() === jobNum.toLowerCase() &&
+      Number.isFinite(Number(entry.machineCounter)))
+    .map((entry) => Number(entry.machineCounter)));
+  return Math.max(localBaseline, historyBaseline);
+}
+
 function phaseCompletionExists(history, set, phase) {
   return (history || []).some((entry) =>
     entry.entryType === "PhaseComplete" &&
@@ -336,7 +483,8 @@ async function login(event) {
       method: "POST",
       body: JSON.stringify({ userName, password })
     });
-    await startAuthenticatedSession({ persist: true });
+    saveRefreshSession();
+    await startAuthenticatedSession();
     $("loginMessage").textContent = "";
   } catch (error) {
     $("loginMessage").textContent = readableError(error);
@@ -349,30 +497,8 @@ async function login(event) {
   }
 }
 
-async function restoreAuthenticatedSession() {
-  const saved = readSavedSession();
-  if (!saved?.userName) {
-    clearLoginFields();
-    return;
-  }
-
-  try {
-    $("loginMessage").textContent = "Restoring session...";
-    $("loginMessage").className = "message";
-    state.currentShift = saved.shift || $("loginShift").value;
-    $("loginShift").value = state.currentShift;
-    state.user = await api(`/auth/me?userName=${encodeURIComponent(saved.userName)}`);
-    await startAuthenticatedSession({ persist: true });
-    $("loginMessage").textContent = "";
-  } catch {
-    clearSavedSession();
-    clearLoginFields();
-    $("loginMessage").textContent = "Session expired. Sign in again.";
-    $("loginMessage").className = "message";
-  }
-}
-
-async function startAuthenticatedSession(options = {}) {
+async function startAuthenticatedSession() {
+  state.sessionInvalid = false;
   $("loginMessage").textContent = "Loading inspection data...";
   setStatus($("userBadge"), `${state.user.userName} (${formatRoleList(state.user.roles)}) / ${state.currentShift}`, "ok");
   document.body.classList.remove("login-active");
@@ -380,35 +506,52 @@ async function startAuthenticatedSession(options = {}) {
   $("loginPanel").classList.add("hidden");
   $("workPanel").classList.remove("hidden");
   state.inspectionDrafts = readSavedInspectionDrafts();
-  if (options.persist) {
-    saveCurrentSession();
-  }
-  if (canAccessSetup()) {
+  if (canAccessNavigation()) {
     $("loginMessage").textContent = "Loading setup data...";
     $("navTabs").classList.remove("hidden");
     await loadSetupAdmin();
   }
-  await loadSnapshot({ restoreWorkContext: true });
-  await syncPendingCompletions({ silent: true });
-}
-
-function saveCurrentSession() {
-  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
-    userName: state.user?.userName || "",
-    shift: state.currentShift || $("loginShift").value
-  }));
-}
-
-function readSavedSession() {
-  try {
-    return JSON.parse(window.localStorage.getItem(SESSION_STORAGE_KEY) || "null");
-  } catch {
-    return null;
-  }
+  await loadSnapshot({ restoreWorkContext: hasPermission("CanEnterInspections") });
+  if (hasPermission("CanEnterInspections")) await syncPendingCompletions({ silent: true });
+  else showPanel("data");
 }
 
 function clearSavedSession() {
   window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function saveRefreshSession() {
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+    userName: state.user.userName, sessionToken: state.user.sessionToken, shift: state.currentShift
+  }));
+}
+
+async function resumeRefreshSession() {
+  // A fresh visit must sign in; only a reload may resume this tab's session.
+  window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(SESSION_STORAGE_KEY) || "null");
+    if (performance.getEntriesByType("navigation")[0]?.type !== "reload" || !saved?.userName || !saved?.sessionToken) {
+      clearSavedSession();
+      return;
+    }
+    state.user = await api(`/auth/me?userName=${encodeURIComponent(saved.userName)}`, {
+      headers: { "X-SPCStar-Session": saved.sessionToken }
+    });
+    state.currentShift = saved.shift || state.user.shift;
+    saveRefreshSession();
+    await startAuthenticatedSession();
+    $("loginMessage").textContent = "";
+  } catch {
+    clearSavedSession();
+    state.user = null;
+    document.body.classList.add("login-active");
+    $("loginPanel").classList.remove("hidden");
+    for (const id of ["workPanel", "setupPanel", "dataPanel", "adminPanel", "navTabs", "logoutButton"]) $(id).classList.add("hidden");
+    setStatus($("userBadge"), "Not signed in");
+    $("loginMessage").textContent = "Please sign in again.";
+  }
 }
 
 function saveCurrentWorkContext() {
@@ -451,6 +594,23 @@ function saveInspectionDrafts() {
     userName: state.user.userName,
     entries: [...state.inspectionDrafts.entries()]
   }));
+}
+
+function scheduleInspectionDraftSave() {
+  window.clearTimeout(state.inspectionDraftSaveTimer);
+  state.inspectionDraftSaveTimer = window.setTimeout(() => {
+    state.inspectionDraftSaveTimer = null;
+    saveInspectionDrafts();
+  }, 250);
+}
+
+function scheduleInspectionInputUiRefresh(input) {
+  window.clearTimeout(state.inspectionInputUiTimer);
+  state.inspectionInputUiTimer = window.setTimeout(() => {
+    state.inspectionInputUiTimer = null;
+    updateCurrentPlanStatus(input);
+    updateInspectionSubmitState();
+  }, 50);
 }
 
 function readSavedInspectionDrafts() {
@@ -566,13 +726,14 @@ async function changePassword() {
 async function loadSnapshot(options = {}) {
   state.snapshot = await api("/sync/setup-snapshot");
   fillDatalist($("jobOptions"), state.snapshot.jobs, (job) => job.jobNum);
+  fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
   $("jobNum").value = "";
   refreshMachineDropdowns();
-  fillDatalist($("partOptions"), state.snapshot.parts, (part) => part.partNum);
   fillDatalist($("productGroupOptions"), productGroups(), (group) => group);
   $("partNum").value = "";
+  refreshWorkJobPartChoices();
   refreshOperationChoices({ preserve: false });
-  if (canAccessSetup()) {
+  if (canAccessNavigation()) {
     configureSetupAccess();
     renderPartReviewControls();
     renderReportControls();
@@ -604,6 +765,7 @@ async function restoreWorkContext() {
 
   $("jobNum").value = saved.jobNum;
   $("partNum").value = saved.partNum;
+  refreshWorkJobPartChoices();
   refreshMachineDropdowns();
   $("resourceId").value = machinesForSelectedPart().some((resource) => resource.resourceId === saved.resourceId)
     ? saved.resourceId
@@ -680,6 +842,50 @@ function updatePartFromJob() {
     refreshOperationChoices({ preserve: false });
     refreshMachineDropdowns();
   }
+  refreshWorkJobPartChoices();
+}
+
+function workJobPartChoices(jobValue, partValue) {
+  const normalize = value => String(value || "").trim().toLowerCase();
+  const jobNum = normalize(jobValue);
+  const partNum = normalize(partValue);
+  const jobs = state.snapshot?.jobs || [];
+  const parts = state.snapshot?.parts || [];
+  const exactPart = parts.some(part => normalize(part.partNum) === partNum);
+  const exactJob = jobs.find(job => normalize(job.jobNum) === jobNum);
+  const matchingJobs = exactJob ? [exactJob] : jobs.filter(job => normalize(job.jobNum).startsWith(jobNum));
+  const matchingParts = new Set(matchingJobs.map(job => normalize(job.partNum)));
+  return {
+    jobs: jobs.filter(job => !partNum || (exactPart
+      ? normalize(job.partNum) === partNum : normalize(job.partNum).startsWith(partNum))),
+    parts: parts.filter(part => !jobNum || matchingJobs.length === 0 || matchingParts.has(normalize(part.partNum)))
+  };
+}
+
+function refreshWorkJobPartChoices() {
+  const choices = workJobPartChoices($("jobNum").value, $("partNum").value);
+  fillDatalist($("workJobOptions"), choices.jobs, job => job.jobNum);
+  fillDatalist($("workPartOptions"), choices.parts, part => part.partNum);
+}
+
+function updateJobFromPart() {
+  const partNum = $("partNum").value.trim().toLowerCase();
+  const job = (state.snapshot?.jobs || []).find(item =>
+    item.jobNum.toLowerCase() === $("jobNum").value.trim().toLowerCase());
+  const exactPart = (state.snapshot?.parts || []).some(part => part.partNum.toLowerCase() === partNum);
+  if (job && partNum && (exactPart
+      ? job.partNum.toLowerCase() !== partNum : !job.partNum.toLowerCase().startsWith(partNum))) {
+    $("jobNum").value = "";
+  }
+  refreshWorkJobPartChoices();
+}
+
+function workJobPartMismatchMessage(jobNum, partNum) {
+  const job = (state.snapshot?.jobs || []).find(item =>
+    item.jobNum.toLowerCase() === jobNum.trim().toLowerCase());
+  return job && job.partNum.toLowerCase() !== partNum.trim().toLowerCase()
+    ? `Job ${job.jobNum} belongs to part ${job.partNum}. Select its matching part or a different job.`
+    : "";
 }
 
 async function loadContext(event) {
@@ -694,6 +900,14 @@ async function loadContext(event) {
     return;
   }
 
+  const jobPartMismatch = workJobPartMismatchMessage(jobNum, partNum);
+  if (jobPartMismatch) {
+    state.selectedPlans = [];
+    state.contexts = [];
+    renderEmptyContext(jobPartMismatch);
+    return;
+  }
+
   if (!set) {
     state.selectedPlans = [];
     state.contexts = [];
@@ -705,6 +919,33 @@ async function loadContext(event) {
     state.selectedPlans = [];
     state.contexts = [];
     renderEmptyContext(`No inspection items are required for ${$("inspectionPhase").value} on ${partNum} / ${operationLabelFor(set)}.`);
+    return;
+  }
+
+  let materialHistory;
+  try {
+    materialHistory = await api(`/jobs/${encodeURIComponent(jobNum)}/history`);
+    state.phaseGateHistoryCache.set(jobNum.toLowerCase(), materialHistory);
+  } catch (error) {
+    materialHistory = state.phaseGateHistoryCache.get(jobNum.toLowerCase());
+    if (!materialHistory) {
+      state.selectedPlans = [];
+      state.contexts = [];
+      renderEmptyContext("Could not verify the saved material issue. " + readableError(error));
+      return;
+    }
+  }
+  const materialGate = requiredMaterialIssueGate(materialHistory, jobNum, set);
+  state.materialIssueBlocked = !materialGate.allowed;
+  if (!materialGate.allowed) {
+    state.selectedPlans = [];
+    state.contexts = [];
+    renderEmptyContext(materialGate.message);
+    $("materialPanel").classList.remove("hidden");
+    renderConfiguredMaterialFields(set);
+    $("materialMessage").textContent = materialGate.message;
+    $("materialMessage").className = "message error";
+    document.querySelector(".material-lot-input[required]")?.focus();
     return;
   }
 
@@ -744,19 +985,21 @@ async function loadContext(event) {
 }
 
 function renderEmptyContext(message = "") {
+  const jobNum = $("jobNum").value.trim();
   $("contextTitle").textContent = "Inspection Items";
   $("contextSubtitle").textContent = "Enter a job number, machine, part number, and operation, then start inspecting.";
   renderLock(null);
   $("measurementForm").classList.add("hidden");
   $("devicePanel").classList.add("hidden");
   $("trendPanel").classList.add("hidden");
-  $("jobNotesPanel").classList.add("hidden");
+  $("jobNotesPanel").classList.toggle("hidden", !jobNum);
   $("materialPanel").classList.add("hidden");
   $("tagsDivider").classList.add("hidden");
   $("tagsSection").classList.add("hidden");
   $("jobTagsList").innerHTML = "";
   $("measurementVariableList").innerHTML = "";
   $("machineCounter").value = "";
+  $("machineCounterDueMessage").textContent = "";
   $("meanSummary").innerHTML = "";
   $("trendCharacteristic").innerHTML = "";
   $("entryMessage").textContent = message;
@@ -766,9 +1009,16 @@ function renderEmptyContext(message = "") {
   $("tagMessage").textContent = "";
   $("materialFieldRows").innerHTML = "";
   $("materialMessage").textContent = "";
-  $("jobNoteText").value = "";
+  if (!jobNum) {
+    $("jobNoteText").value = "";
+  }
   $("jobNoteMessage").textContent = "";
-  renderJobNotes([]);
+  if (jobNum) {
+    loadJobNotes(jobNum).catch(() => {});
+  } else {
+    state.jobNotes = [];
+    renderJobNotes([]);
+  }
   drawTrend([]);
 }
 
@@ -855,14 +1105,83 @@ function renderConfiguredJobDataFields(set) {
       <span>${escapeHtml(fact.label)}</span>
       <strong>${escapeHtml(fact.value)}</strong>
     </div>`).join("");
-  form.innerHTML = fields.map((field, index) => `
+  form.innerHTML = fields.map((field, index) => {
+    const isBoxField = isBoxNumberJobDataField(field.fieldName);
+    return `
     <label>
       ${escapeHtml(field.fieldName)}
-      <input id="job-tag-${index}" name="job-tag-${index}" class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" data-per-inspection="${isPerInspectionJobDataField(field.fieldName) ? "true" : "false"}" autocomplete="off" ${jobDataFieldIsRequiredAtLoad(field) ? "required" : ""}>
-    </label>`).join("") + (fields.length ? `<button type="submit" class="secondary">Save Job Data</button>` : "");
+      <input id="job-tag-${index}" name="job-tag-${index}" class="job-tag-input" data-tag-name="${escapeHtml(field.fieldName)}" data-per-inspection="${isPerInspectionJobDataField(field.fieldName) ? "true" : "false"}" autocomplete="off" ${isBoxField ? `inputmode="numeric"` : ""} ${jobDataFieldIsRequiredAtLoad(field) ? "required" : ""}>
+      ${field.instruction ? `<small id="job-tag-instruction-${index}">${escapeHtml(field.instruction)}</small>` : ""}
+    </label>`;
+  }).join("") + (fields.length ? `<button type="submit" class="secondary">Save Job Data</button>` : "");
   form.querySelectorAll(".job-tag-input[data-per-inspection='true']").forEach((input) => {
     input.addEventListener("input", updateInspectionSubmitState);
+    input.addEventListener("keydown", handlePerInspectionJobDataKeydown);
   });
+}
+
+function firstPerInspectionJobDataInput() {
+  return [...document.querySelectorAll(".job-tag-input[data-per-inspection='true']")]
+    .find((input) => !input.disabled && input.offsetParent !== null) || null;
+}
+
+function firstOpenInspectionEntryInput() {
+  return [...document.querySelectorAll(".measurement-input")]
+    .find((input) =>
+      !input.disabled &&
+      !input.readOnly &&
+      input.dataset.submitted !== "true" &&
+      input.offsetParent !== null) ||
+    firstPerInspectionJobDataInput() ||
+    null;
+}
+
+function noDueInspectionEntryMessage() {
+  const set = selectedInspectionSet();
+  const nextDue = nextMachineCounterDue(set?.plans || []);
+  if (nextDue) {
+    return `No inspection entry is due until Machine Counter ${formatInteger(nextDue)}.`;
+  }
+
+  return "No inspection entry is due at this Machine Counter.";
+}
+
+function handlePerInspectionJobDataKeydown(event) {
+  const input = event.target;
+  if (!input?.classList?.contains("job-tag-input")) {
+    return;
+  }
+
+  if (event.key === "Enter") {
+    event.preventDefault();
+    event.stopPropagation();
+    updateInspectionSubmitState();
+    return;
+  }
+
+  if (event.key !== "Tab" || event.shiftKey) {
+    return;
+  }
+
+  if (input.required && !input.value.trim()) {
+    event.preventDefault();
+    event.stopPropagation();
+    showEntryMessage(`Fill in ${input.dataset.tagName || "job data"} before moving on.`, "error");
+    input.focus();
+    return;
+  }
+
+  const fields = [...document.querySelectorAll(".job-tag-input[data-per-inspection='true']")]
+    .filter((field) => !field.disabled && field.offsetParent !== null);
+  const index = fields.indexOf(input);
+  const next = fields.slice(index + 1)[0] || firstOpenMeasurementInput();
+  if (next) {
+    event.preventDefault();
+    event.stopPropagation();
+    updateInspectionSubmitState();
+    next.focus();
+    next.select?.();
+  }
 }
 
 function jobDataFieldAppliesToSelectedSet(field, set) {
@@ -948,25 +1267,31 @@ function renderConfiguredMaterialFields(set) {
     isRequired: true,
     displayOrder: 0
   }];
-  const materialRows = materialFields.map((field, index) => `
-    <section class="material-field-row">
-      <h3>${escapeHtml(field.materialName)}${field.materialDescription ? ` - ${escapeHtml(field.materialDescription)}` : ""}</h3>
+  const materialRows = materialFields.map((field, index) => {
+    const current = currentMaterialLot(field.materialPartNum, field.materialName);
+    return `
+    <section class="material-field-row" data-material-name="${escapeHtml(field.materialName || "")}" data-material-description="${escapeHtml(field.materialDescription || "")}">
+      <div class="material-field-heading">
+        <h3>${escapeHtml(field.materialName)}${field.materialDescription ? ` - ${escapeHtml(field.materialDescription)}` : ""}</h3>
+        <p class="current-material-lot" data-material-part-num="${escapeHtml(field.materialPartNum || "")}" data-material-name="${escapeHtml(field.materialName || "")}">Current lot: <strong>${escapeHtml(current?.newLotNum || "Not issued")}</strong></p>
+      </div>
       <label>
         Material part number
         <input id="material-part-${index}" name="material-part-${index}" class="material-part-input" data-material-index="${index}" autocomplete="off" inputmode="text" value="${escapeHtml(field.materialPartNum || "")}" ${field.isRequired ? "required" : ""}>
       </label>
       <label>
         New lot number
-        <input id="material-lot-${index}" name="material-lot-${index}" class="material-lot-input" data-material-index="${index}" autocomplete="off" inputmode="text" maxlength="${MAX_LOT_NUMBER_LENGTH}" ${field.isRequired ? "required" : ""}>
+        <input id="material-lot-${index}" name="material-lot-${index}" class="material-lot-input" data-material-index="${index}" autocomplete="off" inputmode="text" maxlength="${MAX_LOT_NUMBER_LENGTH}" ${field.isRequired && !current ? "required" : ""}>
       </label>
       <label>
         Reason
         <select id="material-reason-${index}" name="material-reason-${index}" class="material-reason-input" data-material-index="${index}" required>
-          <option value="Material change">Material change</option>
-          <option value="Material issue at job start">Material issue at job start</option>
+          <option value="Material change" ${current ? "selected" : ""}>Material change</option>
+          <option value="Material issue at job start" ${current ? "" : "selected"}>Material issue at job start</option>
         </select>
       </label>
-    </section>`);
+    </section>`;
+  });
   const materialLotRows = materialLotJobDataFields.map((field, index) => `
     <section class="material-field-row" data-material-tag-name="${escapeHtml(field.fieldName)}" data-material-name="${escapeHtml(materialNameFromLotField(field.fieldName))}">
       <h3>${escapeHtml(field.fieldName)}</h3>
@@ -993,6 +1318,41 @@ function materialNameFromLotField(fieldName) {
     .trim() || "Material";
 }
 
+function latestMaterialIssue(history, jobNum, partNum, materialPartNum, materialName = "") {
+  const same = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+  const names = new Set((state.snapshot?.partMaterialFields || []).filter(field => same(field.partNum, partNum) && same(field.materialPartNum, materialPartNum)).map(field => String(field.materialName || "").toLowerCase()));
+  return history.filter(entry => entry.entryType === "Material" && same(entry.jobNum, jobNum) &&
+    same(entry.partNum, partNum) && same(entry.materialPartNum, materialPartNum) &&
+    (!materialName || same(entry.materialName, materialName) || (!entry.materialName && names.size <= 1)) && String(entry.newLotNum || "").trim())
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0] || null;
+}
+
+function requiredMaterialIssueGate(history, jobNum, set) {
+  const required = (state.snapshot.partMaterialFields || []).filter(field =>
+    String(field.partNum).toLowerCase() === String(set.partNum).toLowerCase() && field.isRequired);
+  const missing = [...new Map(required.filter(field => !latestMaterialIssue(history, jobNum, set.partNum, field.materialPartNum, field.materialName))
+    .map(field => [`${field.materialPartNum}|${field.materialName}`.toLowerCase(), field])).values()];
+  return { allowed: !missing.length, message: missing.length
+    ? `Save the material issue at job start before beginning the inspection. Missing material lot: ${missing.map(field => `${field.materialName} (${field.materialPartNum})`).join(", ")}.` : "" };
+}
+
+function currentMaterialLot(materialPartNum, materialName = "") {
+  const { jobNum, set } = selectedValues();
+  return latestMaterialIssue(state.phaseGateHistoryCache.get(jobNum.toLowerCase()) || [], jobNum, set?.partNum, materialPartNum, materialName);
+}
+
+function updateCurrentMaterialLots() {
+  document.querySelectorAll(".current-material-lot").forEach(label => {
+    const current = currentMaterialLot(label.dataset.materialPartNum, label.dataset.materialName);
+    label.querySelector("strong").textContent = current?.newLotNum || "Not issued";
+    const row = label.closest(".material-field-row");
+    if (current) {
+      row.querySelector(".material-lot-input").required = false;
+      row.querySelector(".material-reason-input").value = "Material change";
+    }
+  });
+}
+
 function renderLock(activeLock) {
   if (isSuppressedLock(activeLock)) {
     activeLock = null;
@@ -1005,23 +1365,35 @@ function renderLock(activeLock) {
     banner.textContent = "";
     panel.classList.add("hidden");
     document.body.classList.remove("lock-active");
+    state.manualFailureDialog = false;
     $("overrideMessage").textContent = "";
     setLockFormBusy(false);
     return;
   }
+  const isManualFailure = activeLock.manualFailedInspection === true;
+  state.manualFailureDialog = isManualFailure;
   banner.classList.remove("hidden");
-  const lockText = `LOCKED: ${activeLock.characteristicName} - ${ruleLabel(activeLock.ruleTriggered)} at ${formatTime(activeLock.lockedAt)}${activeLock.detail ? `. ${activeLock.detail}` : ""}`;
+  const lockText = isManualFailure
+    ? `FAILED INSPECTION: ${activeLock.detail || "Enter the reason this inspection failed."}`
+    : `LOCKED: ${activeLock.characteristicName} - ${ruleLabel(activeLock.ruleTriggered)} at ${formatTime(activeLock.lockedAt)}${activeLock.detail ? `. ${activeLock.detail}` : ""}`;
   banner.textContent = lockText;
   panel.classList.remove("hidden");
   document.body.classList.add("lock-active");
   setLockFormBusy(false);
   panel.querySelector(".panel-heading p")?.remove();
+  const heading = panel.querySelector(".panel-heading h2");
+  if (heading) {
+    heading.textContent = isManualFailure ? "End Failed Inspection" : "Clear Lock";
+  }
   const detail = document.createElement("p");
   detail.textContent = lockText;
   panel.querySelector(".panel-heading").appendChild(detail);
   $("overrideUserName").value = canCurrentUserOverride() ? state.user.userName : "";
+  $("clearLockButton").classList.toggle("hidden", isManualFailure);
+  $("refreshLockStatusButton").classList.toggle("hidden", isManualFailure);
+  $("failInspectionButton").textContent = isManualFailure ? "End Inspection as Failed" : "End Failed Inspection";
   $("failInspectionButton").disabled = false;
-  updateSystemManagerReasonVisibility();
+  updateLockCategoryActions();
 }
 
 function isSuppressedLock(lock) {
@@ -1063,21 +1435,19 @@ function restoreLockPanelDisplay() {
   panel.style.display = "";
 }
 
-function overrideUserIsSystemManager() {
-  const userName = $("overrideUserName").value.trim();
-  if (!userName) {
-    return false;
-  }
-
-  return userName.toLowerCase() === "archon";
-}
-
-function updateSystemManagerReasonVisibility() {
-  const isSystemManagerOverride = overrideUserIsSystemManager();
-  $("systemManagerReasonLabel").classList.toggle("hidden", !isSystemManagerOverride);
-  $("causeCategoryLabel").classList.toggle("hidden", isSystemManagerOverride);
-  $("causeTextLabel").classList.toggle("hidden", isSystemManagerOverride);
-  $("solutionTextLabel").classList.toggle("hidden", isSystemManagerOverride);
+function updateLockCategoryActions() {
+  const isUserError = $("causeCategory").value === "User Error";
+  $("clearLockButton").classList.toggle("hidden", !isUserError);
+  $("failInspectionButton").classList.toggle("hidden", isUserError);
+  $("causeTextLabel").classList.toggle("hidden", isUserError);
+  $("solutionTextLabel").classList.toggle("hidden", isUserError);
+  const userInput = $("overrideUserName").closest("label");
+  const passwordInput = $("overridePassword").closest("label");
+  userInput?.classList.remove("hidden");
+  passwordInput?.classList.remove("hidden");
+  $("lockSignoffUserLabel").textContent = isUserError ? "User" : "Line Tech / QA signoff";
+  $("overrideUserName").value = isUserError || hasPermission("CanOverrideDriftLock") ? state.user?.userName || "" : "";
+  $("overridePassword").value = "";
 }
 
 function renderVariables() {
@@ -1107,7 +1477,7 @@ function renderVariables() {
     const lowerControlLimit = firstFiniteValue(context?.lowerControlLimit, plan.lcl);
     const upperControlLimit = firstFiniteValue(context?.upperControlLimit, plan.ucl);
     const entryStarter = isAttribute ? "" : measurementEntryStarter(plan, context);
-    const entryPlaceholder = entryStarter || "0.0000";
+    const entryPlaceholder = isGagePinBlockHoleDiameterPlan(plan) ? "Pin 1-7" : entryStarter || "0.0000";
     const entryDecimals = isAttribute ? 0 : measurementEntryDecimalPlaces(plan, context);
     const processWarning = context?.processWarning;
     card.className = `variable-card ${status.className}${isInactive ? " inactive-plan-card" : ""}`;
@@ -1126,28 +1496,29 @@ function renderVariables() {
             ${isInactive ? `
               <span class="inactive-required-badge">${escapeHtml(plan.inactiveReason || `Not required for ${plan.selectedInspectionPhase || $("inspectionPhase").value}`)}</span>` : `
               <span>${plan.inspectionPhase || "In Process"}</span>
-              <span>${isAttribute ? "Lot disposition" : `Sample size ${plan.sampleSize}`}</span>
+              <span>${isAttribute ? "Lot disposition" : isCuttingEdgeNeedleBlankL3(plan) && Number(plan.sampleSize) === 6 ? "3 samples / 2 sides" : `Sample size ${plan.sampleSize}`}</span>
               <span>${formatFrequency(plan)}</span>
               ${dueStatusBadge(plan, index)}`}
           </div>
         </div>
         ${processWarning ? `
           <div class="process-warning-pill" title="${escapeHtml(processWarning.detail || "")}">
-            <strong>Process drift</strong>
-            <span>${escapeHtml(ruleLabel(processWarning.ruleTriggered))}${processWarning.detectedAt ? ` at ${escapeHtml(formatTime(processWarning.detectedAt))}` : ""}</span>
+            <strong>Watch</strong>
+            <span>${escapeHtml(processWarning.detail || ruleLabel(processWarning.ruleTriggered))}</span>
           </div>` : ""}
-        ${plan.inspectionMethod ? `
+        ${plan.inspectionMethod || plan.location ? `
           <div class="inspection-item-context">
-            <span class="inspection-tool">${escapeHtml(plan.inspectionMethod)}</span>
+            ${plan.inspectionMethod ? `<span class="inspection-tool">${escapeHtml(plan.inspectionMethod)}</span>` : ""}
+            ${plan.location ? `<span class="inspection-sample-context">${escapeHtml(plan.location)}</span>` : ""}
           </div>` : ""}
         ${isAttribute || isRecordOnly ? "" : `
           <div class="limit-grid">
-            <div><span>LSL</span><strong>${formatNumber(lowerSpecLimit)}</strong></div>
-            <div><span>Target</span><strong>${formatNumber(plan.nominal)}</strong></div>
-            <div><span>USL</span><strong>${formatNumber(upperSpecLimit)}</strong></div>
-            <div><span>LCL</span><strong>${formatNumber(lowerControlLimit)}</strong></div>
-            <div><span>Center</span><strong>${formatNumber(plan.nominal)}</strong></div>
-            <div><span>UCL</span><strong>${formatNumber(upperControlLimit)}</strong></div>
+            <div><span>LSL</span><strong>${formatMeasurementNumber(lowerSpecLimit, plan)}</strong></div>
+            <div><span>Target</span><strong>${formatMeasurementNumber(plan.nominal, plan)}</strong></div>
+            <div><span>USL</span><strong>${formatMeasurementNumber(upperSpecLimit, plan)}</strong></div>
+            <div><span>LCL</span><strong>${formatMeasurementNumber(lowerControlLimit, plan)}</strong></div>
+            <div><span>Center</span><strong>${formatMeasurementNumber(plan.nominal, plan)}</strong></div>
+            <div><span>UCL</span><strong>${formatMeasurementNumber(upperControlLimit, plan)}</strong></div>
           </div>`}
       </div>
       ${isInactive ? `
@@ -1155,7 +1526,7 @@ function renderVariables() {
         <div class="sample-inputs">
           ${Array.from({ length: entryCount }, (_, sampleIndex) => `
             <label>
-              ${isAttribute ? "Disposition" : `Sample ${sampleIndex + 1}`}
+              ${isAttribute ? "Disposition" : measurementSampleLabel(plan, sampleIndex)}
               ${isAttribute ? `
                 <select id="measurement-${index}-${sampleIndex}" name="measurement-${index}-${sampleIndex}" class="measurement-input" data-plan-index="${index}" data-sample-index="${sampleIndex}" data-entry-type="Attribute">
                   <option value="">Select</option>
@@ -1176,6 +1547,7 @@ function renderVariables() {
   document.querySelectorAll(".measurement-input").forEach((input) => {
     restoreMeasurementDraft(input);
   });
+  updateCalculatedRemovalInputs().catch(() => {});
   applyMachineCounterDueState();
   wireMeasurementDeviceInputs();
   updateInspectionSubmitState();
@@ -1244,17 +1616,23 @@ function machineCounterDueMessage(set) {
 
 function nextMachineCounterDue(plans) {
   if (!plans?.length) return null;
-  const current = machineCounterComplete() ? Number(machineCounterValue()) : 0;
   const candidates = plans
-    .map((plan) => {
-      const every = Math.max(Number(plan.frequencyValue || 0), 1);
-      const firstDue = Math.max(Number(plan.firstDueValue || every), 1);
-      if (current < firstDue) return firstDue;
-      const intervals = Math.floor((current - firstDue) / every) + 1;
-      return firstDue + (intervals * every);
-    })
+    .map(nextMachineCounterDueForPlan)
     .filter((value) => Number.isFinite(value) && value > 0);
   return candidates.length ? Math.min(...candidates) : null;
+}
+
+function nextMachineCounterDueForPlan(plan) {
+  if (!planUsesMachineCounterFrequency(plan)) {
+    return null;
+  }
+
+  const index = state.selectedPlans.findIndex(candidate => candidate === plan ||
+    (plan.characteristicName && candidate.characteristicName === plan.characteristicName &&
+      candidate.partNum === plan.partNum && candidate.processCode === plan.processCode &&
+      candidate.operationSeq === plan.operationSeq && candidate.inspectionPhase === plan.inspectionPhase));
+  const due = state.contexts[index]?.nextMachineCounterDue;
+  return isFiniteValue(due) ? Number(due) : null;
 }
 
 function formatInteger(value) {
@@ -1328,6 +1706,10 @@ function inspectionItemStatus(plan, context, isAttribute, isRecordOnly, currentE
 
   const lcl = firstFiniteValue(context?.lowerControlLimit);
   const ucl = firstFiniteValue(context?.upperControlLimit);
+  const effectiveRule = plan.alertRuleSet === "GlobalDefault" ? state.snapshot?.settings?.globalAlertRuleSet : plan.alertRuleSet;
+  if (effectiveRule === "Custom") {
+    return { className: "inspection-status-good", shortLabel: "OK", label: "No active Watch condition" };
+  }
   const outOfControl = values.some((value) =>
     (lcl !== null && value < lcl) ||
     (ucl !== null && value > ucl));
@@ -1348,6 +1730,10 @@ function measurementEntryStarter(plan, context = null) {
     return "";
   }
 
+  if (requiresSingleZeroMeasurementStarter(plan)) {
+    return ".0";
+  }
+
   const leadingZeroCounts = measurementEntryNumbers(plan, context)
     .filter((value) => value > 0 && value < 1)
     .map(leadingDecimalZeroCount)
@@ -1365,6 +1751,10 @@ function measurementEntryStarter(plan, context = null) {
 }
 
 function suppressesDeviceMeasurementStarter(plan) {
+  if (normalizedInspectionItemName(plan?.inspectionMethod).includes("indicator")) {
+    return true;
+  }
+
   const productGroup = String(plan?.productGroup || "").toLowerCase();
   if (!productGroup.includes("ethicon")) {
     return false;
@@ -1373,6 +1763,11 @@ function suppressesDeviceMeasurementStarter(plan) {
   const itemName = normalizedInspectionItemName(plan?.characteristicName);
   const isDrilledNeedle = productGroup.includes("drilled");
   const isNeedleBlank = productGroup.includes("needles") && !isDrilledNeedle;
+
+  if (isCuttingEdgeIndicatorStarterPlan(plan, productGroup, itemName) ||
+      isTaperpointIndicatorStarterPlan(plan, productGroup, itemName)) {
+    return true;
+  }
 
   if (isNeedleBlank) {
     return inspectionItemStartsWith(itemName, "a dim") || inspectionItemStartsWith(itemName, "t dim");
@@ -1383,6 +1778,86 @@ function suppressesDeviceMeasurementStarter(plan) {
   }
 
   return false;
+}
+
+function isCuttingEdgeIndicatorStarterPlan(plan, productGroup, itemName) {
+  if (!productGroup.includes("ethicon cutting edge") ||
+      !productGroup.includes("needles") ||
+      productGroup.includes("drilled")) {
+    return false;
+  }
+
+  const originalName = String(plan?.characteristicName || "");
+  return inspectionItemStartsWith(itemName, "a dim") ||
+    inspectionItemStartsWith(itemName, "t dim") ||
+    inspectionItemStartsWith(itemName, "raw a") ||
+    /\braw\s*\*/i.test(originalName);
+}
+
+function isTaperpointIndicatorStarterPlan(plan, productGroup, itemName) {
+  if (!productGroup.includes("ethicon taperpoint") ||
+      !productGroup.includes("needles") ||
+      productGroup.includes("drilled")) {
+    return false;
+  }
+
+  return inspectionItemStartsWith(itemName, "a dim") ||
+    inspectionItemStartsWith(itemName, "t dim");
+}
+
+function requiresSingleZeroMeasurementStarter(plan) {
+  const productGroup = String(plan?.productGroup || "").toLowerCase();
+  if (!productGroup.includes("ethicon taperpoint") || !productGroup.includes("needles") || productGroup.includes("drilled")) {
+    return false;
+  }
+
+  const itemName = normalizedInspectionItemName(plan?.characteristicName);
+  return inspectionItemStartsWith(itemName, "y dim") || inspectionItemStartsWith(itemName, "l26 dim");
+}
+
+function isGagePinBlockHoleDiameterPlan(plan) {
+  const productGroup = String(plan?.productGroup || "").toLowerCase();
+  if (!productGroup.includes("ethicon") || !productGroup.includes("drilled")) {
+    return false;
+  }
+
+  const itemName = normalizedInspectionItemName(plan?.characteristicName);
+  const method = normalizedInspectionItemName(plan?.inspectionMethod);
+  return (itemName === "hole diameter" || itemName === "hole dia") &&
+    method.includes("gage pin block");
+}
+
+function gagePinDiameterForPlan(plan, pinNumber) {
+  if (!Number.isInteger(pinNumber) || pinNumber < 1 || pinNumber > 7) {
+    return "";
+  }
+
+  return plan?.gagePinDiameters?.[pinNumber - 1] || "";
+}
+
+function applyGagePinInputMapping(input) {
+  const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  if (!isGagePinBlockHoleDiameterPlan(plan)) {
+    return false;
+  }
+
+  const match = input.value.trim().match(/^(?:pin\s*)?([1-7])$/i);
+  if (!match) {
+    const pin = Number(input.dataset.gagePinNumber);
+    if (input.value !== gagePinDiameterForPlan(plan, pin)) input.dataset.gagePinNumber = "";
+    return false;
+  }
+
+  const pinNumber = Number(match[1]);
+  const diameter = gagePinDiameterForPlan(plan, pinNumber);
+  if (!diameter) {
+    return false;
+  }
+
+  input.value = diameter;
+  input.dataset.gagePinNumber = String(pinNumber);
+  input.title = `Pin ${pinNumber} recorded as ${diameter} in.`;
+  return true;
 }
 
 function normalizedInspectionItemName(value) {
@@ -1397,12 +1872,110 @@ function inspectionItemStartsWith(itemName, prefix) {
 }
 
 function measurementEntryDecimalPlaces(plan, context = null) {
-  const inferredDecimals = Math.max(0, ...measurementEntryNumbers(plan, context).map(decimalPlacesForNumber));
-  return requiresThreeDecimalMeasurementEntry(plan) ? Math.max(inferredDecimals, 3) : inferredDecimals;
+  const specTexts = [plan?.lslText, plan?.uslText].filter(value => typeof value === "string" && value.trim() !== "");
+  const specNumbers = [context?.lowerSpecLimit, context?.upperSpecLimit, plan?.lsl, plan?.usl]
+    .filter(value => value !== null && value !== undefined && value !== "")
+    .map(Number).filter(Number.isFinite);
+  const inferredDecimals = Math.max(0,
+    ...specTexts.map(value => (value.trim().split(".")[1] || "").length),
+    ...specNumbers.map(decimalPlacesForNumber));
+  if (String(plan?.partNum) === "70306") {
+    const name = normalizedInspectionItemName(plan?.characteristicName);
+    if (name.startsWith("weld nub dia") || name.startsWith("weld nub distance")) return Math.max(inferredDecimals, 4);
+    if (name === "coin flat") return Math.max(inferredDecimals, 3);
+    if (name === "angle") return Math.max(inferredDecimals, 1);
+  }
+  if (requiresFourDecimalMeasurementEntry(plan)) {
+    return Math.max(inferredDecimals, 4);
+  }
+
+  if (requiresThreeDecimalMeasurementEntry(plan)) {
+    return Math.max(inferredDecimals, 3);
+  }
+
+  return inferredDecimals;
+}
+
+function requiresFourDecimalMeasurementEntry(plan) {
+  return isCuttingEdgeNeedleBlankL3(plan) || isCalculatedRemovalPlan(plan) || requiresSingleZeroMeasurementStarter(plan);
+}
+
+function isCuttingEdgeNeedleBlankL3(plan) {
+  const productGroup = String(plan?.productGroup || "").toLowerCase();
+  if (!productGroup.includes("ethicon cutting edge") || !productGroup.includes("needles") || productGroup.includes("drilled")) {
+    return false;
+  }
+
+  return normalizedInspectionItemName(plan?.characteristicName).includes("l3");
+}
+
+function isCalculatedRemovalPlan(plan) {
+  const productGroup = String(plan?.productGroup || "").toLowerCase();
+  if (!productGroup.includes("ethicon") || !productGroup.includes("needles")) {
+    return false;
+  }
+
+  return normalizedInspectionItemName(plan?.characteristicName).includes("removal");
+}
+
+function isRawRemovalSourcePlan(plan) {
+  const name = normalizedInspectionItemName(plan?.characteristicName);
+  return /\braw\b/.test(name);
+}
+
+function isPolishedRemovalSourcePlan(plan) {
+  const name = normalizedInspectionItemName(plan?.characteristicName);
+  return /\bpolish(?:ed)?\b/.test(name);
+}
+
+function removalPairKey(plan) {
+  return String(plan?.characteristicName || "")
+    .toLowerCase()
+    .replace(/\*/g, " star ")
+    .replace(/\bactual\b/g, " ")
+    .replace(/\bdim\b/g, " ")
+    .replace(/\bref\b/g, " ")
+    .replace(/\breading\b/g, " ")
+    .replace(/\bfrom\b/g, " ")
+    .replace(/\braw\b/g, " ")
+    .replace(/\bpolish(?:ed)?\b/g, " ")
+    .replace(/\bremoval\b/g, " ")
+    .replace(/\bat\b/g, " ")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim() || "default";
+}
+
+function inputForPlanSample(planIndex, sampleIndex) {
+  return document.querySelector(`.measurement-input[data-plan-index="${planIndex}"][data-sample-index="${sampleIndex}"]`);
+}
+
+function formatCalculatedRemovalValue(value) {
+  return Number(value).toFixed(4);
+}
+
+function measurementSampleLabel(plan, sampleIndex) {
+  if (String(plan?.partNum) === "70306" &&
+      String(plan?.characteristicName).toLowerCase() === "weld nub dia. (2x)" && Number(plan?.sampleSize) === 6) {
+    return `Sample ${Math.floor(sampleIndex / 2) + 1} - Weld nub ${sampleIndex % 2 + 1}`;
+  }
+  if (isCuttingEdgeNeedleBlankL3(plan)) {
+    if (Number(plan?.sampleSize) === 6) {
+      return `Sample ${Math.floor(sampleIndex / 2) + 1} - ${sampleIndex % 2 === 0 ? "Left" : "Right"}`;
+    }
+    if (Number(plan?.sampleSize) === 2) {
+      return sampleIndex === 0 ? "Left" : sampleIndex === 1 ? "Right" : `Sample ${sampleIndex + 1}`;
+    }
+  }
+
+  return `Sample ${sampleIndex + 1}`;
 }
 
 function requiresThreeDecimalMeasurementEntry(plan) {
   const productGroup = String(plan?.productGroup || "").toLowerCase();
+  if (productGroup === "schneider" && normalizedInspectionItemName(plan?.characteristicName) === "jaw tab center") {
+    return true;
+  }
   if (!productGroup.includes("ethicon") || !productGroup.includes("needles") || productGroup.includes("drilled")) {
     return false;
   }
@@ -1476,12 +2049,19 @@ function restoreMeasurementDraft(input) {
   input.dataset.submitted = draft?.submitted ? "true" : "false";
   input.dataset.lastSubmittedValue = draft?.lastSubmittedValue || "";
   input.dataset.lastSubmittedNumericValue = draft?.lastSubmittedNumericValue || "";
+  input.dataset.gagePinNumber = draft?.gagePinNumber || "";
   if (!draft) {
     applyMeasurementEntryStarter(input);
     return;
   }
 
   input.value = draft.value || "";
+  const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  if (suppressesDeviceMeasurementStarter(plan) &&
+      input.dataset.submitted !== "true" &&
+      [".0", ".00"].includes(input.value.trim())) {
+    input.value = "";
+  }
   if (!inputHasValue(input) && input.dataset.submitted !== "true") {
     applyMeasurementEntryStarter(input);
   }
@@ -1501,9 +2081,10 @@ function updateMeasurementDraft(input, updates = {}) {
     submitted: input.dataset.submitted === "true",
     lastSubmittedValue: input.dataset.lastSubmittedValue || "",
     lastSubmittedNumericValue: input.dataset.lastSubmittedNumericValue || "",
+    gagePinNumber: input.dataset.gagePinNumber || "",
     ...updates
   });
-  saveInspectionDrafts();
+  scheduleInspectionDraftSave();
 }
 
 function clearMeasurementDraftsForCurrentInspection() {
@@ -1521,6 +2102,7 @@ function clearVisibleMeasurementInputs() {
     input.dataset.submitted = "false";
     input.dataset.lastSubmittedValue = "";
     input.dataset.lastSubmittedNumericValue = "";
+    input.dataset.gagePinNumber = "";
     applyMeasurementEntryStarter(input);
   });
 }
@@ -1532,7 +2114,8 @@ function snapshotMeasurementInputs() {
     clientRecordId: input.dataset.clientRecordId || "",
     submitted: input.dataset.submitted === "true",
     lastSubmittedValue: input.dataset.lastSubmittedValue || "",
-    lastSubmittedNumericValue: input.dataset.lastSubmittedNumericValue || ""
+    lastSubmittedNumericValue: input.dataset.lastSubmittedNumericValue || "",
+    gagePinNumber: input.dataset.gagePinNumber || ""
   })).filter((item) => item.key);
 }
 
@@ -1548,7 +2131,8 @@ function restoreMeasurementInputSnapshot(snapshot) {
       value: item.value,
       submitted: item.submitted,
       lastSubmittedValue: item.lastSubmittedValue,
-      lastSubmittedNumericValue: item.lastSubmittedNumericValue
+      lastSubmittedNumericValue: item.lastSubmittedNumericValue,
+      gagePinNumber: item.gagePinNumber || ""
     });
 
     const input = inputs.find((candidate) => draftKeyForInput(candidate) === item.key);
@@ -1561,11 +2145,91 @@ function restoreMeasurementInputSnapshot(snapshot) {
     input.dataset.submitted = item.submitted ? "true" : "false";
     input.dataset.lastSubmittedValue = item.lastSubmittedValue;
     input.dataset.lastSubmittedNumericValue = item.lastSubmittedNumericValue;
+    input.dataset.gagePinNumber = item.gagePinNumber || "";
     if (!inputHasValue(input) && input.dataset.submitted !== "true") {
       applyMeasurementEntryStarter(input);
     }
   });
   saveInspectionDrafts();
+}
+
+async function updateCalculatedRemovalInputs(options = {}) {
+  const groups = new Map();
+  state.selectedPlans.forEach((plan, planIndex) => {
+    if (plan.characteristicType === "Attribute") {
+      return;
+    }
+
+    const key = removalPairKey(plan);
+    const group = groups.get(key) || { raw: null, polished: null, removals: [] };
+    if (isCalculatedRemovalPlan(plan)) {
+      group.removals.push({ plan, planIndex });
+    } else if (isRawRemovalSourcePlan(plan)) {
+      group.raw = { plan, planIndex };
+    } else if (isPolishedRemovalSourcePlan(plan)) {
+      group.polished = { plan, planIndex };
+    }
+    groups.set(key, group);
+  });
+
+  document.querySelectorAll(".measurement-input[data-calculated-removal='true']").forEach((input) => {
+    input.readOnly = false;
+    input.dataset.calculatedRemoval = "false";
+    input.title = "";
+  });
+
+  for (const group of groups.values()) {
+    if (!group.raw || !group.polished || !group.removals.length) {
+      continue;
+    }
+
+    for (const removal of group.removals) {
+      const removalCount = inspectionEntryCount(removal.plan);
+      const rawCount = inspectionEntryCount(group.raw.plan);
+      const polishedCount = inspectionEntryCount(group.polished.plan);
+      for (let sampleIndex = 0; sampleIndex < removalCount; sampleIndex += 1) {
+        const rawInput = inputForPlanSample(group.raw.planIndex, Math.min(sampleIndex, rawCount - 1));
+        const polishedInput = inputForPlanSample(group.polished.planIndex, Math.min(sampleIndex, polishedCount - 1));
+        const removalInput = inputForPlanSample(removal.planIndex, sampleIndex);
+        if (!rawInput || !polishedInput || !removalInput || removalInput.disabled) {
+          continue;
+        }
+
+        removalInput.readOnly = true;
+        removalInput.dataset.calculatedRemoval = "true";
+        removalInput.title = "Calculated from Raw minus Polished.";
+        if (!inputHasValue(rawInput) || !inputHasValue(polishedInput)) {
+          continue;
+        }
+
+        const rawValue = Number(rawInput.value);
+        const polishedValue = Number(polishedInput.value);
+        if (!Number.isFinite(rawValue) || !Number.isFinite(polishedValue)) {
+          continue;
+        }
+
+        const calculatedValue = formatCalculatedRemovalValue(rawValue - polishedValue);
+        if (removalInput.value !== calculatedValue) {
+          removalInput.value = calculatedValue;
+          removalInput.dataset.submitted = removalInput.dataset.lastSubmittedValue === calculatedValue ? "true" : "false";
+          updateMeasurementDraft(removalInput);
+          updateCurrentPlanStatus(removalInput);
+        }
+
+        if (options.submit === true &&
+            inputHasValue(removalInput) &&
+            !(removalInput.dataset.submitted === "true" && removalInput.value === removalInput.dataset.lastSubmittedValue)) {
+          const result = await submitMeasurementInput(removalInput, { reloadOnSuccess: false, calculated: true });
+          if (result === "locked" || result === "warning") {
+            return result;
+          }
+        }
+      }
+    }
+  }
+
+  updateInspectionSubmitState();
+  return "submitted";
 }
 
 function sectionHeading(text) {
@@ -1590,7 +2254,7 @@ function renderMeanSummary() {
       <span>Min</span>
       <span>Max</span>
       <span>Mean</span>
-      <span>Std Dev</span>
+      <span>Overall Std Dev</span>
       <span>Cp</span>
       <span>Cpk</span>
       <span>Pp</span>
@@ -1617,17 +2281,17 @@ function renderMeanSummary() {
     const capability = state.contexts[index]?.capability || {};
     const isRecordOnly = !hasSpecLimits(plan, state.contexts[index]);
     item.innerHTML = `
-      <span>${plan.characteristicName}</span>
-      <span>${formatNumber(capability.min)}</span>
-      <span>${formatNumber(capability.max)}</span>
-      <span>${formatStatisticNumber(capability.mean)}</span>
-      <span>${formatStatisticNumber(capability.stdDev)}</span>
+      <span>${escapeHtml(plan.characteristicName)}<small class="capability-basis">N ${capability.count || 0} / ${capability.subgroupCount || 0} groups</small></span>
+      <span>${formatMeasurementNumber(capability.min, plan)}</span>
+      <span>${formatMeasurementNumber(capability.max, plan)}</span>
+      <span>${formatStatisticNumber(capability.mean, plan)}</span>
+      <span>${formatStatisticNumber(capability.stdDev, plan)}</span>
       ${isRecordOnly ? `
       <span class="record-only-cell">No spec limits</span>` : `
-      <span>${capabilityBadge(capability.cp)}</span>
-      <span>${capabilityBadge(capability.cpk)}</span>
-      <span>${capabilityBadge(capability.pp)}</span>
-      <span>${capabilityBadge(capability.ppk)}</span>`}`;
+      <span>${capabilityBadge(capability.cp, capability.calculationMethod)}</span>
+      <span>${capabilityBadge(capability.cpk, capability.calculationMethod)}</span>
+      <span>${capabilityBadge(capability.pp, "Overall sample standard deviation")}</span>
+      <span>${capabilityBadge(capability.ppk, "Overall sample standard deviation")}</span>`}`;
     summary.appendChild(item);
   });
 }
@@ -1643,8 +2307,8 @@ function isFiniteValue(value) {
   return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
 }
 
-function capabilityBadge(value) {
-  return `<span class="capability-chip ${capabilityClass(value)}">${formatCapabilityNumber(value)}</span>`;
+function capabilityBadge(value, method = "") {
+  return `<span class="capability-chip capability-neutral" title="${escapeHtml(`${method ? method + '. ' : ''}Calculated estimate only; no capability acceptance requirement assigned. Stability and distribution suitability are not automatically established.`)}">${formatCapabilityNumber(value)}</span>`;
 }
 
 function formatCapabilityNumber(value) {
@@ -1664,12 +2328,16 @@ function formatCapabilityNumber(value) {
   return numericValue.toFixed(2);
 }
 
-function formatStatisticNumber(value) {
+function formatStatisticNumber(value, plan = null) {
   if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) {
     return "-";
   }
 
   const numericValue = Number(value);
+  if (requiresFixedFourDecimalDisplay(plan)) {
+    return numericValue.toFixed(4);
+  }
+
   const rounded = numericValue.toFixed(5).replace(/\.?0+$/, "");
   if (rounded === "0" && numericValue !== 0) {
     return numericValue > 0 ? "<0.00001" : ">-0.00001";
@@ -1683,22 +2351,6 @@ function standardDeviation(values) {
   const mean = values.reduce((total, value) => total + value, 0) / values.length;
   const variance = values.reduce((total, value) => total + ((value - mean) ** 2), 0) / (values.length - 1);
   return Math.sqrt(variance);
-}
-
-function capabilityClass(value) {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "capability-neutral";
-  const thresholds = capabilityThresholds();
-  if (Number(value) >= thresholds.greenMinimum) return "capability-good";
-  if (Number(value) >= thresholds.yellowMinimum) return "capability-warn";
-  return "capability-bad";
-}
-
-function capabilityThresholds() {
-  const settings = state.snapshot?.settings?.capabilityThresholds || {};
-  return {
-    yellowMinimum: Number(settings.yellowMinimum ?? 1.00),
-    greenMinimum: Number(settings.greenMinimum ?? 1.33)
-  };
 }
 
 function formatFrequency(plan) {
@@ -1748,31 +2400,37 @@ function refreshDueStatusBadges() {
 }
 
 function dueStatusForPlan(plan) {
+  if (machineCounterBelowJobMinimum()) {
+    return { className: "due-status-neutral", label: "Check counter", title: `Machine Counter must be at least ${formatInteger(minimumJobMachineCounter())}.` };
+  }
+  if (planRequiresReinspection(plan)) {
+    return { className: "due-status-due", label: "Repeat now", title: "Repeat the failed inspection without waiting for another machine count." };
+  }
   if (plan.frequencyType === "Quantity" && planUsesMachineCounterFrequency(plan)) {
     const unit = plan.frequencyUnit === "Pieces" ? "parts" : String(plan.frequencyUnit || "parts").toLowerCase();
     const every = Math.max(Number(plan.frequencyValue || 0), 1);
-    const firstDue = Math.max(Number(plan.firstDueValue || every), 1);
+    const nextDue = nextMachineCounterDueForPlan(plan);
     if (!machineCounterComplete()) {
       return {
         className: "due-status-neutral",
         label: "Enter counter",
-        title: `Enter Machine Counter to compare against first due at ${formatInteger(firstDue)} ${unit}.`
+        title: `Enter Machine Counter to compare against next due at ${formatInteger(nextDue)} ${unit}.`
       };
     }
 
     const counter = Number(machineCounterValue());
-    if (counter < firstDue) {
+    if (!planIsDueAtCurrentMachineCounter(plan)) {
       return {
         className: "due-status-neutral",
         label: "Not due yet",
-        title: `Machine Counter ${formatInteger(counter)} is before first due at ${formatInteger(firstDue)} ${unit}.`
+        title: `Machine Counter ${formatInteger(counter)} is before next due at ${formatInteger(nextDue)} ${unit}.`
       };
     }
 
     return {
       className: "due-status-due",
       label: "Due now",
-      title: `Machine Counter ${formatInteger(counter)} is at or beyond first due. Frequency is every ${formatInteger(every)} ${unit}.`
+      title: `Machine Counter ${formatInteger(counter)} is at or beyond next due at ${formatInteger(nextDue)} ${unit}. Frequency is every ${formatInteger(every)} ${unit}.`
     };
   }
 
@@ -1853,11 +2511,19 @@ async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) 
     return "unchanged";
   }
 
+  const planIndex = Number(input.dataset.planIndex);
+  const plan = state.selectedPlans[planIndex];
+  const shouldHoldFocusForLock = measurementInputWouldLock(input, plan, state.contexts[planIndex]);
+  const canAdvanceBeforeSave = moveNext && !shouldHoldFocusForLock;
+  if (canAdvanceBeforeSave) {
+    focusNextMeasurementInput(input);
+  }
+
   try {
     const pending = input._submitPromise;
     if (pending) {
       const pendingResult = await pending;
-      if (moveNext && pendingResult !== "locked" && !state.activeLock) {
+      if (moveNext && !canAdvanceBeforeSave && pendingResult !== "locked" && !state.activeLock) {
         focusNextMeasurementInput(input);
       }
       return pendingResult;
@@ -1866,7 +2532,7 @@ async function submitSingleMeasurementAndAdvance(input, moveNext, options = {}) 
     const submission = submitMeasurementInput(input, { reloadOnSuccess: false });
     input._submitPromise = submission;
     const result = await submission;
-    if (moveNext && result !== "locked" && !state.activeLock) {
+    if (moveNext && !canAdvanceBeforeSave && result !== "locked" && !state.activeLock) {
       focusNextMeasurementInput(input);
     }
     return result;
@@ -1885,6 +2551,7 @@ function wireMeasurementDeviceInputs() {
     });
     input.addEventListener("input", () => {
       if (input.dataset.entryType === "Variable") {
+        applyGagePinInputMapping(input);
         const limitedValue = capMeasurementDecimalPlaces(input.value);
         if (limitedValue !== input.value) {
           input.value = limitedValue;
@@ -1894,13 +2561,15 @@ function wireMeasurementDeviceInputs() {
         input.dataset.submitted = "false";
       }
       updateMeasurementDraft(input);
-      updateCurrentPlanStatus(input);
-      updateInspectionSubmitState();
+      scheduleInspectionInputUiRefresh(input);
       scheduleAutoAdvanceMeasurement(input);
     });
     input.addEventListener("blur", async () => {
       input.closest("label")?.classList.remove("device-input-active");
-      if (input.dataset.tabSubmitting === "true" || input.dataset.autoSubmitting === "true" || input.dataset.changeSubmitting === "true" || input.disabled || !inputHasValue(input) || input.value === input.dataset.lastSubmittedValue) {
+      if (input.dataset.tabSubmitting === "true" || input.dataset.autoSubmitting === "true" || input.dataset.changeSubmitting === "true" || input.disabled || !inputHasValue(input) || (input.dataset.submitted === "true" && input.value === input.dataset.lastSubmittedValue)) {
+        return;
+      }
+      if (measurementInputHasIncompletePrecision(input)) {
         return;
       }
       await submitSingleMeasurementAndAdvance(input, false);
@@ -1986,13 +2655,14 @@ function updateProcessWarningPill(card, warning) {
 
   pill.title = warning.detail || "";
   pill.innerHTML = `
-    <strong>Process drift</strong>
-    <span>${escapeHtml(ruleLabel(warning.ruleTriggered))}${warning.detectedAt ? ` at ${escapeHtml(formatTime(warning.detectedAt))}` : ""}</span>`;
+    <strong>Watch</strong>
+    <span>${escapeHtml(warning.detail || ruleLabel(warning.ruleTriggered))}</span>`;
 }
 
 async function submitMeasurementInput(input, options = {}) {
   if (input.disabled || input.dataset.submitting === "true") return;
   if (!inputHasValue(input)) return;
+  await waitForPendingLockClear();
   const { jobNum, resourceId } = selectedValues();
   const plan = state.selectedPlans[Number(input.dataset.planIndex)];
   const phaseGate = await requiredPhaseGate(jobNum, resourceId, selectedInspectionSet());
@@ -2025,6 +2695,7 @@ async function submitMeasurementInput(input, options = {}) {
         resourceId,
         characteristicName: plan.characteristicName,
         inspectionPhase: plan.inspectionPhase || $("inspectionPhase").value,
+        gagePinNumber: input.dataset.gagePinNumber ? Number(input.dataset.gagePinNumber) : null,
         value,
         timestamp: new Date().toISOString(),
         operatorUserId: state.user.userName,
@@ -2034,8 +2705,15 @@ async function submitMeasurementInput(input, options = {}) {
       })
     });
     markAcceptedMeasurementInput(input, value);
-    showEntryMessage(`${sampleLabel(input)} saved.`, "ok");
+    const pinText = input.dataset.gagePinNumber ? ` Pin ${input.dataset.gagePinNumber} recorded as ${input.value} in.` : "";
+    showEntryMessage(options.calculated === true ? `${sampleLabel(input)} calculated and saved.` : `${sampleLabel(input)} saved.${pinText}`, "ok");
     updateCurrentPlanStatus(input);
+    if (input.dataset.calculatedRemoval !== "true") {
+      const calculatedResult = await updateCalculatedRemovalInputs({ submit: true });
+      if (calculatedResult === "locked" || calculatedResult === "warning") {
+        return calculatedResult;
+      }
+    }
     if (inspectionEntryComplete()) {
       updateInspectionSubmitState();
       showEntryMessage("Inspection entries saved. Review them, then click Submit Inspection.", "ok");
@@ -2055,6 +2733,16 @@ async function submitMeasurementInput(input, options = {}) {
     }
     return inspectionEntryComplete() ? "complete" : "submitted";
   } catch (error) {
+    if (/active lock|is locked/i.test(error.message || "")) {
+      const latestContext = await loadVariableContext(jobNum, resourceId, plan).catch(() => null);
+      if (latestContext?.activeLock) {
+        state.suppressedClearedLockIds.delete(latestContext.activeLock.alertId);
+        state.contexts[Number(input.dataset.planIndex)] = latestContext;
+        state.activeLock = latestContext.activeLock;
+        restoreLockPanelDisplay();
+        renderLock(state.activeLock);
+      }
+    }
     showEntryMessage("Measurement rejected. " + readableError(error), "error");
     throw error;
   } finally {
@@ -2063,6 +2751,7 @@ async function submitMeasurementInput(input, options = {}) {
 }
 
 function measurementInputWouldLock(input, plan, context) {
+  if (isGagePinBlockHoleDiameterPlan(plan) && input.dataset.gagePinNumber === "7") return true;
   const value = Number(input.value);
   if (!Number.isFinite(value)) {
     return false;
@@ -2136,8 +2825,6 @@ function scheduleAutoAdvanceMeasurement(input) {
     return;
   }
 
-  const expectedDecimals = Number(input.dataset.entryDecimals || 0);
-  const delay = Number.isInteger(expectedDecimals) && expectedDecimals <= 0 ? 300 : 150;
   input._autoAdvanceTimer = window.setTimeout(async () => {
     if (!measurementInputReadyToAutoAdvance(input)) {
       return;
@@ -2149,13 +2836,15 @@ function scheduleAutoAdvanceMeasurement(input) {
     } finally {
       input.dataset.autoSubmitting = "false";
     }
-  }, delay);
+  }, 1000);
 }
 
 function measurementInputReadyToAutoAdvance(input) {
+  const plan = state.selectedPlans[Number(input.dataset.planIndex)];
   if (
     input.disabled ||
     input.dataset.entryType !== "Variable" ||
+    isBoxNumberInspectionPlan(plan) ||
     input.dataset.submitting === "true" ||
     input.dataset.submitted === "true" && input.value === input.dataset.lastSubmittedValue ||
     !inputHasValue(input)
@@ -2163,7 +2852,7 @@ function measurementInputReadyToAutoAdvance(input) {
     return false;
   }
 
-  const expectedDecimals = Number(input.dataset.entryDecimals || 0);
+  const expectedDecimals = measurementInputExpectedDecimalPlaces(input);
   if (!Number.isInteger(expectedDecimals)) {
     return false;
   }
@@ -2174,7 +2863,7 @@ function measurementInputReadyToAutoAdvance(input) {
   }
 
   if (expectedDecimals <= 0) {
-    return !/[.+-]$/.test(normalized);
+    return !measurementInputHasIncompleteWholeNumber(input) && !/[.+-]$/.test(normalized);
   }
 
   const decimalIndex = normalized.indexOf(".");
@@ -2184,6 +2873,39 @@ function measurementInputReadyToAutoAdvance(input) {
 
   const actualDecimals = normalized.slice(decimalIndex + 1).length;
   return actualDecimals >= expectedDecimals;
+}
+
+function measurementInputExpectedDecimalPlaces(input) {
+  const planIndex = Number(input.dataset.planIndex);
+  const plan = state.selectedPlans[planIndex];
+  const configuredDecimals = measurementEntryDecimalPlaces(plan, state.contexts[planIndex]);
+  if ([plan?.lslText, plan?.uslText].some(value => typeof value === "string" && value.trim() !== "")) return configuredDecimals;
+  return Math.max(Number(input.dataset.entryDecimals || 0), configuredDecimals);
+}
+
+function measurementInputHasIncompletePrecision(input) {
+  if (input.dataset.entryType !== "Variable") return false;
+  const expectedDecimals = measurementInputExpectedDecimalPlaces(input);
+  if (expectedDecimals <= 0) return measurementInputHasIncompleteWholeNumber(input);
+  const text = input.value.trim().replace(",", ".");
+  const decimalIndex = text.indexOf(".");
+  return decimalIndex < 0 || text.slice(decimalIndex + 1).length < expectedDecimals;
+}
+
+function measurementInputHasIncompleteWholeNumber(input) {
+  if (input.dataset.entryType !== "Variable" || Number(input.dataset.entryDecimals || 0) > 0) {
+    return false;
+  }
+  const planIndex = Number(input.dataset.planIndex);
+  const plan = state.selectedPlans[planIndex];
+  const context = state.contexts[planIndex];
+  const lsl = firstFiniteValue(context?.lowerSpecLimit, plan?.lsl);
+  if (lsl === null || lsl < 10) {
+    return false;
+  }
+  const minimumDigits = String(Math.trunc(lsl)).length;
+  const wholeDigits = input.value.trim().replace(/^[+-]/, "").split(".")[0].length;
+  return wholeDigits < minimumDigits;
 }
 
 function inspectionEntryComplete() {
@@ -2236,12 +2958,53 @@ function applyMachineCounterDueState() {
       return;
     }
 
-    const dueOrStarted = planIsRequiredForCompletion(plan) || planHasStartedEntries(planIndex);
+    const dueOrStarted = !machineCounterBelowJobMinimum() && (planIsRequiredForCompletion(plan) || planHasStartedEntries(planIndex));
     inputs.forEach((input) => {
       input.disabled = !dueOrStarted;
       input.title = dueOrStarted ? "" : "Not due at this Machine Counter.";
     });
   });
+  updateMachineCounterDueMessage();
+}
+
+function updateMachineCounterDueMessage() {
+  const message = $("machineCounterDueMessage");
+  if (!message) {
+    return;
+  }
+  message.classList.remove("hidden");
+
+  const set = selectedInspectionSet();
+  if (machineCounterBelowJobMinimum()) {
+    message.textContent = `Machine Counter cannot be below ${formatInteger(minimumJobMachineCounter())}, the latest saved counter for this job.`;
+    return;
+  }
+  if (!set || !selectedSetNeedsMachineCounter(set)) {
+    message.textContent = "";
+    return;
+  }
+
+  const hasDueEntry = (set.plans || []).some(planIsRequiredForCompletion);
+  if ((set.plans || []).some(planRequiresReinspection)) {
+    message.textContent = "Repeat the failed inspection now. Enter the current Machine Counter; no additional count is required.";
+    return;
+  }
+  if (!machineCounterComplete()) {
+    const nextDue = nextMachineCounterDue(set.plans || []);
+    message.textContent = nextDue
+      ? `Next inspection due at Machine Counter ${formatInteger(nextDue)}. Enter the current Machine Counter.`
+      : "Enter the current Machine Counter.";
+    return;
+  }
+  if (hasDueEntry) {
+    message.textContent = "Inspection entries are due at this Machine Counter.";
+    return;
+  }
+
+  const nextDue = nextMachineCounterDue(set.plans || []);
+  message.textContent = nextDue
+    ? `No inspection due until Machine Counter ${formatInteger(nextDue)}.`
+    : "No inspection due at this Machine Counter.";
 }
 
 function machineCounterValue() {
@@ -2250,7 +3013,7 @@ function machineCounterValue() {
 
 function machineCounterComplete() {
   const value = machineCounterValue();
-  return value.length > 0 && Number.isInteger(Number(value)) && Number(value) >= 0;
+  return value.length > 0 && Number.isInteger(Number(value)) && Number(value) >= 0 && !machineCounterBelowJobMinimum();
 }
 
 function perInspectionJobDataComplete() {
@@ -2263,9 +3026,17 @@ function normalizeMachineCounterInput() {
   input.value = input.value.replace(/[^\d]/g, "");
 }
 
+function commitMachineCounterEntry() {
+  normalizeMachineCounterInput();
+  applyMachineCounterDueState();
+  refreshDueStatusBadges();
+  updateInspectionSubmitState();
+}
+
 function updateInspectionSubmitState() {
   const button = $("completeInspectionButton");
-  if (!button) {
+  const endButton = $("endInspectionButton");
+  if (!button || !endButton) {
     return;
   }
 
@@ -2273,8 +3044,10 @@ function updateInspectionSubmitState() {
   const hasInputs = inputs.length > 0;
   const isComplete = inspectionEntryComplete();
   button.classList.toggle("hidden", !hasInputs);
+  endButton.classList.toggle("hidden", !hasInputs);
   $("machineCounter").disabled = false;
   button.disabled = state.inspectionSubmitting || !isComplete || !machineCounterComplete() || !perInspectionJobDataComplete() || Boolean(state.activeLock);
+  endButton.disabled = state.inspectionSubmitting || Boolean(state.activeLock);
 }
 
 async function withInspectionSubmitFeedback(action) {
@@ -2336,6 +3109,7 @@ async function resetCompletedInspectionEntry() {
   }
 
   invalidatePhaseGateHistory($("jobNum").value.trim());
+  recordCompletedMachineCounterBaseline(Number(machineCounterValue()));
   state.preserveInspectionEntriesUntil = 0;
   clearMeasurementDraftsForCurrentInspection();
   clearVisibleMeasurementInputs();
@@ -2353,7 +3127,7 @@ function failedInspectionInputs() {
     .filter((input) => input.dataset.submitted === "true" || input.value.trim());
 }
 
-function buildFailedInspectionPayload(reason) {
+function buildFailedInspectionPayload(reason, details = {}) {
   const { jobNum, resourceId, set } = selectedValues();
   if (!set) {
     throw new Error("No inspection plan is loaded.");
@@ -2371,9 +3145,61 @@ function buildFailedInspectionPayload(reason) {
     measurementClientRecordIds: failedInspectionInputs()
       .map((input) => input.dataset.clientRecordId)
       .filter(Boolean),
-    activeAlertId: state.activeLock?.alertId || null,
-    reason
+    activeAlertId: state.activeLock?.manualFailedInspection ? null : state.activeLock?.alertId || null,
+    reason,
+    causeCategory: details.causeCategory || null,
+    causeText: details.causeText || null,
+    solutionText: details.solutionText || null,
+    signOffUserName: $("overrideUserName").value.trim(),
+    signOffPassword: $("overridePassword").value,
+    requiredCharacteristicNames: state.selectedPlans
+      .filter((plan, index) => planIsRequiredForCompletion(plan) || planHasStartedEntries(index))
+      .map(plan => plan.characteristicName)
   };
+}
+
+function lockFailureDetails() {
+  const causeCategory = $("causeCategory").value;
+  const causeText = $("causeText").value.trim();
+  const solutionText = $("solutionText").value.trim();
+  return {
+    causeCategory,
+    causeText,
+    solutionText
+  };
+}
+
+function validateFailedInspectionDetails() {
+  if (machineCounterBelowJobMinimum()) {
+    $("overrideMessage").textContent = `Machine Counter cannot be below ${formatInteger(minimumJobMachineCounter())}, the latest saved counter for this job.`;
+    $("overrideMessage").className = "message error";
+    return null;
+  }
+  const details = lockFailureDetails();
+  if (!["Machine", "Tooling", "Material"].includes(details.causeCategory)) {
+    $("overrideMessage").textContent = "User Error must be cleared for correction. Select Machine, Tooling, or Material to end a failed inspection.";
+    $("overrideMessage").className = "message error";
+    return null;
+  }
+  if (!details.causeText) {
+    $("overrideMessage").textContent = "Cause details are required before ending the inspection.";
+    $("overrideMessage").className = "message error";
+    return null;
+  }
+
+  if (!details.solutionText) {
+    $("overrideMessage").textContent = "Action taken is required before ending the inspection.";
+    $("overrideMessage").className = "message error";
+    return null;
+  }
+
+  if (!$("overrideUserName").value.trim() || !$("overridePassword").value) {
+    $("overrideMessage").textContent = "A Line Tech or QA must enter their username and password to sign off this failure.";
+    $("overrideMessage").className = "message error";
+    return null;
+  }
+
+  return details;
 }
 
 async function endFailedInspection() {
@@ -2383,21 +3209,24 @@ async function endFailedInspection() {
     return;
   }
 
-  if (!window.confirm("End this inspection as failed and start a fresh inspection?")) {
+  const details = validateFailedInspectionDetails();
+  if (!details) {
     return;
   }
 
-  const reason = state.activeLock.detail || `${state.activeLock.characteristicName || "Inspection"} failed and was ended from the lock screen.`;
+  const reason = details.solutionText;
   $("failInspectionButton").disabled = true;
   $("overrideMessage").textContent = "Ending failed inspection...";
   $("overrideMessage").className = "message";
   try {
     await api("/inspections/fail", {
       method: "POST",
-      body: JSON.stringify(buildFailedInspectionPayload(reason))
+      body: JSON.stringify(buildFailedInspectionPayload(reason, details))
     });
+    $("overridePassword").value = "";
     invalidatePhaseGateHistory($("jobNum").value.trim());
     state.activeLock = null;
+    state.manualFailureDialog = false;
     state.preserveInspectionEntriesUntil = 0;
     clearMeasurementDraftsForCurrentInspection();
     clearVisibleMeasurementInputs();
@@ -2409,12 +3238,47 @@ async function endFailedInspection() {
     $("overrideMessage").textContent = "Inspection marked failed. A fresh inspection is ready.";
     $("overrideMessage").className = "message ok";
     showEntryMessage("Inspection marked failed. A fresh inspection is ready.", "error");
+    renderLock(null);
   } catch (error) {
     $("overrideMessage").textContent = readableError(error);
     $("overrideMessage").className = "message error";
   } finally {
     $("failInspectionButton").disabled = false;
   }
+}
+
+async function endCurrentInspectionFromPage() {
+  const { jobNum, set } = selectedValues();
+  if (!jobNum || !set) {
+    showEntryMessage("Load an inspection before ending it.", "error");
+    return;
+  }
+
+  if (state.activeLock) {
+    showEntryMessage("Use the lock screen to end an inspection while a lock is active.", "error");
+    return;
+  }
+
+  showManualFailedInspectionDialog();
+}
+
+function showManualFailedInspectionDialog() {
+  const { set } = selectedValues();
+  const phase = set?.activePhase || set?.inspectionPhase || $("inspectionPhase").value || "Inspection";
+  state.activeLock = {
+    manualFailedInspection: true,
+    alertId: "",
+    characteristicName: phase,
+    ruleTriggered: "ManualFailedInspection",
+    lockedAt: new Date().toISOString(),
+    detail: `${phase} inspection will be marked failed. Enter the cause and action taken.`
+  };
+  $("causeCategory").value = "Machine";
+  $("causeText").value = "";
+  $("solutionText").value = "";
+  renderLock(state.activeLock);
+  $("causeCategory").focus();
+  $("overridePanel").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function saveCompletedInspection() {
@@ -2527,16 +3391,68 @@ function sampleLabel(input) {
 function normalizeMeasurementInput(input) {
   if (input.dataset.entryType !== "Variable") return;
   if (!inputHasValue(input)) return;
-  const parsed = parseDeviceMeasurement(input.value);
+  if (applyGagePinInputMapping(input)) {
+    updateMeasurementDraft(input);
+    return;
+  }
+  const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  const parsed = parseDeviceMeasurement(input.value, plan);
   if (parsed !== null) {
     input.value = parsed;
     updateMeasurementDraft(input);
   }
 }
 
-function parseDeviceMeasurement(rawValue) {
-  const match = String(rawValue).replace(",", ".").match(/[-+]?\d*\.?\d+/);
-  return match ? capMeasurementDecimalPlaces(match[0]) : null;
+function parseDeviceMeasurement(rawValue, plan = null) {
+  const matches = [...String(rawValue).replace(",", ".").matchAll(/[-+]?(?:\d+\.\d*|\.\d+|\d+)/g)];
+  if (!matches.length) {
+    return null;
+  }
+
+  const token = matches[matches.length - 1][0];
+  const normalized = normalizeIndicatorToken(token, plan);
+  return normalized ? capMeasurementDecimalPlaces(normalized) : null;
+}
+
+function normalizeIndicatorToken(token, plan = null) {
+  const cleaned = String(token || "").trim().replace(/^\+/, "");
+  if (!cleaned || cleaned.includes(".")) {
+    return cleaned;
+  }
+
+  if (!isFx33IndicatorDimPlan(plan)) {
+    return cleaned;
+  }
+
+  const numericValue = Number(cleaned);
+  if (!Number.isFinite(numericValue)) {
+    return cleaned;
+  }
+
+  const reference = firstFiniteValue(
+    plan?.nominal,
+    plan?.lsl !== null && plan?.lsl !== undefined && plan?.usl !== null && plan?.usl !== undefined
+      ? (Number(plan.lsl) + Number(plan.usl)) / 2
+      : null,
+    plan?.lsl,
+    plan?.usl);
+  const divisors = [1000, 10000, 100000];
+  const best = divisors
+    .map((divisor) => numericValue / divisor)
+    .filter((value) => Number.isFinite(value) && value > 0 && value < 1)
+    .sort((left, right) => Math.abs(left - (reference ?? 0.03)) - Math.abs(right - (reference ?? 0.03)))[0];
+
+  return Number.isFinite(best) ? best.toFixed(4) : cleaned;
+}
+
+function isFx33IndicatorDimPlan(plan) {
+  const method = normalizedInspectionItemName(plan?.inspectionMethod);
+  if (!method.includes("indicator fx33")) {
+    return false;
+  }
+
+  const itemName = normalizedInspectionItemName(plan?.characteristicName);
+  return inspectionItemStartsWith(itemName, "a dim") || inspectionItemStartsWith(itemName, "t dim") || itemName === "t dim";
 }
 
 function setDeviceStatus(message, kind = "neutral") {
@@ -2638,12 +3554,6 @@ function queueDeviceMeasurement(rawValue) {
 }
 
 async function applyDeviceMeasurement(rawValue) {
-  const parsed = parseDeviceMeasurement(rawValue);
-  if (parsed === null) {
-    setDeviceStatus(`No numeric reading found in ${rawValue}.`, "error");
-    return;
-  }
-
   const input = activeMeasurementInput() || firstOpenMeasurementInput();
   if (!input) {
     setDeviceStatus("Load an inspection and select a measurement field.", "error");
@@ -2652,6 +3562,13 @@ async function applyDeviceMeasurement(rawValue) {
 
   if (input.dataset.entryType !== "Variable") {
     setDeviceStatus("Serial readings can only fill measured-variable fields.", "error");
+    return;
+  }
+
+  const plan = state.selectedPlans[Number(input.dataset.planIndex)];
+  const parsed = parseDeviceMeasurement(rawValue, plan);
+  if (parsed === null) {
+    setDeviceStatus(`No numeric reading found in ${rawValue}.`, "error");
     return;
   }
 
@@ -2708,7 +3625,7 @@ function focusNextMeasurementInput(currentInput) {
       (Number(input.dataset.planIndex) === planIndex && Number(input.dataset.sampleIndex) > sampleIndex));
     index -= 1;
   }
-  const next = inputs.slice(index + 1).find((input) => !input.disabled);
+  const next = inputs.slice(index + 1).find((input) => !input.disabled && !input.readOnly);
   if (next) {
     next.focus();
     next.select?.();
@@ -2814,6 +3731,13 @@ function drawTrend(points, data = {}) {
   ctx.fillText(formatNumber(high), 6, padding.top + 8);
 }
 
+function chartPointColor(point, normalColor = "#0f63b8") {
+  const failures = ["SpecLimitViolation", "AttributeRejected"];
+  if (point.isFailed || (point.ruleViolations || []).some(rule => failures.includes(rule))) return "#b42318";
+  if (point.isWatch) return "#e0a000";
+  return normalColor;
+}
+
 function drawLineSeries(ctx, points, xOf, yOf) {
   ctx.strokeStyle = "#0f63b8";
   ctx.lineWidth = 2;
@@ -2828,7 +3752,7 @@ function drawLineSeries(ctx, points, xOf, yOf) {
 
   points.forEach((point, index) => {
     ctx.beginPath();
-    ctx.fillStyle = point.hasRuleViolation ? "#b42318" : "#0f63b8";
+    ctx.fillStyle = chartPointColor(point);
     ctx.arc(xOf(point, index), yOf(point, index), 4, 0, Math.PI * 2);
     ctx.fill();
   });
@@ -2988,16 +3912,9 @@ const RULE_DETAILS = {
   },
   Custom: {
     title: "Custom Rule",
-    subtitle: "Plant-defined drift protocol",
+    subtitle: "Completed inspection averages / warning only",
     body: `
-      <p>Custom lets SPC-Star use a plant-defined rule instead of one fixed statistical method. Configure the recent point window, sigma threshold, direction, and how many points must cross that threshold.</p>
-      <h3>Current engine behavior</h3>
-      <ul>
-        <li>SPC-Star looks at the most recent configured number of measurements.</li>
-        <li>It compares those values to centerline plus or minus the configured sigma threshold.</li>
-        <li>It triggers when the configured number of points exceed that threshold in the selected direction.</li>
-        <li>The option to include Western Electric checks keeps the standard control-chart rules active alongside the custom rule.</li>
-      </ul>`
+      <p>Choose how many consecutive completed inspection averages must move toward a specification limit. Each average must move strictly in that direction; an equal or reversing average breaks the trend. This rule does not use sigma or require control limits.</p>`
   },
   SpecLimitOnly: {
     title: "Spec Limit Only",
@@ -3015,13 +3932,14 @@ const RULE_DETAILS = {
   },
   None: {
     title: "No Automatic Rule",
-    subtitle: "Record only",
+    subtitle: "No drift pattern rule",
     body: `
-      <p>This setting records measurements without automatic drift or measured-variable lockouts. It should be used carefully because SPC-Star will not stop the operator for measured-variable drift.</p>
+      <p>This setting records measurements without automatic drift pattern checks. Direct failed inspections still stop the process.</p>
       <h3>What still applies</h3>
       <ul>
         <li>Inspection data is still saved.</li>
         <li>Charts and review data still update.</li>
+        <li>Measured values below LSL or above USL still lock.</li>
         <li>Accept/Reject attribute failures still lock because they are direct failed inspections.</li>
       </ul>`
   }
@@ -3137,10 +4055,12 @@ async function saveMaterialChange(event) {
   const entries = [...document.querySelectorAll(".material-field-row")]
     .map((row) => ({
       materialPartNum: (row.querySelector(".material-part-input")?.value || row.dataset.materialName || "").trim(),
+      materialName: row.dataset.materialName || "",
+      materialDescription: row.dataset.materialDescription || "",
       newLotNum: row.querySelector(".material-lot-input").value.trim(),
       reason: row.querySelector(".material-reason-input").value
     }))
-    .filter((entry) => entry.materialPartNum || entry.newLotNum);
+    .filter((entry) => entry.newLotNum);
   if (!jobNum || !resourceId || !set) {
     $("materialMessage").textContent = "Start work before saving a material lot.";
     $("materialMessage").className = "message error";
@@ -3167,7 +4087,9 @@ async function saveMaterialChange(event) {
           jobNum,
           partNum: set.partNum,
           materialPartNum: entry.materialPartNum,
-          oldLotNum: "",
+          materialName: entry.materialName,
+          materialDescription: entry.materialDescription,
+          oldLotNum: currentMaterialLot(entry.materialPartNum, entry.materialName)?.newLotNum || "",
           newLotNum: entry.newLotNum,
           quantityLoaded: null,
           resourceId,
@@ -3186,6 +4108,8 @@ async function saveMaterialChange(event) {
     $("materialMessage").textContent = `${entries.length} material lot${entries.length === 1 ? "" : "s"} saved.`;
     $("materialMessage").className = "message ok";
     await loadJobNotes(jobNum);
+    updateCurrentMaterialLots();
+    if (state.materialIssueBlocked) await loadContext();
   } catch (error) {
     $("materialMessage").textContent = readableError(error);
     $("materialMessage").className = "message error";
@@ -3203,6 +4127,10 @@ async function loadJobNotes(jobNum) {
     state.phaseGateHistoryCache.set(jobNum.trim().toLowerCase(), history);
     state.jobNotes = history;
     renderJobNotes(history);
+    if (!$("measurementForm").classList.contains("hidden")) {
+      applyMachineCounterDueState();
+      refreshDueStatusBadges();
+    }
   } catch (error) {
     $("jobNoteMessage").textContent = readableError(error);
     $("jobNoteMessage").className = "message error";
@@ -3248,10 +4176,15 @@ async function saveJobNote(event) {
 }
 
 function renderJobNotes(entries) {
-  renderHistoryList($("jobNoteList"), entries);
+  const activityTime = entry => Math.max(
+    new Date(entry.timestamp).getTime(),
+    ...(entry.entryType === "Note" ? (entry.noteReplies || []).map(reply => new Date(reply.timestamp).getTime()) : [])
+  );
+  renderHistoryList($("jobNoteList"), [...entries].sort((a, b) => activityTime(b) - activityTime(a)));
 }
 
 function renderHistoryList(list, entries) {
+  entries = entries.filter((entry) => entry.entryType !== "Lock");
   if (!entries.length) {
     list.className = "job-note-list empty";
     list.textContent = "No history for this job yet.";
@@ -3291,6 +4224,11 @@ function renderHistoryList(list, entries) {
     }
     meta.append(user, details);
     item.append(meta, text);
+    if (entry.entryType === "Note" && entry.noteReplies?.length) {
+      const replies = document.createElement("div");
+      replies.innerHTML = renderNoteReplies(entry.noteReplies);
+      item.appendChild(replies);
+    }
     if (entry.entryType === "Material" && canEditMaterialLots()) {
       const editButton = document.createElement("button");
       editButton.type = "button";
@@ -3321,7 +4259,7 @@ function historyEntryTitle(entry) {
   }
 
   if (entry.entryType === "Material") {
-    return `Material ${entry.reason || "event"}`;
+    return entry.materialName || `Material ${entry.materialPartNum || "event"}`;
   }
 
   if (entry.entryType === "JobData") {
@@ -3411,8 +4349,13 @@ function failedInspectionHistoryText(entry) {
     ? ` Machine Counter: ${entry.machineCounter}.`
     : "";
   const count = Array.isArray(entry.measurementIds) ? ` ${entry.measurementIds.length} inspection entries captured.` : "";
-  const reason = entry.detail || entry.noteText ? ` Reason: ${entry.detail || entry.noteText}.` : "";
-  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.failureNumber || 1} marked failed by ${historyEntryUser(entry)}.${counter}${operation}${count}${reason}`;
+  const failureDetail = entry.detail ? ` Failed: ${entry.detail}.` : "";
+  const cause = entry.causeCategory || entry.causeText
+    ? ` Cause: ${[entry.causeCategory, entry.causeText].filter(Boolean).join(" - ")}.`
+    : "";
+  const action = entry.solutionText ? ` Action: ${entry.solutionText}.` : "";
+  const reason = entry.reason || entry.noteText ? ` Reason: ${entry.reason || entry.noteText}.` : "";
+  return `${entry.inspectionPhase || "Inspection"} inspection ${entry.failureNumber || 1} marked failed by ${historyEntryUser(entry)}.${counter}${operation}${count}${failureDetail}${cause}${action}${reason}`;
 }
 
 function lockHistoryText(entry) {
@@ -3438,6 +4381,8 @@ function lockHistoryText(entry) {
 
 function materialHistoryText(entry) {
   const parts = [`${entry.materialPartNum || "Material"} lot ${entry.newLotNum || "-"}.`];
+  if (entry.materialDescription) parts.push(`${entry.materialDescription}.`);
+  if (entry.reason) parts.push(`${entry.reason}.`);
   if (entry.quantityLoaded !== null && entry.quantityLoaded !== undefined) {
     parts.push(`Quantity ${formatNumber(entry.quantityLoaded)}.`);
   }
@@ -3466,6 +4411,10 @@ function isBoxNumberJobDataField(fieldName) {
     normalized === "box number" ||
     normalized === "serial #" ||
     normalized === "serial number";
+}
+
+function isBoxNumberInspectionPlan(plan) {
+  return isBoxNumberJobDataField(plan?.characteristicName);
 }
 
 function canEditMaterialLots() {
@@ -3524,6 +4473,18 @@ function showMaterialEditMessage(message, kind, options = {}) {
 
 async function clearLock(event) {
   event?.preventDefault?.();
+  if ($("causeCategory").value !== "User Error") {
+    $("overrideMessage").textContent = "Only User Error can clear a lock. Use End Failed Inspection for this cause.";
+    $("overrideMessage").className = "message error";
+    return;
+  }
+  if (state.activeLock?.manualFailedInspection) {
+    state.activeLock = null;
+    renderLock(null);
+    showEntryMessage("Correct the entry and continue the inspection.", "ok");
+    return;
+  }
+
   const clearedLock = state.pendingClearLock || state.activeLock;
   if (!clearedLock) {
     return;
@@ -3544,10 +4505,10 @@ async function clearLock(event) {
     rejectPendingLockClear = reject;
   });
   state.pendingLockClearPromise.catch(() => {});
+  applyLocalLockClear(clearedLock);
 
   afterLockScreenPaint(() => {
     showEntryMessage("Lock cleared. Correct the entry and continue.", "ok");
-    applyLocalLockClear(clearedLock);
     finishClearLock(clearedLock, resolvePendingLockClear, rejectPendingLockClear);
   });
 }
@@ -3567,14 +4528,13 @@ function hideLockForClearIntent(lock = state.activeLock) {
 
 function finishClearLock(clearedLock, resolvePendingLockClear, rejectPendingLockClear) {
   try {
-    const isSystemManagerOverride = overrideUserIsSystemManager();
     const payload = {
       overrideUserName: $("overrideUserName").value.trim(),
       overridePassword: $("overridePassword").value,
-      causeCategory: isSystemManagerOverride ? "Unspecified" : $("causeCategory").value,
-      causeText: isSystemManagerOverride ? "" : $("causeText").value.trim(),
-      solutionText: isSystemManagerOverride ? "" : $("solutionText").value.trim(),
-      whyStandardProcessWasBypassed: $("bypassReason").value.trim() || null,
+      causeCategory: $("causeCategory").value,
+      causeText: "",
+      solutionText: "",
+      whyStandardProcessWasBypassed: null,
       unlockedAt: new Date().toISOString()
     };
 
@@ -3595,14 +4555,13 @@ function finishClearLock(clearedLock, resolvePendingLockClear, rejectPendingLock
           $("causeCategory").value = "Machine";
           $("causeText").value = "";
           $("solutionText").value = "";
-          $("bypassReason").value = "";
           const { jobNum } = selectedValues();
           if (jobNum) {
             loadJobNotes(jobNum).catch(() => {});
           }
         })
         .catch((error) => {
-          resolvePendingLockClear?.();
+          rejectPendingLockClear?.(error);
           if (state.pendingLockClearAlertId === (clearedLock.alertId || "")) {
             state.pendingLockClearPromise = null;
             state.pendingLockClearAlertId = "";
@@ -3610,17 +4569,28 @@ function finishClearLock(clearedLock, resolvePendingLockClear, rejectPendingLock
           if (state.pendingClearLock?.alertId === clearedLock.alertId) {
             state.pendingClearLock = null;
           }
-          showEntryMessage("Lock cleared from the screen, but the server did not save the clear record. " + readableError(error), "error");
+          restoreRejectedLockClear(clearedLock, error);
         });
   } catch (error) {
-    resolvePendingLockClear?.();
+    rejectPendingLockClear?.(error);
     state.pendingLockClearPromise = null;
     state.pendingLockClearAlertId = "";
     if (state.pendingClearLock?.alertId === clearedLock.alertId) {
       state.pendingClearLock = null;
     }
-    showEntryMessage("Lock cleared from the screen, but local cleanup hit an error. " + readableError(error), "error");
+    restoreRejectedLockClear(clearedLock, error);
   }
+}
+
+function restoreRejectedLockClear(lock, error) {
+  state.suppressedClearedLockIds.delete(lock.alertId);
+  state.activeLock = lock;
+  restoreLockPanelDisplay();
+  renderLock(lock);
+  const message = "Lock was not cleared. " + readableError(error);
+  $("overrideMessage").textContent = message;
+  $("overrideMessage").className = "message error";
+  showEntryMessage(message, "error");
 }
 
 function afterLockScreenPaint(action) {
@@ -3634,28 +4604,22 @@ function afterLockScreenPaint(action) {
 }
 
 function applyLocalLockClear(clearedLock) {
-  const preservedInputs = snapshotMeasurementInputs();
-  const preservedMachineCounter = machineCounterValue();
   const affectedPlanIndex = planIndexForLock(clearedLock);
   state.preserveInspectionEntriesUntil = Date.now() + 10000;
   const nextLock = clearActiveLockFromLocalContext(clearedLock);
   restoreLockPanelDisplay();
   renderLock(nextLock);
-  restoreMachineCounterValue(preservedMachineCounter);
-  restoreMeasurementInputSnapshot(preservedInputs);
   releaseLockMeasurementForCorrection(clearedLock);
-  if (affectedPlanIndex >= 0) {
-    updatePlanStatus(affectedPlanIndex);
+  if (!nextLock) {
+    focusLockMeasurementInput(clearedLock);
   }
 
-  applyMachineCounterDueState();
-  updateInspectionSubmitState();
-  window.requestAnimationFrame(() => {
-    restoreMeasurementInputSnapshot(preservedInputs);
-    releaseLockMeasurementForCorrection(clearedLock);
-    if (!nextLock) {
-      focusLockMeasurementInput(clearedLock);
+  // These summaries must not block correction or restore an older input value.
+  afterLockScreenPaint(() => {
+    if (affectedPlanIndex >= 0) {
+      updatePlanStatus(affectedPlanIndex);
     }
+    updateInspectionSubmitState();
   });
   if (nextLock) {
     showEntryMessage("Lock cleared locally. Another active lock still needs attention.", "error");
@@ -3716,6 +4680,11 @@ function releaseLockMeasurementForCorrection(lock) {
   }
 
   document.querySelectorAll(`.measurement-input[data-plan-index="${planIndex}"]`).forEach((input) => {
+    const plan = state.selectedPlans[planIndex];
+    if (!measurementInputWouldLock(input, plan, state.contexts[planIndex])) {
+      return;
+    }
+    window.clearTimeout(input._autoAdvanceTimer);
     input.dataset.submitted = "false";
     input.dataset.submitting = "false";
     input.dataset.autoSubmitting = "false";
@@ -3751,7 +4720,7 @@ async function refreshLockStatus() {
     restoreMachineCounterValue(preservedMachineCounter);
     restoreMeasurementInputSnapshot(preservedInputs);
     if (state.activeLock) {
-      $("overrideMessage").textContent = "Lock is still active. Use authorized credentials to clear or bypass it.";
+      $("overrideMessage").textContent = "Lock is still active. Clear only for User Error, or end the failed inspection for Machine, Tooling, or Material.";
       $("overrideMessage").className = "message error";
     } else {
       $("overrideMessage").textContent = "No active lock found. Inspection entry is available again.";
@@ -3769,14 +4738,15 @@ function resetLockForm() {
   $("causeCategory").value = "Machine";
   $("causeText").value = "";
   $("solutionText").value = "";
-  $("bypassReason").value = "";
   $("overrideMessage").textContent = "Unlock form reset.";
   $("overrideMessage").className = "message";
-  updateSystemManagerReasonVisibility();
+  updateLockCategoryActions();
 }
 
 function canCurrentUserOverride() {
-  return state.user?.permissions?.includes("CanOverrideDriftLock") === true || isArchonSystemManager(state.user);
+  const lock = state.activeLock || state.pendingClearLock;
+  return state.user?.permissions?.includes("CanOverrideDriftLock") === true || isArchonSystemManager(state.user) ||
+    (hasPermission("CanEnterInspections") && String(lock?.operatorUserId || "").toLowerCase() === String(state.user?.userName || "").toLowerCase());
 }
 
 function restoreMachineCounterValue(value) {
@@ -3786,7 +4756,7 @@ function restoreMachineCounterValue(value) {
 }
 
 function isArchonSystemManager(user) {
-  return (user?.userName || "").toLowerCase() === "archon";
+  return user?.roles?.some(role => role.toLowerCase() === "god") === true;
 }
 
 function hasPermission(permission) {
@@ -3814,7 +4784,7 @@ function canManageRules() {
 }
 
 function canImportSetupData() {
-  return hasPermission("CanImportSetupData");
+  return state.user?.roles?.some(role => role.toLowerCase() === "god") === true && hasPermission("CanImportSetupData");
 }
 
 function assignableRoles() {
@@ -3831,6 +4801,60 @@ function formatRoleList(roles) {
   return (roles || []).map(roleDisplayName).join(", ");
 }
 
+function changeHistoryQuery(page = 1) {
+  const values = {search:$("changeHistorySearch").value.trim(),userName:$("changeHistoryUser").value.trim(),
+    area:$("changeHistoryArea").value,partNum:$("changeHistoryPart").value.trim(),
+    from:dateTimeLocalValue("changeHistoryFrom"),to:dateTimeLocalValue("changeHistoryTo"),page,pageSize:50};
+  return new URLSearchParams(Object.entries(values).filter(([,value])=>value!==null && value!=="")).toString();
+}
+
+async function loadChangeHistory(page = 1) {
+  if (!canViewChangeHistory()) return;
+  const request = (state.changeHistoryRequest || 0) + 1;
+  state.changeHistoryRequest = request;
+  $("changeHistoryMessage").textContent = "Loading...";
+  $("changeHistoryMessage").className = "message";
+  try {
+    const result = await api(`/admin/change-history?${changeHistoryQuery(page)}`);
+    if (request !== state.changeHistoryRequest) return;
+    state.changeHistoryPage = result.page;
+    $("changeHistoryRows").innerHTML = result.entries.length ? result.entries.map(entry=>{
+      const details = entry.changes.map(record=>`<section class="saved-change-record">
+        <h3>${escapeHtml([record.partNum,record.operation,record.phase,record.record].filter(Boolean).join(" / "))} <span>${escapeHtml(record.action)}</span></h3>
+        <table><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${record.fields.map(field=>`<tr><td>${escapeHtml(field.field)}</td><td>${escapeHtml(field.before ?? "(blank)")}</td><td>${escapeHtml(field.after ?? "(blank)")}</td></tr>`).join("")}</tbody></table>
+      </section>`).join("");
+      const first = entry.changes[0];
+      const sameRecord = first && entry.changes.every(record=>record.record===first.record && record.partNum===first.partNum);
+      const firstField = first?.fields[0];
+      const sameField = firstField && entry.changes.every(record=>record.fields.length===1 && record.fields[0].field===firstField.field && record.fields[0].before===firstField.before && record.fields[0].after===firstField.after);
+      const recordName = first ? [first.partNum,first.record].filter(Boolean).join(" / ") : "";
+      const summary = sameRecord ? `${recordName}${sameField ? `: ${firstField.field} ${firstField.before ?? "(blank)"} -> ${firstField.after ?? "(blank)"}` : `: ${first.action.toLowerCase()}`}${entry.changes.length>1 ? ` (${entry.changes.length} phases)` : ""}` : entry.summary;
+      return `<tr><td>${escapeHtml(formatDateTime(entry.savedAt))}</td><td>${escapeHtml(entry.userName)}</td><td>${escapeHtml(entry.changes[0]?.area || entry.source)}</td><td>${details ? `<details><summary>${escapeHtml(summary)}</summary>${entry.reason ? `<p>Reason: ${escapeHtml(entry.reason)}</p>` : ""}${details}</details>` : escapeHtml(entry.summary)}</td></tr>`;
+    }).join("") : '<tr><td colspan="4">No saved changes found.</td></tr>';
+    $("changeHistoryMessage").textContent = `${result.total} saved change${result.total===1?"":"s"}`;
+    $("changeHistoryPager").classList.toggle("hidden", result.total <= result.pageSize);
+    $("changeHistoryPrevious").disabled = result.page <= 1;
+    $("changeHistoryNext").disabled = result.page * result.pageSize >= result.total;
+    $("changeHistoryPage").textContent = `Page ${result.page} of ${Math.max(1,Math.ceil(result.total/result.pageSize))}`;
+  } catch (error) {
+    if (request !== state.changeHistoryRequest) return;
+    $("changeHistoryMessage").textContent = readableError(error);
+    $("changeHistoryMessage").className = "message error";
+  }
+}
+
+async function exportChangeHistory() {
+  if (!canViewChangeHistory()) return;
+  try {
+    const response = await sessionFetch(`/admin/change-history/export.csv?${changeHistoryQuery()}`, {headers:{
+      "X-SPCStar-User":state.user.userName,"X-SPCStar-Session":state.user.sessionToken}});
+    if (!response.ok) throw new Error(await response.text());
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");link.href=url;link.download=`SPC-Star Change History ${new Date().toISOString().slice(0,10)}.csv`;
+    link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  } catch (error) { $("changeHistoryMessage").textContent = readableError(error);$("changeHistoryMessage").className="message error"; }
+}
+
 function actingSessionQuery() {
   return `actingUserName=${encodeURIComponent(state.user?.userName || "")}&actingSessionToken=${encodeURIComponent(state.user?.sessionToken || "")}`;
 }
@@ -3839,12 +4863,138 @@ function canArchiveData() {
   return hasPermission("CanUseGodMode");
 }
 
+function canViewChangeHistory() {
+  return hasPermission("CanViewChangeHistory") || canArchiveData();
+}
+
+function canAccessAdmin() {
+  return canArchiveData() || canViewChangeHistory();
+}
+
+function canViewAdminNotes() {
+  return canViewChangeHistory();
+}
+
+function adminNotesQuery(page = 1) {
+  const values = { search: $("adminNotesSearch").value.trim(), partNum: $("adminNotesPart").value.trim(),
+    jobNum: $("adminNotesJob").value.trim(), resourceId: $("adminNotesMachine").value.trim(),
+    userName: $("adminNotesUser").value.trim(), repliedBy: $("adminNotesRepliedBy").value.trim(), from: dateTimeLocalValue("adminNotesFrom"),
+    to: dateTimeLocalValue("adminNotesTo"), page, pageSize: 50 };
+  return new URLSearchParams(Object.entries(values).filter(([, value]) => value !== null && value !== "")).toString();
+}
+
+function renderNoteReplies(replies = []) {
+  return `<div class="note-replies" aria-label="Responses">${replies.map(reply => `<article class="note-reply">
+    <div class="note-reply-meta"><strong>${escapeHtml(reply.userName)}</strong><span>${escapeHtml(formatDateTime(reply.timestamp))}</span></div>
+    <p class="note-reply-text">${escapeHtml(reply.replyText)}</p>
+  </article>`).join("")}</div>`;
+}
+
+async function saveAdminNoteReply(event) {
+  const form = event.target.closest(".admin-note-reply-form");
+  if (!form) return;
+  event.preventDefault();
+  if (!canViewAdminNotes() || form.dataset.saving === "true") return;
+  const input = form.querySelector("textarea");
+  const message = form.querySelector(".message");
+  const button = form.querySelector('button[type="submit"]');
+  const replyText = input.value.trim();
+  if (!replyText) { message.textContent = "Enter a response."; message.className = "message error"; return; }
+  if (!form.dataset.requestId || form.dataset.sentText !== replyText) form.dataset.requestId = crypto.randomUUID();
+  form.dataset.sentText = replyText;
+  form.dataset.saving = "true";
+  button.disabled = true;
+  input.readOnly = true;
+  message.textContent = "Saving response...";
+  message.className = "message";
+  try {
+    const note = await api(`/admin/job-notes/${encodeURIComponent(form.dataset.noteId)}/replies`, {
+      method: "POST", body: JSON.stringify({ replyText, clientRequestId: form.dataset.requestId })
+    });
+    if (!form.isConnected || !canViewAdminNotes()) return;
+    const cell = form.closest("td");
+    cell.querySelector(".note-replies").outerHTML = renderNoteReplies(note.replies);
+    input.value = "";
+    delete form.dataset.requestId;
+    delete form.dataset.sentText;
+    message.textContent = "Response saved.";
+    message.className = "message ok";
+  } catch (error) {
+    if (!form.isConnected) return;
+    message.textContent = readableError(error);
+    message.className = "message error";
+  } finally {
+    form.dataset.saving = "false";
+    button.disabled = false;
+    input.readOnly = false;
+  }
+}
+
+async function loadAdminNotes(page = 1) {
+  if (!canViewAdminNotes()) return;
+  const request = (state.adminNotesRequest || 0) + 1;
+  state.adminNotesRequest = request;
+  $("adminNotesMessage").textContent = "Loading notes...";
+  $("adminNotesMessage").className = "message";
+  $("adminNotesRows").replaceChildren();
+  $("adminNotesPager").classList.add("hidden");
+  try {
+    const result = await api(`/admin/job-notes?${adminNotesQuery(page)}`);
+    if (request !== state.adminNotesRequest || !canViewAdminNotes()) return;
+    state.adminNotesPage = result.page;
+    $("adminNotesRows").innerHTML = result.entries.map(note => `<tr>
+      <td data-label="Date / Time">${escapeHtml(formatDateTime(note.timestamp))}</td>
+      <td data-label="Job">${escapeHtml(note.jobNum)}</td>
+      <td data-label="Part">${escapeHtml(note.partNum)}</td>
+      <td data-label="Machine">${escapeHtml(note.resourceId)}</td>
+      <td data-label="Posted By">${escapeHtml(note.operatorUserId)}</td>
+      <td data-label="Note" class="admin-note-text"><div class="admin-note-original">${escapeHtml(note.noteText)}</div>
+        ${renderNoteReplies(note.replies)}
+        <details class="admin-note-response"><summary>Reply</summary>
+          <form class="admin-note-reply-form" data-note-id="${escapeHtml(note.id)}">
+            <label>Response<textarea rows="3" maxlength="1000" required></textarea></label>
+            <button type="submit" class="secondary compact-button">Send Response</button>
+            <p class="message" role="status"></p>
+          </form>
+        </details>
+      </td>
+    </tr>`).join("");
+    const first = result.total ? (result.page - 1) * result.pageSize + 1 : 0;
+    const last = first ? first + result.entries.length - 1 : 0;
+    $("adminNotesMessage").textContent = result.total ? `${first}-${last} of ${result.total} notes` : "No notes found.";
+    $("adminNotesPager").classList.toggle("hidden", result.total <= result.pageSize);
+    $("adminNotesPrevious").disabled = result.page <= 1;
+    $("adminNotesNext").disabled = result.page * result.pageSize >= result.total;
+    $("adminNotesPage").textContent = `Page ${result.page} of ${Math.max(1, Math.ceil(result.total / result.pageSize))}`;
+  } catch (error) {
+    if (request !== state.adminNotesRequest) return;
+    $("adminNotesMessage").textContent = readableError(error);
+    $("adminNotesMessage").className = "message error";
+  }
+}
+
+function canEditInspectionHistory() {
+  return hasPermission("CanEditInspectionHistory");
+}
+
 function canViewHistory() {
   return hasPermission("CanExportQAData") || canManageSetup();
 }
 
 function canAccessSetup() {
-  return canManageSetup() || canViewHistory();
+  return canManageInspectionSetup() || canManageMachines() || canManageUsers() || canManageRules();
+}
+
+function canAccessNavigation() {
+  return canAccessSetup() || canViewHistory() || canArchiveData();
+}
+
+function sectionsForPanel(panel) {
+  return { setup: ["Inspection", "Users", "Machines", "Rules"], data: ["Ledger", "Quality", "Charts", "Issues", "Cert"], admin: ["Archive", "ChangeHistory", "Notes"] }[panel] || [];
+}
+
+function panelForSection(section) {
+  return ["setup", "data", "admin"].find(panel => sectionsForPanel(panel).includes(section));
 }
 
 function setupSectionAccess(sectionName) {
@@ -3853,17 +5003,29 @@ function setupSectionAccess(sectionName) {
     Machines: canManageMachines(),
     Users: canManageUsers(),
     Rules: canManageRules(),
-    History: canViewHistory(),
-    Archive: canArchiveData()
+    Ledger: canViewHistory(),
+    Quality: canViewHistory(),
+    Charts: canViewHistory(),
+    Issues: canViewHistory(),
+    Cert: canViewHistory(),
+    Archive: canArchiveData(),
+    ChangeHistory: canViewChangeHistory(),
+    Notes: canViewAdminNotes()
   }[sectionName] === true;
 }
 
-function defaultSetupSection() {
-  return ["Inspection", "Machines", "Users", "Rules", "History", "Archive"].find(setupSectionAccess) || "History";
+function defaultSetupSection(panel = "setup") {
+  return sectionsForPanel(panel).find(setupSectionAccess);
 }
 
 function setSetupSectionVisibility(sectionName) {
-  const sections = ["Inspection", "Machines", "Users", "Rules", "History", "Archive"];
+  const historySelected = ["Ledger", "Quality", "Charts", "Issues"].includes(sectionName);
+  $("setupHistorySection").classList.toggle("hidden", !historySelected);
+  for (const view of ["Ledger", "Quality", "Charts", "Issues"]) {
+    $(`history${view}View`).classList.toggle("hidden", view !== sectionName);
+    $(`history${view}Tab`).classList.toggle("active", view === sectionName);
+  }
+  const sections = ["Inspection", "Machines", "Users", "Rules", "Cert", "Archive", "ChangeHistory", "Notes"];
   sections.forEach((section) => {
     $(`setup${section}Section`).classList.toggle("hidden", section !== sectionName);
     $(`setup${section}SectionTab`).classList.toggle("active", section === sectionName);
@@ -3871,46 +5033,69 @@ function setSetupSectionVisibility(sectionName) {
 }
 
 function configureSetupAccess() {
-  ["Inspection", "Machines", "Users", "Rules", "History", "Archive"].forEach((section) => {
+  $("setupTab").classList.toggle("hidden", !canAccessSetup());
+  $("dataTab").classList.toggle("hidden", !canViewHistory());
+  $("adminTab").classList.toggle("hidden", !canAccessAdmin());
+  $("inspectionTab").classList.toggle("hidden", !hasPermission("CanEnterInspections"));
+  ["Ledger", "Quality", "Charts", "Issues"].forEach(view => {
+    $(`history${view}Tab`).classList.toggle("hidden", !canViewHistory());
+  });
+  if (!canViewHistory()) $("setupHistorySection").classList.add("hidden");
+  ["Inspection", "Machines", "Users", "Rules", "Cert", "Archive", "ChangeHistory", "Notes"].forEach((section) => {
     const hasAccess = setupSectionAccess(section);
     $(`setup${section}SectionTab`).classList.toggle("hidden", !hasAccess);
     if (!hasAccess) {
       $(`setup${section}Section`).classList.add("hidden");
     }
   });
-  if (!setupSectionAccess(state.setupSection)) {
-    state.setupSection = defaultSetupSection();
-  }
-  setSetupSectionVisibility(state.setupSection);
   document.querySelectorAll(".import-only").forEach((element) => {
     element.classList.toggle("hidden", !canImportSetupData());
   });
 }
 
 function showPanel(panelName) {
-  const showSetup = panelName === "setup";
-  if (showSetup) {
-    configureSetupAccess();
-    showSetupSection(state.setupSection || defaultSetupSection());
+  if (!state.user) return;
+  configureSetupAccess();
+  const remembered = state.navigationSections?.[panelName];
+  const section = sectionsForPanel(panelName).includes(remembered) && setupSectionAccess(remembered)
+    ? remembered : defaultSetupSection(panelName);
+  if (panelName !== "inspect" && section) {
+    showSetupSection(section);
+    return;
   }
-  $("workPanel").classList.toggle("hidden", showSetup);
-  $("setupPanel").classList.toggle("hidden", !showSetup);
-  $("inspectionTab").classList.toggle("active", !showSetup);
-  $("setupTab").classList.toggle("active", showSetup);
+  if (hasPermission("CanEnterInspections")) setMainPanelVisibility("inspect");
+  else if (canViewHistory()) showSetupSection(defaultSetupSection("data"));
+}
+
+function setMainPanelVisibility(panelName) {
+  state.activePanel = panelName;
+  for (const [name, panelId, tabId] of [
+    ["inspect", "workPanel", "inspectionTab"], ["setup", "setupPanel", "setupTab"],
+    ["data", "dataPanel", "dataTab"], ["admin", "adminPanel", "adminTab"]
+  ]) {
+    $(panelId).classList.toggle("hidden", name !== panelName);
+    $(tabId).classList.toggle("active", name === panelName);
+  }
 }
 
 function showSetupSection(sectionName) {
-  if (!setupSectionAccess(sectionName)) {
-    sectionName = defaultSetupSection();
-  }
+  if (!state.user || !setupSectionAccess(sectionName)) return;
   state.setupSection = sectionName;
+  const panel = panelForSection(sectionName);
+  state.navigationSections ||= {};
+  state.navigationSections[panel] = sectionName;
+  setMainPanelVisibility(panel);
 
-  if (sectionName === "History") {
+  if (["Ledger", "Quality", "Charts", "Issues"].includes(sectionName)) {
+    syncHistoryFiltersFrom(state.historyView);
+    state.historyView = sectionName;
     seedHistoryFiltersFromWorkContext();
     applyHistoryFilters();
   }
 
   setSetupSectionVisibility(sectionName);
+  if (sectionName === "ChangeHistory") loadChangeHistory(1);
+  if (sectionName === "Notes") loadAdminNotes(1);
 }
 
 function seedHistoryFiltersFromWorkContext() {
@@ -3928,70 +5113,174 @@ function seedHistoryFiltersFromWorkContext() {
 }
 
 function showHistoryView(viewName) {
-  syncHistoryFiltersFrom(state.historyView);
-  state.historyView = viewName;
-  applyHistoryFilters();
-  const views = ["Ledger", "Charts", "Issues", "Export"];
-  views.forEach((view) => {
-    $(`history${view}View`).classList.toggle("hidden", view !== viewName);
-    $(`history${view}Tab`).classList.toggle("active", view === viewName);
-  });
+  showSetupSection(viewName);
+}
+
+function dataFilterControls() {
+  return {
+    Ledger: ["partReviewFilter", "reviewJobNum", "reviewOperationCode", "reviewInspectionPhase", "reviewMachine", "reviewShift", "reviewVariable", "reviewFrom", "reviewTo"],
+    Quality: ["qualityPart", "qualityJob", "qualityOperation", "qualityPhase", "qualityMachine", "qualityShift", "qualityVariableFilter", "qualityFrom", "qualityTo"],
+    Charts: ["reportPartNum", "reportJobNum", "reportOperationCode", "reportInspectionPhase", "reportResourceId", "reportShift", "reportCharacteristicName", "reportFrom", "reportTo"],
+    Issues: ["topIssuesPartNum", "topIssuesJobNum", "topIssuesOperation", "topIssuesPhase", "topIssuesResourceId", "topIssuesShift", "topIssuesCharacteristicName", "topIssuesFrom", "topIssuesTo"]
+  };
+}
+
+function initializeDataFilters() {
+  const labels = ["Part", "Job", "Operation", "Phase", "Machine", "Shift", "Variable", "From", "To"];
+  const phases = ["", "Setup", "Startup", "In Process", "Coil Change", "Spool", "End of Spool"];
+  const shifts = ["", "1st Half Days", "1st Half Nights", "2nd Half Days", "2nd Half Nights", "5 Day"];
+  for (const [view, ids] of Object.entries(dataFilterControls())) {
+    const parent = $(ids[0]).closest("form, .review-filter-bar");
+    parent.classList.add("data-filter-grid");
+    const fields = ids.map((id, index) => {
+      const input = $(id);
+      let label = input.closest("label");
+      if (!label) {
+        label = document.createElement("label");
+        input.before(label);
+        label.append(input);
+      }
+      for (const node of [...label.childNodes]) if (node.nodeType === Node.TEXT_NODE) node.remove();
+      label.prepend(document.createTextNode(labels[index]));
+      if (index === 3 || index === 5) {
+        const values = index === 3 ? phases : shifts;
+        fillSelect(input, values, value => value, value => value || (index === 3 ? "All phases" : "All shifts"));
+      }
+      input.addEventListener("change", () => {
+        syncHistoryFiltersFrom(view);
+        applyHistoryFilters();
+      });
+      if (index < 2) input.addEventListener("input", () => {
+        const jobPart = partNumForJob($(ids[1]).value.trim());
+        if (index === 1 && jobPart) $(ids[0]).value = jobPart;
+        if (index === 0 && jobPart && $(ids[0]).value.trim() &&
+            !jobPart.toLowerCase().startsWith($(ids[0]).value.trim().toLowerCase())) $(ids[1]).value = "";
+        syncHistoryFiltersFrom(view);
+        applyHistoryFilters();
+      });
+      return label;
+    });
+    parent.prepend(...fields);
+  }
 }
 
 function syncHistoryFiltersFrom(source) {
-  if (source === "Ledger") {
-    state.historyFilters.partNum = $("partReviewFilter").value.trim();
-    state.historyFilters.jobNum = $("reviewJobNum").value.trim();
-  } else if (source === "Charts") {
-    state.historyFilters.partNum = $("reportPartNum").value.trim();
-    state.historyFilters.jobNum = $("reportJobNum").value.trim();
-  } else if (source === "Issues") {
-    state.historyFilters.partNum = $("topIssuesPartNum").value.trim();
-    state.historyFilters.jobNum = $("topIssuesJobNum").value.trim();
-  } else if (source === "Export") {
-    const jobNum = firstHistoryJobNum($("summaryJobNum").value);
-    if (jobNum) {
-      state.historyFilters.jobNum = jobNum;
-      state.historyFilters.partNum = partNumForJob(jobNum) || state.historyFilters.partNum;
-    }
-  }
-
+  const ids = dataFilterControls()[source];
+  if (!ids) return;
+  const keys = ["partNum", "jobNum", "operation", "phase", "machine", "shift", "variable", "from", "to"];
+  ids.forEach((id, index) => { state.historyFilters[keys[index]] = $(id).value.trim(); });
   if (state.historyFilters.jobNum && !state.historyFilters.partNum) {
     state.historyFilters.partNum = partNumForJob(state.historyFilters.jobNum);
   }
 }
 
 function applyHistoryFilters() {
-  const partNum = state.historyFilters.partNum || "";
-  const jobNum = state.historyFilters.jobNum || "";
-  $("partReviewFilter").value = partNum;
-  $("reviewJobNum").value = jobNum;
-  $("reportPartNum").value = partNum;
-  $("reportJobNum").value = jobNum;
-  $("topIssuesPartNum").value = partNum;
-  $("topIssuesJobNum").value = jobNum;
-  const summaryJobNum = $("summaryJobNum").value.trim();
-  if (jobNum && (!summaryJobNum || !summaryJobNum.includes(","))) {
-    $("summaryJobNum").value = jobNum;
+  const keys = ["partNum", "jobNum", "operation", "phase", "machine", "shift", "variable", "from", "to"];
+  for (const [view, ids] of Object.entries(dataFilterControls())) {
+    $(ids[0]).value = state.historyFilters.partNum || "";
+    $(ids[1]).value = state.historyFilters.jobNum || "";
+    refreshDataFilterChoices(view);
+    ids.forEach((id, index) => { $(id).value = state.historyFilters[keys[index]] || ""; });
+    refreshDataFilterChoices(view);
+    const filterKey = JSON.stringify(ids.map(id => $(id).value));
+    state.dataFilterKeys ||= {};
+    if (state.dataFilterKeys[view] !== filterKey) invalidateDataFilterResults(view);
+    state.dataFilterKeys[view] = filterKey;
   }
-  refreshReviewOperationChoices();
-  refreshReportOperationChoices();
+  refreshReviewJobPartChoices();
 }
 
-function firstHistoryJobNum(value) {
-  return value.split(",").map((jobNum) => jobNum.trim()).filter(Boolean)[0] || "";
+function invalidateDataFilterResults(view) {
+  if (view === "Ledger") {
+    $("partReviewList").replaceChildren();
+    $("jobReviewPanel").classList.add("hidden");
+    $("reviewMessage").textContent = "";
+  } else if (view === "Quality") {
+    ++state.qualityRequest; ++state.qualityFailureRequest;
+    $("qualityLoad").disabled = false;
+    $("qualityResults").classList.add("hidden");
+    $("qualityMessage").textContent = "";
+  } else if (view === "Charts") {
+    $("reportChartGrid").replaceChildren();
+    $("reportMessage").textContent = "";
+  } else if (view === "Issues") {
+    $("topIssuesList").replaceChildren();
+    $("topIssuesMessage").textContent = "";
+  }
+}
+
+function refreshDataFilterChoices(view) {
+  const ids = dataFilterControls()[view];
+  const part = $(ids[0]).value.trim(), job = $(ids[1]).value.trim();
+  const choices = workJobPartChoices(job, part);
+  for (const [id, rows, key] of [[ids[0], choices.parts, "partNum"], [ids[1], choices.jobs, "jobNum"]]) {
+    const listId = `${id}DataOptions`;
+    let list = $(listId);
+    if (!list) { list = document.createElement("datalist"); list.id = listId; $(id).after(list); }
+    $(id).setAttribute("list", listId);
+    fillDatalist(list, rows, row => row[key]);
+  }
+  const plans = (state.snapshot?.inspectionPlans || []).filter(plan => !part || plan.partNum.toLowerCase() === part.toLowerCase());
+  const operations = [...new Map(plans.map(plan => [operationKeyFor(plan), plan])).values()];
+  const operation = $(ids[2]), previous = operation.value;
+  fillSelect(operation, [{processCode:"", operationSeq:"", processDescription:"All operations"}, ...operations],
+    row => row.processCode ? operationKeyFor(row) : "", row => row.processCode ? `${operationLabelFor(row)} / ${row.operationSeq}` : row.processDescription);
+  operation.value = [...operation.options].some(option => option.value === previous) ? previous : "";
+  const machine = $(ids[4]), oldMachine = machine.value;
+  fillSelect(machine, [{resourceId:"", description:"All machines"}, ...(state.snapshot?.resources || [])], row => row.resourceId, row => row.resourceId || row.description);
+  machine.value = oldMachine;
+  const names = [...new Set(plans.filter(plan => (!operation.value || operationKeyFor(plan) === operation.value) &&
+    (!$(ids[3]).value || normalizeInspectionPhase(plan.inspectionPhase) === normalizeInspectionPhase($(ids[3]).value)))
+    .sort((a,b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)).map(plan => plan.characteristicName))];
+  const listId = `${ids[6]}DataOptions`;
+  let list = $(listId);
+  if (!list) { list = document.createElement("datalist"); list.id = listId; $(ids[6]).after(list); }
+  $(ids[6]).setAttribute("list", listId);
+  fillDatalist(list, names, name => name);
+}
+
+function dataReviewRequest(view) {
+  const ids = dataFilterControls()[view];
+  const [processCode, seq] = $(ids[2]).value.split("|");
+  return {
+    partNum: $(ids[0]).value.trim() || null, jobNum: $(ids[1]).value.trim() || null,
+    processCode: processCode || null, operationSeq: seq ? Number(seq) : null,
+    inspectionPhase: $(ids[3]).value || null, resourceId: $(ids[4]).value || null,
+    operatorShift: $(ids[5]).value || null, characteristicName: $(ids[6]).value.trim() || null,
+    from: dateTimeLocalValue(ids[7]), to: dateTimeLocalValue(ids[8])
+  };
+}
+
+function ledgerReviewQuery() {
+  const query = dataReviewRequest("Ledger");
+  query.shift = query.operatorShift;
+  return new URLSearchParams(Object.entries(query).filter(([,value]) => value !== null)).toString();
 }
 
 function partNumForJob(jobNum) {
   return state.snapshot?.jobs?.find((job) => job.jobNum.toLowerCase() === jobNum.toLowerCase())?.partNum || "";
 }
 
-function logout() {
+async function logout() {
+  if (state.user) {
+    try {
+      await fetch("/auth/logout", { method: "POST", headers: {
+        "X-SPCStar-User": state.user.userName, "X-SPCStar-Session": state.user.sessionToken
+      }});
+    } catch { /* Always clear this browser's sign-in, including while offline. */ }
+  }
+  $("sessionSignInDialog").close();
+  state.sessionInvalid = false;
   disconnectSerialDevice();
   clearSavedSession();
   clearSavedWorkContext();
   clearSavedInspectionDrafts();
   state.user = null;
+  state.adminNotesRequest = (state.adminNotesRequest || 0) + 1;
+  state.adminNotesPage = 1;
+  $("adminNotesRows").replaceChildren();
+  $("adminNotesMessage").textContent = "";
+  $("adminNotesFilterForm").querySelectorAll("input").forEach(input => { input.value = ""; });
   state.snapshot = null;
   state.contexts = [];
   state.selectedPlans = [];
@@ -4009,8 +5298,14 @@ function logout() {
   $("loginPanel").classList.remove("hidden");
   $("workPanel").classList.add("hidden");
   $("setupPanel").classList.add("hidden");
+  $("dataPanel").classList.add("hidden");
+  $("adminPanel").classList.add("hidden");
   $("inspectionTab").classList.add("active");
   $("setupTab").classList.remove("active");
+  $("dataTab").classList.remove("active");
+  $("adminTab").classList.remove("active");
+  state.activePanel = "inspect";
+  state.navigationSections = {};
   $("password").value = "";
   renderEmptyContext();
 }
@@ -4042,6 +5337,150 @@ async function loadSetupAdmin() {
 
 function renderPartReviewControls() {
   $("partReviewFilter").placeholder = "Part number";
+  refreshReviewJobPartChoices();
+  refreshQualityChoices();
+}
+
+function refreshQualityChoices() {
+  refreshDataFilterChoices("Quality");
+}
+
+async function loadPartQuality(event) {
+  event?.preventDefault();
+  const request = ++state.qualityRequest;
+  ++state.qualityFailureRequest;
+  const partNum = $("qualityPart").value.trim();
+  if (!partNum) return;
+  const [processCode, operationSeq] = $("qualityOperation").value.split("|");
+  $("qualityLoad").disabled = true;
+  $("qualityMessage").textContent = "Loading part quality...";
+  $("qualityMessage").className = "message";
+  $("qualityResults").classList.add("hidden");
+  try {
+    const query = dataReviewRequest("Quality");
+    const result = await api("/history/part-quality", {method:"POST",body:JSON.stringify(query)});
+    if (request !== state.qualityRequest) return;
+    state.qualityResult = result; state.qualityVariable = "";
+    state.qualityQuery = query;
+    fillSelect($("qualityFailureVariable"), [{key:"",name:"Select a variable"}, ...result.variables], row => row.key,
+      row => row.key ? `${row.name} / ${row.processCode} ${row.operationSeq} (${row.failed})` : row.name);
+    $("qualityFailureMessage").textContent = "";
+    $("qualityResults").classList.remove("hidden");
+    $("qualityPartHeading").textContent = `${result.partNum} / ${result.description}`;
+    const totals = [["Finalized Inspections",result.inspections],["Passed",result.passed],["Failed",result.failed],["Pass Rate",qualityPercent(result.passRate)]];
+    $("qualityTotals").innerHTML = totals.map(([label,value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("");
+    const gaps = [];
+    if (result.missingReadingLinks) gaps.push(`${result.missingReadingLinks} inspections have missing reading links; variable totals are incomplete.`);
+    if (result.unassignedFailures) gaps.push(`${result.unassignedFailures} failures have no recorded failed-variable association.`);
+    $("qualityCoverage").textContent = gaps.join(" "); $("qualityCoverage").className = gaps.length ? "message error" : "message";
+    $("qualityMessage").textContent = result.inspections ? "" : "No finalized inspections match these filters.";
+    renderQualityVariables(); renderQualityFailures();
+    if (query.characteristicName && result.variables.length === 1) await loadQualityFailures(result.variables[0].key);
+  } catch (error) {
+    if (request !== state.qualityRequest) return;
+    $("qualityMessage").textContent = readableError(error); $("qualityMessage").className = "message error";
+  } finally { if (request === state.qualityRequest) $("qualityLoad").disabled = false; }
+}
+
+function qualityPercent(value) {
+  return value === null || value === undefined ? "-" : `${Number(value).toLocaleString(undefined,{maximumFractionDigits:2})}%`;
+}
+
+function renderQualityVariables() {
+  const search = $("qualitySearch").value.trim().toLowerCase();
+  const rows = (state.qualityResult?.variables || []).filter(row => `${row.name} ${row.processCode}`.toLowerCase().includes(search));
+  $("qualityVariables").innerHTML = rows.length ? rows.map(row => `<tr class="${row.failed ? "quality-failed-variable" : ""}">
+    <td><button type="button" class="quality-variable-link" data-quality-variable="${escapeHtml(row.key)}">${escapeHtml(row.name)}</button></td>
+    <td>${escapeHtml(row.processCode)} ${row.operationSeq}</td><td>${row.checked}</td><td>${row.failed}</td>
+    <td>${qualityPercent(row.failureRate)}</td><td>${row.lastFailure ? formatDateTime(row.lastFailure) : "-"}</td></tr>`).join("") : '<tr><td colspan="6">No matching variables.</td></tr>';
+  $("qualityVariables").querySelectorAll("[data-quality-variable]").forEach(button => button.addEventListener("click", () => {
+    loadQualityFailures(button.dataset.qualityVariable);
+    $("qualityFailuresHeading").scrollIntoView({block:"nearest"});
+  }));
+}
+
+async function loadQualityFailures(variableKey, page = 1) {
+  const request = ++state.qualityFailureRequest;
+  state.qualityVariable = variableKey;
+  $("qualityFailureVariable").value = variableKey;
+  $("qualityFailures").innerHTML = "";
+  $("qualityFailurePager").classList.add("hidden");
+  $("qualityFailureMessage").textContent = "";
+  if (!variableKey || !state.qualityQuery) { renderQualityFailures(); return; }
+  $("qualityFailureMessage").textContent = "Loading variable failures...";
+  $("qualityFailureMessage").className = "message";
+  try {
+    const result = await api("/history/part-quality", {method:"POST", body:JSON.stringify({...state.qualityQuery,variableKey,page,pageSize:20})});
+    if (request !== state.qualityFailureRequest) return;
+    Object.assign(state.qualityResult, {failures:result.failures,matchingFailures:result.matchingFailures,
+      failurePage:result.failurePage,failurePageSize:result.failurePageSize});
+    $("qualityFailureMessage").textContent = "";
+    renderQualityFailures();
+  } catch(error) {
+    if (request !== state.qualityFailureRequest) return;
+    $("qualityFailureMessage").textContent = readableError(error);
+    $("qualityFailureMessage").className = "message error";
+  }
+}
+
+function renderQualityFailures() {
+  const result = state.qualityResult;
+  if (!result) return;
+  const variable = result.variables.find(row => row.key === state.qualityVariable);
+  const failures = variable ? result.failures.filter(row => row.variableKeys.includes(variable.key)) : [];
+  $("qualityFailuresHeading").textContent = variable ? `${variable.name} / Failed Inspections (${result.matchingFailures})` : "Variable Failures";
+  const page = result.failurePage || 1, size = result.failurePageSize || 20, count = variable ? result.matchingFailures : 0;
+  $("qualityFailurePager").classList.toggle("hidden", !variable || !count);
+  $("qualityFailuresPrevious").disabled = page <= 1;
+  $("qualityFailuresNext").disabled = page * size >= count;
+  $("qualityFailuresPage").textContent = count ? `${(page-1)*size+1}-${Math.min(page*size,count)} of ${count}` : "";
+  if (!variable) { $("qualityFailures").innerHTML = '<p class="empty">No variable selected.</p>'; return; }
+  const cleanDetail = text => {
+    let detail = String(text || "").trim();
+    const prefix = `${variable.name}:`;
+    while (detail.toLowerCase().startsWith(prefix.toLowerCase())) detail = detail.slice(prefix.length).trim();
+    return detail;
+  };
+  $("qualityFailures").innerHTML = failures.length ? failures.map(row => `<article class="quality-failure">
+    <header class="quality-failure-heading"><strong>${escapeHtml(row.inspectionPhase)} inspection ${row.number} failed</strong><span>Job ${escapeHtml(row.jobNum)} / ${escapeHtml(row.resourceId)} / ${escapeHtml(formatDateTime(row.at))}</span></header>
+    <dl class="quality-failure-details">
+      <dt>Part / Variable</dt><dd>${escapeHtml(result.partNum || state.qualityQuery?.partNum || "")} / ${escapeHtml(variable.name)}</dd>
+      <dt>Inspection Phase</dt><dd>${escapeHtml(row.inspectionPhase || "Not recorded")}</dd>
+      <dt>Operation</dt><dd>${escapeHtml(row.processCode)} ${row.operationSeq}</dd>
+      <dt>Operator / Shift</dt><dd>${escapeHtml(row.operator)} / ${escapeHtml(row.shift || "Not recorded")}</dd>
+      <dt>Machine Counter</dt><dd>${escapeHtml(row.machineCounter ?? "Not recorded")}</dd>
+      <dt>Violation</dt><dd>${escapeHtml(cleanDetail(row.detail) || cleanDetail(row.recordedDetail) || "No violation detail recorded")}</dd>
+      ${cleanDetail(row.recordedDetail) && cleanDetail(row.detail) && cleanDetail(row.recordedDetail) !== cleanDetail(row.detail) ? `<dt>Failure Description</dt><dd>${escapeHtml(cleanDetail(row.recordedDetail))}</dd>` : ""}
+      <dt>Cause Category</dt><dd>${escapeHtml(row.category || "Not recorded")}</dd>
+      <dt>Cause Details</dt><dd>${escapeHtml(row.cause || "Not recorded")}</dd>
+      <dt>Action Taken</dt><dd>${escapeHtml(row.action || "Not recorded")}</dd>
+      <dt>Failure Notes</dt><dd>${escapeHtml(row.reason || "Not recorded")}</dd>
+      <dt>Failed Readings</dt><dd>${row.failedReadings.length ? row.failedReadings.map(reading => `${escapeHtml(reading.variable)}: ${escapeHtml(reading.value)} ${escapeHtml(reading.unit)}`).join("<br>") : "No linked failed readings recorded"}</dd>
+    </dl></article>`).join("") : '<p class="empty">No recorded failures for this selection.</p>';
+}
+
+function refreshReviewJobPartChoices() {
+  const choices = workJobPartChoices($("reviewJobNum").value, $("partReviewFilter").value);
+  fillDatalist($("reviewJobOptions"), choices.jobs, job => job.jobNum);
+  fillDatalist($("reviewPartOptions"), choices.parts, part => part.partNum);
+}
+
+function updateReviewJobFromPart() {
+  const partNum = $("partReviewFilter").value.trim().toLowerCase();
+  const job = (state.snapshot?.jobs || []).find(item =>
+    item.jobNum.toLowerCase() === $("reviewJobNum").value.trim().toLowerCase());
+  const exactPart = (state.snapshot?.parts || []).some(part => part.partNum.toLowerCase() === partNum);
+  if (job && partNum && (exactPart
+      ? job.partNum.toLowerCase() !== partNum : !job.partNum.toLowerCase().startsWith(partNum))) {
+    $("reviewJobNum").value = "";
+  }
+  refreshReviewJobPartChoices();
+}
+
+function updateReviewPartFromJob() {
+  const partNum = partNumForJob($("reviewJobNum").value.trim());
+  if (partNum) $("partReviewFilter").value = partNum;
+  refreshReviewJobPartChoices();
 }
 
 function renderReportControls() {
@@ -4049,27 +5488,16 @@ function renderReportControls() {
   refreshReportOperationChoices();
   fillSelect($("reportResourceId"), [{ resourceId: "", description: "All machines" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
   fillSelect($("topIssuesResourceId"), [{ resourceId: "", description: "All machines" }, ...state.snapshot.resources], (resource) => resource.resourceId, (resource) => resource.resourceId || resource.description);
-  fillDatalist($("reportCharacteristicOptions"), state.snapshot.characteristics, (characteristic) => characteristic.name);
+  refreshReportCharacteristicChoices();
 }
 
 function refreshReviewOperationChoices() {
-  const partNum = $("partReviewFilter")?.value?.trim() || state.historyFilters.partNum || "";
-  const operations = partNum ? operationsForPart(partNum) : [];
-  fillSelect(
-    $("reviewOperationCode"),
-    [{ processCode: "", operationSeq: "", processDescription: "All operations" }, ...operations],
-    (operation) => operation.processCode ? operationKeyFor(operation) : "",
-    (operation) => operation.processCode ? operationLabelFor(operation) : operation.processDescription);
+  refreshDataFilterChoices("Ledger");
 }
 
 function refreshReportOperationChoices() {
-  const partNum = reportPartFilter();
-  const operations = partNum ? operationsForPart(partNum) : [];
-  fillSelect(
-    $("reportOperationCode"),
-    [{ processCode: "", operationSeq: "", processDescription: "All operations" }, ...operations],
-    (operation) => operation.processCode ? operationKeyFor(operation) : "",
-    (operation) => operation.processCode ? operationLabelFor(operation) : operation.processDescription);
+  refreshDataFilterChoices("Charts");
+  refreshReportCharacteristicChoices();
 }
 
 async function loadReview() {
@@ -4093,7 +5521,9 @@ async function loadReview() {
 
   try {
     $("partReviewList").classList.add("hidden");
-    const review = await api(`/review/job?partNum=${encodeURIComponent(partNum)}&jobNum=${encodeURIComponent(jobNum)}`);
+    const query = ledgerReviewQuery();
+    const review = await api(`/review/job?${query}`);
+    if (query !== ledgerReviewQuery()) return;
     renderJobReview(review);
     $("reviewMessage").textContent = `${jobNum} review loaded.`;
     $("reviewMessage").className = "message ok";
@@ -4114,15 +5544,8 @@ function renderSetupEditChoices() {
 
 function renderGlobalRuleSetting() {
   $("globalAlertRuleSet").value = state.snapshot.settings?.globalAlertRuleSet || "WesternElectric";
-  renderCapabilityThresholds();
   updateRuleDescription();
   loadCustomRuleForm();
-}
-
-function renderCapabilityThresholds() {
-  const thresholds = capabilityThresholds();
-  $("capabilityYellowMinimum").value = thresholds.yellowMinimum.toFixed(2);
-  $("capabilityGreenMinimum").value = thresholds.greenMinimum.toFixed(2);
 }
 
 async function renderPartReview() {
@@ -4135,7 +5558,9 @@ async function renderPartReview() {
   }
 
   try {
-    const rows = await api(`/review/part?partNum=${encodeURIComponent(selectedPart)}`);
+    const query = ledgerReviewQuery();
+    const rows = await api(`/review/part?${query}`);
+    if (query !== ledgerReviewQuery()) return;
     renderReviewSummary(rows, container, "No measured-variable data for this part.");
   } catch (error) {
     container.className = "data-table empty";
@@ -4174,12 +5599,13 @@ function renderReviewSummary(rows, container, emptyMessage) {
       <span>${formatStatisticNumber(row.stdDev)}</span>
       <span>${capabilityBadge(row.cpk)}</span>
       <span>${capabilityBadge(row.ppk)}</span>
-      <span>${row.count}${row.outOfSpecExcludedCount ? ` / ${row.outOfSpecExcludedCount} excluded` : ""}</span>`;
+      <span>${row.count}${row.outOfSpecCount ? ` / ${row.outOfSpecCount} out of spec included` : ""}</span>`;
     container.appendChild(item);
   });
 }
 
 async function saveReviewMeasurement(id, item) {
+  if (!canEditInspectionHistory()) return;
   const row = item.closest(".data-row");
   const value = Number(row.querySelector(".review-measurement-value").value);
   const inspectionPhase = row.querySelector(".review-measurement-phase").value;
@@ -4211,6 +5637,7 @@ async function saveReviewMeasurement(id, item) {
 }
 
 async function saveReviewMachineCounter(id, item) {
+  if (!canEditInspectionHistory()) return;
   const input = item.querySelector(".review-machine-counter-value");
   const rawValue = input?.value.trim() || "";
   const machineCounter = rawValue ? Number(rawValue) : null;
@@ -4243,19 +5670,12 @@ async function saveReviewMachineCounter(id, item) {
 
 function renderReviewMeasurements(measurements, history, dateRange = {}) {
   const container = $("jobReviewMeasurements");
-  const filteredMeasurements = filterLedgerItemsByDate(measurements || [], dateRange, "timestamp");
-  const filteredHistory = filterLedgerItemsByDate(history || [], dateRange, "timestamp");
-  const measurementById = new Map((filteredMeasurements || []).map((measurement) => [String(measurement.id).toLowerCase(), measurement]));
+  const filteredHistory = filterLedgerItemsByDate(history || [], dateRange, "timestamp")
+    .filter((entry) => entry.entryType !== "Lock");
+  const measurementById = new Map((measurements || []).map((measurement) => [String(measurement.id).toLowerCase(), measurement]));
   const jobDataEntries = filteredHistory.filter((entry) => entry.entryType === "JobData");
   const materialEntries = filteredHistory.filter((entry) => entry.entryType === "Material");
   const phaseCompletions = filteredHistory.filter((entry) => entry.entryType === "PhaseComplete");
-  const completedMeasurementIds = new Set(
-    phaseCompletions
-      .filter((entry) => Array.isArray(entry.measurementIds))
-      .flatMap((entry) => entry.measurementIds.map((id) => String(id).toLowerCase()))
-  );
-  const uncompletedMeasurements = filteredMeasurements
-    .filter((measurement) => !completedMeasurementIds.has(String(measurement.id).toLowerCase()));
   const historyRows = filteredHistory
     .filter((entry) => {
       if (entry.entryType === "JobData") {
@@ -4269,7 +5689,6 @@ function renderReviewMeasurements(measurements, history, dateRange = {}) {
       return true;
     });
   const rows = [
-    ...groupReviewMeasurements(uncompletedMeasurements).map((group) => ({ kind: "MeasurementGroup", timestamp: group.latest.timestamp, group })),
     ...historyRows.map((entry) => ({ kind: "History", timestamp: entry.timestamp, entry }))
   ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
@@ -4315,6 +5734,7 @@ function ledgerDateRange() {
     from: dateTimeLocalValue("reviewFrom"),
     to: dateTimeLocalValue("reviewTo"),
     operation: $("reviewOperationCode").value,
+    shift: $("reviewShift").value,
     inspectionPhase: $("reviewInspectionPhase").value
   };
 }
@@ -4330,7 +5750,8 @@ function filterLedgerItemsByDate(items, dateRange, fieldName) {
 
     return (!from || date >= from) && (!to || date <= to) &&
       ledgerItemMatchesOperation(item, dateRange.operation) &&
-      ledgerItemMatchesPhase(item, dateRange.inspectionPhase);
+      ledgerItemMatchesPhase(item, dateRange.inspectionPhase) &&
+      (!dateRange.shift || String(item.operatorShift || "").toLowerCase() === dateRange.shift.toLowerCase());
   });
 }
 
@@ -4339,7 +5760,7 @@ function ledgerItemMatchesOperation(item, operationFilter) {
     return true;
   }
   const operation = operationDisplayForLedgerItem(item);
-  return operation.toLowerCase().includes(operationFilter.toLowerCase());
+  return operation.toLowerCase() === operationFilter.replace("|", " ").toLowerCase();
 }
 
 function ledgerItemMatchesPhase(item, phaseFilter) {
@@ -4425,6 +5846,7 @@ function reviewMeasurementGroupSummary(items) {
   const max = values.length ? Math.max(...values) : null;
   const flags = [
     outOfSpec ? `${outOfSpec} out of spec` : "",
+    items.some((item) => item.isWatch) ? "Watch" : "",
     outOfControl ? `${outOfControl} out of control` : ""
   ].filter(Boolean).join(" · ");
   return `${items.length} entries · Mean ${formatStatisticNumber(mean)} · Range ${formatNumber(min)} - ${formatNumber(max)}${flags ? ` · ${flags}` : ""}`;
@@ -4444,7 +5866,7 @@ function renderReviewMeasurementGroup(container, group) {
   const machines = [...new Set(group.items.map((item) => item.resourceId))];
   const users = [...new Set(group.items.map((item) => item.operatorShift ? `${item.operatorUserId} (${item.operatorShift})` : item.operatorUserId))];
   const item = document.createElement("div");
-  item.className = `data-row review-measurement-group-row ${group.items.some((entry) => entry.isOutOfSpec) ? "measurement-out-spec" : group.items.some((entry) => entry.isOutOfControl) ? "measurement-out-control" : ""}`;
+  item.className = `data-row review-measurement-group-row ${group.items.some((entry) => entry.isOutOfSpec) ? "measurement-out-spec" : group.items.some((entry) => entry.isWatch) ? "measurement-watch" : group.items.some((entry) => entry.isOutOfControl) ? "measurement-out-control" : ""}`;
   item.innerHTML = `
     <span>${formatDateTime(measurement.timestamp)}</span>
     <span>${escapeHtml(measurement.inspectionPhase)}</span>
@@ -4468,28 +5890,29 @@ function toggleReviewMeasurementGroup(container, groupId) {
 function renderReviewMeasurementDetail(container, groupId, measurement) {
   const item = document.createElement("div");
   item.dataset.reviewGroup = groupId;
-  item.className = `data-row review-measurement-detail-row hidden ${measurement.isOutOfSpec ? "measurement-out-spec" : measurement.isOutOfControl ? "measurement-out-control" : ""}`;
+  item.className = `data-row review-measurement-detail-row hidden ${measurement.isOutOfSpec ? "measurement-out-spec" : measurement.isWatch ? "measurement-watch" : measurement.isOutOfControl ? "measurement-out-control" : ""}`;
   item.innerHTML = `
     <span>${formatDateTime(measurement.timestamp)}</span>
     <span>
-      <select class="review-measurement-phase">
+      ${canEditInspectionHistory() ? `<select class="review-measurement-phase">
         <option value="Startup" ${measurement.inspectionPhase === "Startup" ? "selected" : ""}>Startup</option>
         <option value="Setup" ${measurement.inspectionPhase === "Setup" ? "selected" : ""}>Setup</option>
         <option value="In Process" ${measurement.inspectionPhase === "In Process" ? "selected" : ""}>In Process</option>
         <option value="Spool" ${normalizeInspectionPhase(measurement.inspectionPhase) === "Spool" ? "selected" : ""}>Spool</option>
-      </select>
+      </select>` : escapeHtml(measurement.inspectionPhase)}
     </span>
-    <span>${escapeHtml(measurement.characteristicName)}</span>
+    <span>${escapeHtml(measurement.characteristicName)}${measurement.isWatch ? `<small class="status-text warn">Watch: ${escapeHtml(measurement.watchReason)}</small>` : ""}</span>
     <span>${reviewMeasurementValueControl(measurement)}</span>
     <span>${escapeHtml(measurement.resourceId)}${measurement.isOutOfSpec ? ` <strong class="status-text bad">Out of spec</strong>` : measurement.isOutOfControl ? ` <strong class="status-text warn">Out of control</strong>` : ""}</span>
     <span>${escapeHtml(measurement.processCode)} ${measurement.operationSeq}</span>
     <span>${escapeHtml(measurement.operatorUserId)}${measurement.operatorShift ? ` (${escapeHtml(measurement.operatorShift)})` : ""}</span>
-    <span><button type="button" class="secondary compact-button">Save</button></span>`;
-  item.querySelector("button").addEventListener("click", () => saveReviewMeasurement(measurement.id, item));
+    <span>${canEditInspectionHistory() ? '<button type="button" class="secondary compact-button">Save</button>' : ""}</span>`;
+  item.querySelector("button")?.addEventListener("click", () => saveReviewMeasurement(measurement.id, item));
   container.appendChild(item);
 }
 
 function renderReviewHistoryEvent(container, entry, measurementById = new Map(), jobDataEntries = [], materialEntries = []) {
+  if (entry.entryType === "Lock") return;
   const item = document.createElement("div");
   item.className = `data-row review-history-event-row ${entry.entryType === "Lock" ? "measurement-out-control" : ""} ${entry.entryType === "MeasurementEdit" ? "measurement-edit-history" : ""} ${entry.entryType === "PhaseComplete" ? "phase-complete-history-row" : ""} ${entry.entryType === "InspectionFailed" ? "measurement-out-spec" : ""}`;
   const completionMeasurements = inspectionCompletionMeasurements(entry, measurementById);
@@ -4521,7 +5944,7 @@ function renderReviewHistoryEvent(container, entry, measurementById = new Map(),
     <span>${formatDateTime(entry.timestamp)}</span>
     <span>-</span>
     <span>${escapeHtml(historyEntryTitle(entry))}</span>
-    <span>${escapeHtml(details || "")}</span>
+    <span>${escapeHtml(details || "")}${entry.entryType === "Note" && entry.noteReplies?.length ? renderNoteReplies(entry.noteReplies) : ""}</span>
     <span>${escapeHtml(entry.resourceId || "-")}</span>
     <span>-</span>
     <span>${escapeHtml(historyEntryUser(entry))}</span>
@@ -4540,14 +5963,18 @@ function inspectionCompletionMetadata(entry) {
     return [];
   }
 
-  return [{ label: "Machine Counter", value: entry.machineCounter ?? "" }];
+  const metadata = [{ label: "Machine Counter", value: entry.machineCounter ?? "" }];
+  if (!entry.measurementIds?.length) {
+    metadata.push({label: "Inspection Readings", value: "No measurement links were saved with this inspection record."});
+  }
+  return metadata;
 }
 
 function renderReviewCompletionMetadataDetail(container, groupId, metadata, completionEntry) {
   const item = document.createElement("div");
   item.dataset.reviewGroup = groupId;
   item.className = "data-row review-job-data-detail-row hidden";
-  const isMachineCounter = metadata.label === "Machine Counter" && completionEntry.entryType === "PhaseComplete";
+  const isMachineCounter = canEditInspectionHistory() && metadata.label === "Machine Counter" && completionEntry.entryType === "PhaseComplete";
   item.innerHTML = `
     <span>${formatDateTime(completionEntry.timestamp)}</span>
     <span>-</span>
@@ -4580,7 +6007,7 @@ function renderReviewCompletionMaterialDetail(container, groupId, material, comp
   item.innerHTML = `
     <span>${formatDateTime(material.timestamp)}</span>
     <span>-</span>
-    <span>${escapeHtml(material.materialPartNum || "Material")}<small>Material</small></span>
+    <span>${escapeHtml(material.materialName || material.materialPartNum || "Material")}<small>${escapeHtml(material.materialPartNum || "")}${material.materialDescription ? ` - ${escapeHtml(material.materialDescription)}` : ""}</small></span>
     <span>${escapeHtml(material.newLotNum || "-")}</span>
     <span>${escapeHtml(material.resourceId || completionEntry.resourceId || "-")}</span>
     <span>-</span>
@@ -4632,6 +6059,7 @@ function inspectionCompletionMeasurements(entry, measurementById) {
 }
 
 function reviewMeasurementValueControl(row) {
+  if (!canEditInspectionHistory()) return escapeHtml(row.characteristicType === "Attribute" ? (Number(row.value) === 1 ? "Accept" : "Reject") : String(row.value));
   if (row.characteristicType === "Attribute") {
     return `
       <select class="review-measurement-value">
@@ -4643,71 +6071,20 @@ function reviewMeasurementValueControl(row) {
   return `<input class="review-measurement-value" type="number" step="0.00001" value="${Number(row.value)}">`;
 }
 
-async function loadJobSummary(event) {
-  event?.preventDefault();
-  const jobNums = parseJobNums();
-  if (!jobNums.length) {
-    $("jobSummaryMessage").textContent = "Enter at least one job number.";
-    $("jobSummaryMessage").className = "message error";
-    return;
-  }
-
-  try {
-    const rows = await api(`/qa/job-variable-means?jobNums=${encodeURIComponent(jobNums.join(","))}`);
-    renderJobSummary(rows);
-    $("jobSummaryMessage").textContent = `${rows.length} variable${rows.length === 1 ? "" : "s"} loaded.`;
-    $("jobSummaryMessage").className = "message ok";
-  } catch (error) {
-    $("jobSummaryMessage").textContent = readableError(error);
-    $("jobSummaryMessage").className = "message error";
-  }
-}
-
-function renderJobSummary(rows) {
-  const container = $("jobSummaryList");
-  if (!rows.length) {
-    container.className = "data-table empty";
-    container.textContent = "No variables found.";
-    return;
-  }
-
-  container.className = "data-table job-summary-table";
-  container.innerHTML = `
-    <div class="data-row header">
-      <span>Job</span><span>Context</span><span>Variable</span><span>Mean</span><span>Range</span><span>Std Dev</span><span>Capability</span>
-    </div>`;
-  rows.forEach((row) => {
-    const item = document.createElement("div");
-    item.className = "data-row";
-    item.innerHTML = `
-      <span>${row.jobNum}</span>
-      <span>${row.processCode || ""} ${row.operationSeq || ""}<small>${row.inspectionPhases || ""}</small></span>
-      <span>${row.characteristicName} (${row.unitOfMeasure})</span>
-      <span>${formatStatisticNumber(row.mean)}</span>
-      <span>${formatNumber(row.min)} - ${formatNumber(row.max)}</span>
-      <span>${formatStatisticNumber(row.stdDev)}</span>
-      <span>Cpk ${capabilityBadge(row.cpk)}<small>Ppk ${capabilityBadge(row.ppk)}</small></span>`;
-    container.appendChild(item);
-  });
-}
 
 async function loadTopIssues(event) {
   event?.preventDefault();
   try {
     const selectedLimit = Number($("topIssuesLimit").value);
+    const filters = dataReviewRequest("Issues");
     const rows = await api("/history/top-issues", {
       method: "POST",
       body: JSON.stringify({
-        partNum: $("topIssuesPartNum").value.trim() || null,
-        jobNum: $("topIssuesJobNum").value.trim() || null,
-        resourceId: $("topIssuesResourceId").value || null,
-        operatorShift: $("topIssuesShift").value || null,
-        characteristicName: $("topIssuesCharacteristicName").value.trim() || null,
-        from: dateTimeLocalValue("topIssuesFrom"),
-        to: dateTimeLocalValue("topIssuesTo"),
+        ...filters,
         limit: Number.isFinite(selectedLimit) ? selectedLimit : 25
       })
     });
+    if (JSON.stringify(filters) !== JSON.stringify(dataReviewRequest("Issues"))) return;
     const issueGroups = collapseTopIssueRows(rows);
     renderTopIssues(issueGroups);
     $("topIssuesMessage").textContent = `${issueGroups.length} issue group${issueGroups.length === 1 ? "" : "s"} loaded.`;
@@ -4722,32 +6099,45 @@ function renderTopIssues(rows) {
   const container = $("topIssuesList");
   if (!rows.length) {
     container.className = "data-table empty";
-    container.textContent = "No out-of-spec, drift, or rejected-attribute events found for those filters.";
+    container.textContent = "No out-of-spec or rejected-attribute events found for those filters.";
     return;
   }
 
   container.className = "top-issues-list";
-  container.innerHTML = `
-    <div class="top-issue-header">
-      <span>Issue</span><span>Events</span><span>Top Signal</span><span>Top Cause</span><span>Scope</span><span>Latest</span><span>Last Solution</span>
-    </div>`;
+  container.innerHTML = "";
   rows.forEach((row) => {
     const item = document.createElement("div");
     item.className = "top-issue-card";
+    const causeCategoryLabel = topBreakdownLabel(row.causeBreakdown, row.causeCategory || "");
+    const causeDetailLabel = topBreakdownLabel(row.causeDetailBreakdown, row.causeDetailSummary || "");
+    const signalLabel = topBreakdownLabel(row.signalBreakdown, row.signalSummary || ruleLabel(row.ruleTriggered));
     item.innerHTML = `
-      <div class="top-issue-main">
-        <span><strong>${escapeHtml(row.characteristicName)}</strong><small>Part ${escapeHtml(row.partNum)}</small></span>
-        <span><strong>${row.eventCount}</strong>${row.activeCount ? `<small>${row.activeCount} active</small>` : ""}</span>
-        <span>${escapeHtml(topBreakdownLabel(row.signalBreakdown, row.signalSummary || ruleLabel(row.ruleTriggered)))}</span>
-        <span>${escapeHtml(topBreakdownLabel(row.causeBreakdown, row.causeCategory || "Unspecified"))}</span>
-        <span>${row.distinctJobCount} job${row.distinctJobCount === 1 ? "" : "s"}<small>${row.distinctMachineCount} machine${row.distinctMachineCount === 1 ? "" : "s"}</small></span>
-        <span>${escapeHtml(row.latestJobNum)}<small>${escapeHtml(row.latestResourceId)}${row.latestOperatorShift ? ` / ${escapeHtml(row.latestOperatorShift)}` : ""} / ${formatDateTime(row.latestEventAt)}</small></span>
-        <span>${escapeHtml(row.latestSolution || "")}</span>
+      <div class="top-issue-summary">
+        <div class="top-issue-title">
+          <strong>${escapeHtml(row.characteristicName)}</strong>
+          <small>Part ${escapeHtml(row.partNum)}</small>
+        </div>
+        <div class="top-issue-stat">
+          <span>Events</span>
+          <strong>${row.eventCount}</strong>
+          ${row.activeCount ? `<small>${row.activeCount} active</small>` : ""}
+        </div>
+        <div class="top-issue-stat">
+          <span>Scope</span>
+          <strong>${row.distinctJobCount} job${row.distinctJobCount === 1 ? "" : "s"}</strong>
+          <small>${row.distinctMachineCount} machine${row.distinctMachineCount === 1 ? "" : "s"}</small>
+        </div>
+        <div class="top-issue-latest">
+          <span>Latest</span>
+          <strong>${escapeHtml(row.latestJobNum)}</strong>
+          <small>${escapeHtml(row.latestResourceId)}${row.latestOperatorShift ? ` / ${escapeHtml(row.latestOperatorShift)}` : ""} / ${formatDateTime(row.latestEventAt)}</small>
+        </div>
       </div>
       <div class="top-issue-breakdowns">
-        ${renderIssueBreakdown("Signals", row.signalBreakdown)}
-        ${renderIssueBreakdown("Causes", row.causeBreakdown)}
-        ${renderIssueBreakdown("Solutions", row.solutionBreakdown)}
+        ${renderIssueBreakdown("Signals", row.signalBreakdown, signalLabel)}
+        ${renderIssueBreakdown("Cause Categories", row.causeBreakdown, "No dropdown category saved")}
+        ${renderIssueBreakdown("Cause Details", row.causeDetailBreakdown, causeDetailLabel || "No cause detail saved")}
+        ${renderIssueBreakdown("Last Solutions", row.solutionBreakdown, row.latestSolution || "No solution saved")}
       </div>`;
     container.appendChild(item);
   });
@@ -4765,6 +6155,7 @@ function collapseTopIssueRows(rows) {
       groups.set(key, {
         ...row,
         causeCounts: causeCountsFromRow(row),
+        causeDetailCounts: causeDetailCountsFromRow(row),
         signalCounts: signalCountsFromRow(row),
         solutionCounts: solutionCountsFromRow(row)
       });
@@ -4776,9 +6167,11 @@ function collapseTopIssueRows(rows) {
     existing.distinctJobCount += row.distinctJobCount || 0;
     existing.distinctMachineCount += row.distinctMachineCount || 0;
     mergeCauseCounts(existing.causeCounts, causeCountsFromRow(row));
+    mergeCauseCounts(existing.causeDetailCounts, causeDetailCountsFromRow(row));
     mergeCauseCounts(existing.signalCounts, signalCountsFromRow(row));
     mergeCauseCounts(existing.solutionCounts, solutionCountsFromRow(row));
-    existing.causeCategory = topCountLabel(existing.causeCounts);
+    existing.causeCategory = topCountLabel(existing.causeCounts, "");
+    existing.causeDetailSummary = topCountLabel(existing.causeDetailCounts);
     existing.signalSummary = topCountLabel(existing.signalCounts);
 
     if (new Date(row.latestEventAt) > new Date(existing.latestEventAt)) {
@@ -4796,9 +6189,11 @@ function collapseTopIssueRows(rows) {
   return [...groups.values()]
     .map((row) => ({
       ...row,
-      causeCategory: topCountLabel(row.causeCounts),
+      causeCategory: topCountLabel(row.causeCounts, ""),
+      causeDetailSummary: topCountLabel(row.causeDetailCounts),
       signalSummary: row.signalSummary || topCountLabel(row.signalCounts),
       causeBreakdown: breakdownItems(row.causeCounts),
+      causeDetailBreakdown: row.causeDetailBreakdown?.length ? row.causeDetailBreakdown : breakdownItems(row.causeDetailCounts),
       signalBreakdown: row.signalBreakdown?.length ? row.signalBreakdown : breakdownItems(row.signalCounts),
       solutionBreakdown: row.solutionBreakdown?.length ? row.solutionBreakdown : breakdownItems(row.solutionCounts)
     }))
@@ -4812,7 +6207,16 @@ function causeCountsFromRow(row) {
   if (row.causeBreakdown?.length) {
     return countsFromBreakdown(row.causeBreakdown);
   }
-  return new Map([[row.causeCategory || "Unspecified", row.eventCount || 0]]);
+  return row.causeCategory
+    ? new Map([[row.causeCategory, row.eventCount || 0]])
+    : new Map();
+}
+
+function causeDetailCountsFromRow(row) {
+  if (row.causeDetailBreakdown?.length) {
+    return countsFromBreakdown(row.causeDetailBreakdown);
+  }
+  return new Map([[row.causeDetailSummary || "No cause detail entered", row.eventCount || 0]]);
 }
 
 function signalCountsFromRow(row) {
@@ -4852,10 +6256,10 @@ function breakdownItems(counts) {
     .map(([label, count]) => ({ label, count }));
 }
 
-function topCountLabel(counts) {
+function topCountLabel(counts, fallback = "Unspecified") {
   const items = breakdownItems(counts);
   if (!items.length) {
-    return "Unspecified";
+    return fallback;
   }
   return items[0].label;
 }
@@ -4864,8 +6268,11 @@ function topBreakdownLabel(items, fallback) {
   return items?.length ? items[0].label : fallback;
 }
 
-function renderIssueBreakdown(title, items = []) {
-  const rows = items.length ? items : [{ label: "Unspecified", count: 0 }];
+function renderIssueBreakdown(title, items = [], emptyLabel = "Unspecified") {
+  const rows = items.length ? items : (emptyLabel ? [{ label: emptyLabel, count: 0 }] : []);
+  if (!rows.length) {
+    return "";
+  }
   return `
     <section class="issue-breakdown-panel">
       <h4>${escapeHtml(title)}</h4>
@@ -4879,16 +6286,6 @@ function renderIssueBreakdown(title, items = []) {
     </section>`;
 }
 
-function openJobSummaryCsv() {
-  const jobNums = parseJobNums();
-  if (!jobNums.length) {
-    $("jobSummaryMessage").textContent = "Enter at least one job number.";
-    $("jobSummaryMessage").className = "message error";
-    return;
-  }
-  window.open(`/qa/job-variable-means.csv?jobNums=${encodeURIComponent(jobNums.join(","))}`, "_blank");
-}
-
 async function exportLedgerXlsx() {
   const partNum = $("partReviewFilter").value.trim();
   const jobNum = $("reviewJobNum").value.trim();
@@ -4899,7 +6296,7 @@ async function exportLedgerXlsx() {
   }
 
   try {
-    const response = await fetch("/exports/history-ledger.xlsx", {
+    const response = await sessionFetch("/exports/history-ledger.xlsx", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -4908,7 +6305,10 @@ async function exportLedgerXlsx() {
         from: dateTimeLocalValue("reviewFrom"),
         to: dateTimeLocalValue("reviewTo"),
         operation: $("reviewOperationCode").value || null,
-        inspectionPhase: $("reviewInspectionPhase").value || null
+        inspectionPhase: $("reviewInspectionPhase").value || null,
+        shift: $("reviewShift").value || null,
+        resourceId: $("reviewMachine").value || null,
+        characteristicName: $("reviewVariable").value.trim() || null
       })
     });
     if (!response.ok) {
@@ -4938,22 +6338,17 @@ function ledgerExportFileName(partNum, jobNum) {
   return `SPC-Star Ledger ${scope} ${stamp}.xlsx`;
 }
 
-function parseJobNums() {
-  return $("summaryJobNum").value
-    .split(",")
-    .map((jobNum) => jobNum.trim())
-    .filter(Boolean);
-}
-
 async function runReport(event) {
   event.preventDefault();
   try {
+    const filters = dataReviewRequest("Charts");
+    const baseRequest = reportRequest(null);
     const candidates = reportCharacteristicCandidates();
     const results = [];
     for (const characteristicName of candidates) {
       const data = await api("/charts/data", {
         method: "POST",
-        body: JSON.stringify(reportRequest(characteristicName))
+        body: JSON.stringify({...baseRequest, characteristicName})
       });
       if (data.points.length || $("reportCharacteristicName").value.trim()) {
         results.push({ characteristicName, data });
@@ -4963,11 +6358,12 @@ async function runReport(event) {
     if (!results.length) {
       const data = await api("/charts/data", {
         method: "POST",
-        body: JSON.stringify(reportRequest(candidates[0] || null))
+        body: JSON.stringify({...baseRequest, characteristicName:candidates[0] || null})
       });
       results.push({ characteristicName: candidates[0] || $("reportCharacteristicName").value.trim() || "No matching variable", data });
     }
 
+    if (JSON.stringify(filters) !== JSON.stringify(dataReviewRequest("Charts"))) return;
     renderReportCharts(results);
     const pointCount = results.reduce((total, result) => total + result.data.points.length, 0);
     $("reportMessage").textContent = `${results.length} chart${results.length === 1 ? "" : "s"} / ${pointCount} point${pointCount === 1 ? "" : "s"} loaded.`;
@@ -4981,6 +6377,7 @@ async function runReport(event) {
 function reportRequest(characteristicName) {
   const operation = selectedReportOperation();
   return {
+    ...dataReviewRequest("Charts"),
     chartType: "IndividualsMovingRange",
     jobNum: $("reportJobNum").value.trim() || null,
     partNum: $("reportPartNum").value.trim() || null,
@@ -5000,6 +6397,14 @@ function reportCharacteristicCandidates() {
     return [entered];
   }
 
+  return orderedReportCharacteristicNames();
+}
+
+function refreshReportCharacteristicChoices() {
+  fillDatalist($("reportCharacteristicOptions"), orderedReportCharacteristicNames(), (name) => name);
+}
+
+function orderedReportCharacteristicNames() {
   const partFilter = reportPartFilter();
   const operation = selectedReportOperation();
   const phaseFilter = $("reportInspectionPhase").value;
@@ -5007,9 +6412,18 @@ function reportCharacteristicCandidates() {
     (!partFilter || plan.partNum.toLowerCase() === partFilter.toLowerCase()) &&
     (!operation || operationKeyFor(plan) === operationKeyFor(operation)) &&
     (!phaseFilter || normalizeInspectionPhase(plan.inspectionPhase) === normalizeInspectionPhase(phaseFilter)));
-  const names = plans.map((plan) => plan.characteristicName);
-  const fallback = state.snapshot.characteristics.map((characteristic) => characteristic.name);
-  return [...new Set((names.length ? names : fallback).filter(Boolean))].sort();
+  const names = plans.slice().sort((a, b) =>
+    a.partNum.localeCompare(b.partNum, undefined, { numeric: true }) ||
+    a.processCode.localeCompare(b.processCode) ||
+    (a.operationSeq ?? 0) - (b.operationSeq ?? 0) ||
+    (a.displayOrder ?? Number.MAX_SAFE_INTEGER) - (b.displayOrder ?? Number.MAX_SAFE_INTEGER))
+    .map((plan) => plan.characteristicName);
+  const seen = new Set();
+  return names.filter((name) => {
+    if (!name || seen.has(name.toLowerCase())) return false;
+    seen.add(name.toLowerCase());
+    return true;
+  });
 }
 
 function reportPartFilter() {
@@ -5181,10 +6595,10 @@ function drawPointValueDetails(ctx, points, xOf, yOf) {
   ctx.font = "10px Segoe UI, Arial";
   ctx.textAlign = "center";
   points.forEach((point, index) => {
-    if (!shouldLabelAll && index !== 0 && index !== points.length - 1 && !point.hasRuleViolation) return;
+    if (!shouldLabelAll && index !== 0 && index !== points.length - 1 && !point.hasRuleViolation && !point.isWatch && !point.isFailed) return;
     const x = xOf(point, index);
     const y = yOf(point, index);
-    ctx.fillStyle = point.hasRuleViolation ? "#b42318" : "#344054";
+    ctx.fillStyle = chartPointColor(point, "#344054");
     ctx.fillText(formatNumber(point.value), x, Math.max(12, y - 8));
   });
   ctx.textAlign = "left";
@@ -5233,9 +6647,10 @@ function drawMovingRangeDetails(ctx, points, padding, plotWidth, plotHeight) {
   points.forEach((point, index) => {
     const range = Number(point.movingRange);
     if (!Number.isFinite(range)) return;
-    if (points.length > 18 && index !== points.length - 1 && !point.hasRuleViolation) return;
+    if (points.length > 18 && index !== points.length - 1 && !point.hasRuleViolation && !point.isWatch && !point.isFailed) return;
     const x = padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
     const y = padding.top + (1 - (range / high)) * plotHeight;
+    ctx.fillStyle = chartPointColor(point, "#344054");
     ctx.fillText(formatNumber(range), x, Math.max(12, y - 8));
   });
   ctx.textAlign = "left";
@@ -5463,6 +6878,25 @@ function machineAllowedForProductGroup(resource, productGroup) {
   return !groups.length || groups.some((item) => String(item || "").trim().toLowerCase() === group);
 }
 
+function usersByAccessLevel(users) {
+  const groups = [
+    { key: "operator", label: "Operators", users: [] },
+    { key: "linetech", label: "Line Techs", users: [] },
+    { key: "qa", label: "QA", users: [] },
+    { key: "qa - read only", label: "QA - Read only", users: [] },
+    { key: "god", label: "System Managers", users: [] }
+  ];
+  const other = { key: "other", label: "Other / Unassigned", users: [] };
+  for (const user of users) {
+    const roles = new Set((user.roles || []).map(role => role.toLowerCase()));
+    const key = ["god", "qa - read only", "qa", "linetech", "operator"].find(role => roles.has(role));
+    (groups.find(group => group.key === key) || other).users.push(user);
+  }
+  if (other.users.length) groups.push(other);
+  groups.forEach(group => group.users.sort((a, b) => a.userName.localeCompare(b.userName, undefined, { sensitivity: "base", numeric: true })));
+  return groups;
+}
+
 function renderUsers() {
   const list = $("userList");
   if (!state.users.length) {
@@ -5472,25 +6906,38 @@ function renderUsers() {
     return;
   }
 
+  const openGroups = new Map([...list.querySelectorAll("details[data-user-role]")].map(group => [group.dataset.userRole, group.open]));
   list.className = "setup-list";
   list.innerHTML = "";
   const selectedExists = state.users.some((user) => user.userName === state.selectedUserName);
   if (state.selectedUserName && !selectedExists) {
     state.selectedUserName = "";
   }
-  state.users.forEach((user) => {
-    const row = document.createElement("div");
-    row.className = `setup-row user-list-row ${user.userName === state.selectedUserName ? "selected" : ""}`;
-    const productGroupText = user.productGroups?.length ? user.productGroups.join(", ") : "No product groups assigned";
-    const shiftText = user.shift || "Unassigned shift";
-    row.innerHTML = `
-      <div>
-        <strong>${user.userName}</strong>
-        <span>${escapeHtml(formatRoleList(user.roles))} · ${escapeHtml(shiftText)}</span>
-        <small>${productGroupText}</small>
-      </div>`;
-    row.addEventListener("click", () => selectUser(user.userName));
-    list.appendChild(row);
+  usersByAccessLevel(state.users).forEach(group => {
+    const branch = document.createElement("details");
+    branch.className = "user-access-group";
+    branch.dataset.userRole = group.key;
+    branch.open = openGroups.get(group.key) === true || group.users.some(user => user.userName === state.selectedUserName);
+    const heading = document.createElement("summary");
+    heading.innerHTML = `${escapeHtml(group.label)} <span class="user-access-count">${group.users.length}</span>`;
+    branch.appendChild(heading);
+    group.users.forEach((user) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `setup-row user-list-row ${user.userName === state.selectedUserName ? "selected" : ""}`;
+      row.setAttribute("aria-pressed", String(user.userName === state.selectedUserName));
+      const productGroupText = user.productGroups?.length ? user.productGroups.join(", ") : "No product groups assigned";
+      const shiftText = user.shift || "Unassigned shift";
+      row.innerHTML = `
+        <span>
+          <strong>${escapeHtml(user.userName)}</strong>
+          <span>${escapeHtml(formatRoleList(user.roles))} · ${escapeHtml(shiftText)}</span>
+          <small>${escapeHtml(productGroupText)}</small>
+        </span>`;
+      row.addEventListener("click", () => selectUser(user.userName));
+      branch.appendChild(row);
+    });
+    list.appendChild(branch);
   });
 
   if (state.selectedUserName) {
@@ -5716,7 +7163,7 @@ function setupVariableRowTemplate() {
         <option value="Attribute">Accept / Reject</option>
       </select>
     </label>
-    <label class="setup-unit-field"><span>Unit</span><input class="setup-unit" required></label>
+    <label class="setup-unit-field"><span>Unit</span><input class="setup-unit"></label>
     <label class="setup-location-field"><span>Requirement / context</span><input class="setup-location"></label>
     <label class="setup-method-field"><span>Method / tool</span><input class="setup-method"></label>
     <section class="setup-phase-matrix">
@@ -5726,11 +7173,11 @@ function setupVariableRowTemplate() {
         ${INSPECTION_PHASES.map((phase) => setupPhaseRowTemplate(phase)).join("")}
       </div>
     </section>
-    <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="0.0001"></label>
-    <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="0.0001"></label>
-    <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="0.0001"></label>
-    <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="0.0001"></label>
-    <label class="numeric-setup-field"><span>UCL</span><input class="setup-ucl" type="number" step="0.0001"></label>
+    <label class="numeric-setup-field"><span>Target</span><input class="setup-nominal" type="number" step="any"></label>
+    <label class="numeric-setup-field"><span>LSL</span><input class="setup-lsl" type="number" step="any"></label>
+    <label class="numeric-setup-field"><span>USL</span><input class="setup-usl" type="number" step="any"></label>
+    <label class="numeric-setup-field"><span>LCL</span><input class="setup-lcl" type="number" step="any"></label>
+    <label class="numeric-setup-field"><span>UCL</span><input class="setup-ucl" type="number" step="any"></label>
     <div class="setup-row-actions">
       <button type="button" class="secondary compact-button move-variable-up-button">Up</button>
       <button type="button" class="secondary compact-button move-variable-down-button">Down</button>
@@ -5833,8 +7280,8 @@ function addSetupVariableRow(values = {}, type = values.characteristicType || ""
   row.querySelector(".setup-location").value = values.location || "";
   row.querySelector(".setup-method").value = values.inspectionMethod || "";
   row.querySelector(".setup-nominal").value = values.nominal ?? "";
-  row.querySelector(".setup-lsl").value = values.lsl ?? "";
-  row.querySelector(".setup-usl").value = values.usl ?? "";
+  row.querySelector(".setup-lsl").value = values.lslText ?? values.lsl ?? "";
+  row.querySelector(".setup-usl").value = values.uslText ?? values.usl ?? "";
   row.querySelector(".setup-lcl").value = values.lcl ?? "";
   row.querySelector(".setup-ucl").value = values.ucl ?? "";
   row.querySelector(".setup-characteristic-type").addEventListener("change", () => updateSetupVariableType(row));
@@ -5945,7 +7392,7 @@ function updateSetupVariableType(row) {
   const lcl = row.querySelector(".setup-lcl");
   const ucl = row.querySelector(".setup-ucl");
   row.classList.toggle("attribute-row", isAttribute);
-  unit.required = !isAttribute;
+  unit.required = false;
   nominal.required = false;
   lsl.required = false;
   usl.required = false;
@@ -6019,6 +7466,8 @@ function loadSelectedPartSetup() {
     .forEach((field) => addSetupMaterialRow(field));
   $("inspectionSetupMessage").textContent = `${set.partNum} loaded for editing.`;
   $("inspectionSetupMessage").className = "message ok";
+  state.loadedSetupDraft = { base: inspectionSetupBaseRequest(), variables: setupVariableRows(),
+    jobDataFields: setupJobDataFieldRows(), materialFields: setupMaterialRows(), plans: structuredClone(set.plans) };
 }
 
 function setupVariableGroups(plans) {
@@ -6050,6 +7499,7 @@ function setupVariableGroups(plans) {
 }
 
 function clearInspectionSetupForm() {
+  state.loadedSetupDraft = null;
   $("inspectionSetupForm").reset();
   $("setupEditPartSelect").value = "";
   state.editingSetup = null;
@@ -6110,35 +7560,6 @@ async function saveGlobalRule(event) {
   }
 }
 
-function capabilityThresholdPayload() {
-  return {
-    yellowMinimum: Number($("capabilityYellowMinimum").value),
-    greenMinimum: Number($("capabilityGreenMinimum").value)
-  };
-}
-
-async function saveCapabilityThresholds(event) {
-  event.preventDefault();
-  try {
-    const settings = await api("/setup/settings", {
-      method: "POST",
-      body: JSON.stringify({
-        globalAlertRuleSet: $("globalAlertRuleSet").value,
-        capabilityThresholds: capabilityThresholdPayload()
-      })
-    });
-    state.snapshot.settings = settings;
-    renderCapabilityThresholds();
-    renderMeanSummary();
-    renderPartReview();
-    $("capabilityThresholdMessage").textContent = "Capability thresholds saved.";
-    $("capabilityThresholdMessage").className = "message ok";
-  } catch (error) {
-    $("capabilityThresholdMessage").textContent = readableError(error);
-    $("capabilityThresholdMessage").className = "message error";
-  }
-}
-
 function updatePhaseFrequencyUnits(row, requestedUnit = null) {
   const unitsByType = {
     Quantity: [["Pieces", "Pieces"], ["Box", "Box"]],
@@ -6158,12 +7579,53 @@ function loadCustomRuleForm() {
   const rule = state.snapshot?.settings?.customDriftRule || defaultCustomRule();
   $("customRuleName").value = rule.name || "Custom Drift Rule";
   $("customWindowSize").value = String(rule.windowSize || 4);
-  $("customSigmaThreshold").value = String(rule.sigmaThreshold || 1);
-  $("customMinimumPoints").value = String(rule.minimumPointsBeyondThreshold || 4);
-  $("customDirection").value = rule.direction || "SameSide";
-  $("customIncludeWesternElectric").value = String(rule.includeWesternElectric ?? false);
-  $("customWarningBehavior").value = rule.warningBehavior || "Lock";
+  $("customDirection").value = ["Above", "Below"].includes(rule.direction) ? rule.direction : "SameSide";
   $("customRuleNotes").value = rule.notes || "";
+  const options = { ...defaultCustomWatchOptions(), ...rule.options };
+  for (const [id, key] of Object.entries(customWatchFields())) {
+    const node = $(id);
+    if (node.type === "checkbox") node.checked = options[key];
+    else node.value = String(options[key]);
+  }
+  updateCustomRuleSummary();
+}
+
+function defaultCustomWatchOptions() {
+  return { enabled: true, trendEnabled: true, nearLimitEnabled: true, repeatedNearLimitEnabled: false,
+    zoneMode: "PercentSpan", zonePercent: 10, zoneDistance: 0, repeatedCount: 3, repeatedWindow: 5,
+    combination: "Any", resetOnEqual: true, resetOnReversal: true, recoveryInspections: 2 };
+}
+
+function customWatchFields() {
+  return { customEnabled: "enabled", customTrendEnabled: "trendEnabled", customNearLimitEnabled: "nearLimitEnabled",
+    customRepeatedEnabled: "repeatedNearLimitEnabled", customZoneMode: "zoneMode", customZonePercent: "zonePercent",
+    customZoneDistance: "zoneDistance", customRepeatedCount: "repeatedCount", customRepeatedWindow: "repeatedWindow",
+    customCombination: "combination", customResetOnEqual: "resetOnEqual", customResetOnReversal: "resetOnReversal",
+    customRecoveryInspections: "recoveryInspections" };
+}
+
+function customWatchOptionsPayload() {
+  return Object.fromEntries(Object.entries(customWatchFields()).map(([id, key]) => {
+    const node = $(id);
+    return [key, node.type === "checkbox" ? node.checked : node.type === "number" ? Number(node.value) : node.value];
+  }));
+}
+
+function updateCustomRuleSummary() {
+  const count = Number($("customWindowSize").value);
+  const direction = $("customDirection").value === "Above" ? "the upper specification limit" :
+    $("customDirection").value === "Below" ? "the lower specification limit" : "either specification limit";
+  const o = customWatchOptionsPayload();
+  $("customZonePercentLabel").classList.toggle("hidden", o.zoneMode !== "PercentSpan");
+  $("customZoneDistanceLabel").classList.toggle("hidden", o.zoneMode !== "Distance");
+  const zone = o.zoneMode === "PercentSpan" ? `${o.zonePercent}% of the specification span` : `${o.zoneDistance} measurement units`;
+  const conditions = [];
+  if (o.trendEnabled) conditions.push(`${count} ${o.resetOnEqual && o.resetOnReversal ? "consecutive " : "qualifying "}completed inspection averages move toward ${direction}`);
+  if (o.nearLimitEnabled) conditions.push(`any valid sample is within ${zone} of ${direction}`);
+  if (o.repeatedNearLimitEnabled) conditions.push(`${o.repeatedCount} of ${o.repeatedWindow} completed inspections have a sample in that warning zone on the same side`);
+  $("customRuleSummary").textContent = !o.enabled ? "Custom Watch rules are disabled. Individual out-of-spec lockouts remain active." :
+    !conditions.length ? "No Watch conditions are enabled. Individual out-of-spec lockouts remain active." :
+    `Watch when ${conditions.join(o.combination === "All" ? " AND " : " OR ")}. Return to OK after ${o.recoveryInspections} consecutive completed inspections with all enabled conditions clear.`;
 }
 
 function defaultCustomRule() {
@@ -6174,8 +7636,9 @@ function defaultCustomRule() {
     minimumPointsBeyondThreshold: 4,
     direction: "SameSide",
     includeWesternElectric: false,
-    warningBehavior: "Lock",
-    notes: "Triggers when the configured number of recent points are beyond the configured sigma threshold."
+    warningBehavior: "Warning",
+    options: defaultCustomWatchOptions(),
+    notes: "Uses consecutive completed inspection averages moving toward a specification limit."
   };
 }
 
@@ -6183,12 +7646,13 @@ function customRulePayload() {
   return {
     name: $("customRuleName").value.trim() || "Custom Drift Rule",
     windowSize: Number($("customWindowSize").value),
-    sigmaThreshold: Number($("customSigmaThreshold").value),
-    minimumPointsBeyondThreshold: Number($("customMinimumPoints").value),
+    sigmaThreshold: 1,
+    minimumPointsBeyondThreshold: Number($("customWindowSize").value),
     direction: $("customDirection").value,
-    includeWesternElectric: $("customIncludeWesternElectric").value === "true",
-    warningBehavior: $("customWarningBehavior").value,
-    notes: $("customRuleNotes").value.trim()
+    includeWesternElectric: false,
+    warningBehavior: "Warning",
+    notes: $("customRuleNotes").value.trim(),
+    options: customWatchOptionsPayload()
   };
 }
 
@@ -6265,8 +7729,8 @@ function setupVariableRows() {
     inspectionMethod: row.querySelector(".setup-method").value.trim(),
     phaseSettings: setupPhaseRows(row),
     nominal: optionalInputNumber(row.querySelector(".setup-nominal")),
-    lsl: optionalInputNumber(row.querySelector(".setup-lsl")),
-    usl: optionalInputNumber(row.querySelector(".setup-usl")),
+    lsl: row.querySelector(".setup-lsl").value.trim() || null,
+    usl: row.querySelector(".setup-usl").value.trim() || null,
     lcl: optionalInputNumber(row.querySelector(".setup-lcl")),
     ucl: optionalInputNumber(row.querySelector(".setup-ucl")),
     displayOrder: Number(row.querySelector(".setup-display-order").value) || index + 1
@@ -6316,8 +7780,39 @@ function optionalInputNumber(input) {
   return value ? Number(value) : null;
 }
 
+function inspectionSetupBaseRequest() {
+  return {
+    partNum: $("setupPartNum").value.trim(), partDescription: $("setupPartDescription").value.trim(),
+    productGroup: $("setupProductGroup").value.trim(), blankCode: $("setupBlankCode").value.trim(),
+    holeSize: $("setupHoleSize").value.trim(), processCode: $("setupProcessCode").value.trim(),
+    processDescription: $("setupProcessCode").value.trim(), operationSeq: Number($("setupOperationSeq").value),
+    inspectionPhase: $("setupInspectionPhase").value, alertRuleSet: $("setupAlertRuleSet").value
+  };
+}
+
+function setupVariableEditFields(variable, original, plan) {
+  const fields = ["characteristicName", "characteristicType", "nominal", "lsl", "usl", "unitOfMeasure", "location", "inspectionMethod"];
+  const result = {};
+  for (const field of fields) {
+    result[field] = original && plan && JSON.stringify(variable[field]) === JSON.stringify(original[field])
+      ? plan[field] ?? null : variable[field];
+  }
+  result.lcl = variable.lcl;
+  result.ucl = variable.ucl;
+  if (!original || variable.displayOrder !== original.displayOrder) result.displayOrder = variable.displayOrder;
+  return result;
+}
+
+function setupVariableHasEdits(variable, original) {
+  if (!original) return true;
+  const { phaseSettings: ignoredNew, originalCharacteristicName: ignoredNewName, ...current } = variable;
+  const { phaseSettings: ignoredOld, originalCharacteristicName: ignoredOldName, ...previous } = original;
+  return JSON.stringify(current) !== JSON.stringify(previous);
+}
+
 async function saveInspectionSetup(event) {
   event.preventDefault();
+  if (state.setupSaving) return;
   const variables = setupVariableRows();
   const jobDataFields = setupJobDataFieldRows();
   const materialFields = setupMaterialRows();
@@ -6333,21 +7828,23 @@ async function saveInspectionSetup(event) {
     return;
   }
 
+  const form = $("inspectionSetupForm");
+  const button = form.querySelector('button[type="submit"]');
+  const buttonText = button.textContent;
+  state.setupSaving = true;
+  state.setupChangeGroup = crypto.randomUUID();
+  button.disabled = true;
+  button.textContent = "Saving...";
+  form.inert = true;
+  $("inspectionSetupMessage").textContent = "Saving changes...";
+  $("inspectionSetupMessage").className = "message";
+  const baseline = state.loadedSetupDraft;
+  const baseRequest = inspectionSetupBaseRequest();
+  const baseChanged = !baseline || JSON.stringify(baseRequest) !== JSON.stringify(baseline.base);
   try {
-    const baseRequest = {
-      partNum: $("setupPartNum").value.trim(),
-      partDescription: $("setupPartDescription").value.trim(),
-      productGroup: $("setupProductGroup").value.trim(),
-      blankCode: $("setupBlankCode").value.trim(),
-      holeSize: $("setupHoleSize").value.trim(),
-      processCode: $("setupProcessCode").value.trim(),
-      processDescription: $("setupProcessCode").value.trim(),
-      operationSeq: Number($("setupOperationSeq").value),
-      inspectionPhase: $("setupInspectionPhase").value,
-      alertRuleSet: $("setupAlertRuleSet").value
-    };
 
     for (const field of jobDataFields) {
+      if (!baseChanged && baseline.jobDataFields.some(old => JSON.stringify(old) === JSON.stringify(field))) continue;
       await api("/setup/job-data-fields", {
         method: "POST",
         body: JSON.stringify({
@@ -6362,6 +7859,7 @@ async function saveInspectionSetup(event) {
     }
 
     for (const field of materialFields) {
+      if (!baseChanged && baseline.materialFields.some(old => JSON.stringify(old) === JSON.stringify(field))) continue;
       await api("/setup/material-fields", {
         method: "POST",
         body: JSON.stringify({
@@ -6378,7 +7876,10 @@ async function saveInspectionSetup(event) {
     }
 
     for (const variable of variables) {
+      const original = baseline?.variables.find(old => old.characteristicName === (variable.originalCharacteristicName || variable.characteristicName));
+      const rowChanged = setupVariableHasEdits(variable, original);
       for (const phase of variable.phaseSettings.filter((item) => !item.isRequired)) {
+        if (!original?.phaseSettings.some(old => old.inspectionPhase === phase.inspectionPhase && old.isRequired)) continue;
         await api("/setup/inspection-plans/delete-phase", {
           method: "POST",
           body: JSON.stringify({
@@ -6395,23 +7896,16 @@ async function saveInspectionSetup(event) {
       }
 
       for (const phase of variable.phaseSettings.filter((item) => item.isRequired)) {
+        const oldPhase = original?.phaseSettings.find(old => old.inspectionPhase === phase.inspectionPhase);
+        if (!baseChanged && !rowChanged && JSON.stringify(phase) === JSON.stringify(oldPhase)) continue;
+        const originalPlan = baseline?.plans.find(plan => plan.characteristicName === original?.characteristicName && plan.inspectionPhase === phase.inspectionPhase);
         await api("/setup/inspection-plans", {
           method: "POST",
           body: JSON.stringify({
             ...baseRequest,
             inspectionPhase: phase.inspectionPhase,
             alertRuleSet: phase.alertRuleSet,
-            characteristicName: variable.characteristicName,
-            characteristicType: variable.characteristicType,
-            nominal: variable.nominal,
-            lsl: variable.lsl,
-            usl: variable.usl,
-            lcl: variable.lcl,
-            ucl: variable.ucl,
-            unitOfMeasure: variable.unitOfMeasure,
-            location: variable.location,
-            inspectionMethod: variable.inspectionMethod,
-            displayOrder: variable.displayOrder,
+            ...setupVariableEditFields(variable, original, originalPlan),
             sampleSize: phase.sampleSize,
             frequencyType: phase.frequencyType,
             frequencyValue: phase.frequencyValue,
@@ -6425,16 +7919,27 @@ async function saveInspectionSetup(event) {
       }
     }
 
-    $("inspectionSetupMessage").textContent = `${variables.length} inspection item${variables.length === 1 ? "" : "s"} saved for ${baseRequest.partNum}.`;
-    $("inspectionSetupMessage").className = "message ok";
     state.editingSetup = {
       processCode: baseRequest.processCode,
       operationSeq: baseRequest.operationSeq
     };
     await loadSnapshot();
+    const savedSet = setupInspectionSets().find(set => set.partNum === baseRequest.partNum && set.processCode === baseRequest.processCode && set.operationSeq === baseRequest.operationSeq);
+    if (savedSet) {
+      $("setupEditPartSelect").value = savedSet.key;
+      loadSelectedPartSetup();
+    }
+    $("inspectionSetupMessage").textContent = `Changes saved for ${baseRequest.partNum}.`;
+    $("inspectionSetupMessage").className = "message ok";
   } catch (error) {
     $("inspectionSetupMessage").textContent = readableError(error);
     $("inspectionSetupMessage").className = "message error";
+  } finally {
+    state.setupSaving = false;
+    state.setupChangeGroup = null;
+    form.inert = false;
+    button.disabled = false;
+    button.textContent = buttonText;
   }
 }
 
@@ -6523,6 +8028,347 @@ async function importMachinesXlsx(event) {
   }
 }
 
+async function previewCerts(event) {
+  event.preventDefault();
+  if ($("certType").value === "weldPin") {
+    await previewWeldPinCert();
+    return;
+  }
+
+  await previewEthiconCerts();
+}
+
+async function previewEthiconCerts() {
+  if (!canViewHistory()) {
+    $("certPreviewMessage").textContent = "COA preview is restricted to QA export access.";
+    $("certPreviewMessage").className = "message error";
+    return;
+  }
+
+  const shipmentFile = $("certShipmentFile").files[0];
+  const masterFile = $("certMasterFile").files[0];
+  if (!shipmentFile || !masterFile) {
+    $("certPreviewMessage").textContent = "Select both the Ethicon shipment workbook and the Bihler shipment master.";
+    $("certPreviewMessage").className = "message error";
+    return;
+  }
+
+  const button = $("certPreviewButton");
+  button.disabled = true;
+  $("certPreviewMessage").textContent = "Previewing COAs...";
+  $("certPreviewMessage").className = "message";
+  try {
+    const formData = new FormData();
+    formData.append("family", $("certFamily").value);
+    formData.append("shipmentFile", shipmentFile);
+    formData.append("masterFile", masterFile);
+    const result = await api("/certs/ethicon/preview", {
+      method: "POST",
+      body: formData
+    });
+    renderCertPreview(result);
+    const summary = result.summary || {};
+    $("certPreviewMessage").textContent = `${summary.certificateGroups || 0} COA group${summary.certificateGroups === 1 ? "" : "s"} previewed. ${summary.readyGroups || 0} ready, ${summary.blockedGroups || 0} blocked.`;
+    $("certPreviewMessage").className = summary.blockedGroups ? "message warn" : "message ok";
+  } catch (error) {
+    $("certPreviewMessage").textContent = readableError(error);
+    $("certPreviewMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function previewWeldPinCert() {
+  if (!canViewHistory()) {
+    $("certPreviewMessage").textContent = "Cert preview is restricted to QA export access.";
+    $("certPreviewMessage").className = "message error";
+    return;
+  }
+
+  const requestFile = $("weldPinRequestFile").files[0];
+  const keyenceFile = $("weldPinKeyenceFile").files[0];
+  if (!requestFile || !keyenceFile) {
+    $("certPreviewMessage").textContent = "Select both the Weld Pin request workbook and the full-job Keyence CSV.";
+    $("certPreviewMessage").className = "message error";
+    return;
+  }
+
+  const button = $("certPreviewButton");
+  button.disabled = true;
+  $("certPreviewMessage").textContent = "Previewing Weld Pin cert...";
+  $("certPreviewMessage").className = "message";
+  try {
+    const formData = new FormData();
+    formData.append("requestFile", requestFile);
+    formData.append("keyenceFile", keyenceFile);
+    const result = await api("/certs/weld-pin/preview", {
+      method: "POST",
+      body: formData
+    });
+    renderWeldPinPreview(result);
+    const summary = result.summary || {};
+    $("certPreviewMessage").textContent = `${summary.inventoryBoxes || 0} box${summary.inventoryBoxes === 1 ? "" : "es"} previewed. ${summary.readyBoxes || 0} ready, ${summary.blockedBoxes || 0} blocked.`;
+    $("certPreviewMessage").className = summary.blockedBoxes ? "message warn" : "message ok";
+  } catch (error) {
+    $("certPreviewMessage").textContent = readableError(error);
+    $("certPreviewMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderCertPreview(result) {
+  const summary = result.summary || {};
+  const summaryContainer = $("certPreviewSummary");
+  summaryContainer.classList.remove("hidden");
+  summaryContainer.innerHTML = [
+    ["Shipment rows", summary.shipmentRows || 0],
+    ["COA groups", summary.certificateGroups || 0],
+    ["Ready", summary.readyGroups || 0],
+    ["Blocked", summary.blockedGroups || 0]
+  ].map(([label, value]) => `
+    <div class="cert-summary-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>`).join("");
+
+  const groups = result.groups || [];
+  const list = $("certPreviewList");
+  if (!groups.length) {
+    list.className = "cert-preview-list empty";
+    list.textContent = "No COA groups were found in the shipment.";
+    return;
+  }
+
+  list.className = "cert-preview-list";
+  list.innerHTML = `
+    <div class="cert-preview-header">
+      <span>Status</span>
+      <span>Part / Wire</span>
+      <span>Job</span>
+      <span>Shipment</span>
+      <span>PO / Date</span>
+      <span>In Process Data</span>
+      <span>Messages</span>
+      <span>COA</span>
+    </div>
+    ${groups.map(renderCertPreviewRow).join("")}`;
+  list.querySelectorAll("[data-cert-generate]").forEach((button) => {
+    button.addEventListener("click", () => generateEthiconCert(button));
+  });
+}
+
+function renderCertPreviewRow(group) {
+  const ready = group.status === "Ready";
+  const messages = group.messages?.length ? group.messages : [ready ? "Ready for COA generation preview." : "Blocked."];
+  return `
+    <article class="cert-preview-row ${ready ? "cert-ready" : "cert-blocked"}">
+      <span><strong class="status-pill ${ready ? "ok" : "danger"}">${escapeHtml(group.status)}</strong><small>${escapeHtml(group.family)}</small></span>
+      <span><strong>${escapeHtml(group.partNum)}</strong><small>Wire ${escapeHtml(group.wireShipment)}</small></span>
+      <span><strong>${escapeHtml(group.jobNum || "-")}</strong><small>${escapeHtml(group.blankCode || "")}${group.holeSize ? ` / ${escapeHtml(group.holeSize)}` : ""}</small></span>
+      <span>${formatNumber(group.totalQuantity)}<small>${escapeHtml(group.shipmentRows)} rows / ${escapeHtml(group.boxCount)} boxes / ${escapeHtml(group.carrierCount)} carriers</small></span>
+      <span>${escapeHtml(group.purchaseOrder || "-")}<small>${escapeHtml(group.shipmentDate || "-")}</small></span>
+      <span>${escapeHtml(group.inProcessMeasurementCount)} measurements<small>${escapeHtml(group.inProcessVariableCount)} variables</small></span>
+      <span>${messages.map((message) => `<small>${escapeHtml(message)}</small>`).join("")}</span>
+      <span><button type="button" class="secondary compact-button" data-cert-generate data-part-num="${escapeHtml(group.partNum)}" data-wire-shipment="${escapeHtml(group.wireShipment)}" ${ready ? "" : "disabled"}>Generate</button></span>
+    </article>`;
+}
+
+function renderWeldPinPreview(result) {
+  const summary = result.summary || {};
+  const request = result.request || {};
+  const summaryContainer = $("certPreviewSummary");
+  summaryContainer.classList.remove("hidden");
+  summaryContainer.innerHTML = [
+    ["Boxes", summary.inventoryBoxes || 0],
+    ["Ready", summary.readyBoxes || 0],
+    ["Blocked", summary.blockedBoxes || 0],
+    ["PO", request.purchaseOrder || "-"]
+  ].map(([label, value]) => `
+    <div class="cert-summary-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>`).join("");
+
+  const boxes = result.boxes || [];
+  const list = $("certPreviewList");
+  if (!boxes.length) {
+    list.className = "cert-preview-list empty";
+    list.textContent = "No selected Weld Pin boxes were found in the request workbook.";
+    return;
+  }
+
+  const blocked = boxes.some((box) => box.status !== "Ready");
+  list.className = "cert-preview-list";
+  list.innerHTML = `
+    <div class="cert-preview-header weld-pin-row">
+      <span>Status</span>
+      <span>Box / Lot</span>
+      <span>Quantity</span>
+      <span>Keyence Set</span>
+      <span>Delta E</span>
+      <span>Messages</span>
+      <span>Cert</span>
+    </div>
+    ${boxes.map(renderWeldPinPreviewRow).join("")}
+    <div class="cert-generate-row">
+      <button type="button" class="primary compact-button" data-weld-pin-generate ${blocked ? "disabled" : ""}>Generate Weld Pin Cert</button>
+    </div>`;
+  list.querySelector("[data-weld-pin-generate]")?.addEventListener("click", (event) => generateWeldPinCert(event.currentTarget));
+}
+
+function renderWeldPinPreviewRow(box) {
+  const ready = box.status === "Ready";
+  const measurements = box.measurements || [];
+  const messages = box.messages?.length ? box.messages : [ready ? "Ready for cert generation preview." : "Blocked."];
+  return `
+    <article class="cert-preview-row weld-pin-row ${ready ? "cert-ready" : "cert-blocked"}">
+      <span><strong class="status-pill ${ready ? "ok" : "danger"}">${escapeHtml(box.status)}</strong><small>Tote ${escapeHtml(box.toteNumber || "-")}</small></span>
+      <span><strong>${escapeHtml(box.boxNumber || "-")}</strong><small>${escapeHtml(box.finishedGoodsLotNumber || "-")}</small></span>
+      <span><strong>${formatNumber(box.quantity || 0)}</strong><small>FG base ${escapeHtml(box.finishedGoodsBaseLot || "-")}</small></span>
+      <span><strong>${escapeHtml(box.keyenceLotNumber || "-")}</strong><small>${escapeHtml(box.measurementTime || "-")}</small></span>
+      <span>${measurements.map((measurement) => `<small>Serial ${escapeHtml(measurement.serialCounter)}: ${escapeHtml(measurement.deltaE)} (${escapeHtml(measurement.okNg || "-")})</small>`).join("") || "<small>-</small>"}</span>
+      <span>${messages.map((message) => `<small>${escapeHtml(message)}</small>`).join("")}</span>
+      <span>${ready ? "<small>Included</small>" : "<small>Blocked</small>"}</span>
+    </article>`;
+}
+
+async function generateEthiconCert(button) {
+  const shipmentFile = $("certShipmentFile").files[0];
+  const masterFile = $("certMasterFile").files[0];
+  if (!shipmentFile || !masterFile) {
+    $("certPreviewMessage").textContent = "Select both the Ethicon shipment workbook and the Bihler shipment master.";
+    $("certPreviewMessage").className = "message error";
+    return;
+  }
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Generating...";
+  $("certPreviewMessage").textContent = "Generating COA workbook...";
+  $("certPreviewMessage").className = "message";
+  try {
+    const formData = new FormData();
+    formData.append("family", $("certFamily").value);
+    formData.append("partNum", button.dataset.partNum || "");
+    formData.append("wireShipment", button.dataset.wireShipment || "");
+    formData.append("shipmentFile", shipmentFile);
+    formData.append("masterFile", masterFile);
+    const response = await sessionFetch("/certs/ethicon/generate", {
+      method: "POST",
+      headers: { "X-SPCStar-User": state.user.userName, "X-SPCStar-Session": state.user.sessionToken },
+      body: formData
+    });
+    if (!response.ok) {
+      let detail = `Request failed with status ${response.status}.`;
+      try {
+        const payload = await response.json();
+        detail = readableError(payload);
+      } catch {
+        detail = await response.text();
+      }
+      throw new Error(detail);
+    }
+
+    const blob = await response.blob();
+    const fileName = fileNameFromContentDisposition(response.headers.get("content-disposition")) ||
+      `Ethicon-${$("certFamily").value}-COA-${button.dataset.partNum || "part"}-${button.dataset.wireShipment || "wire"}.xlsm`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    $("certPreviewMessage").textContent = `${fileName} generated.`;
+    $("certPreviewMessage").className = "message ok";
+  } catch (error) {
+    $("certPreviewMessage").textContent = readableError(error);
+    $("certPreviewMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+async function generateWeldPinCert(button) {
+  const requestFile = $("weldPinRequestFile").files[0];
+  const keyenceFile = $("weldPinKeyenceFile").files[0];
+  if (!requestFile || !keyenceFile) {
+    $("certPreviewMessage").textContent = "Select both the Weld Pin request workbook and the full-job Keyence CSV.";
+    $("certPreviewMessage").className = "message error";
+    return;
+  }
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Generating...";
+  $("certPreviewMessage").textContent = "Generating Weld Pin cert workbook...";
+  $("certPreviewMessage").className = "message";
+  try {
+    const formData = new FormData();
+    formData.append("requestFile", requestFile);
+    formData.append("keyenceFile", keyenceFile);
+    const response = await sessionFetch("/certs/weld-pin/generate", {
+      method: "POST",
+      headers: { "X-SPCStar-User": state.user.userName, "X-SPCStar-Session": state.user.sessionToken },
+      body: formData
+    });
+    if (!response.ok) {
+      let detail = `Request failed with status ${response.status}.`;
+      try {
+        const payload = await response.json();
+        detail = readableError(payload);
+      } catch {
+        detail = await response.text();
+      }
+      throw new Error(detail);
+    }
+
+    const blob = await response.blob();
+    const fileName = fileNameFromContentDisposition(response.headers.get("content-disposition")) || "Weld-Pin-Cert.xlsx";
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    $("certPreviewMessage").textContent = `${fileName} generated.`;
+    $("certPreviewMessage").className = "message ok";
+  } catch (error) {
+    $("certPreviewMessage").textContent = readableError(error);
+    $("certPreviewMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+function updateCertTypeFields() {
+  const weldPin = $("certType").value === "weldPin";
+  $("ethiconCertFields").classList.toggle("hidden", weldPin);
+  $("weldPinCertFields").classList.toggle("hidden", !weldPin);
+  $("certPreviewButton").textContent = weldPin ? "Preview Weld Pin Cert" : "Preview COAs";
+  $("certPreviewMessage").textContent = "";
+  $("certPreviewSummary").classList.add("hidden");
+  $("certPreviewSummary").innerHTML = "";
+  $("certPreviewList").className = "cert-preview-list empty";
+  $("certPreviewList").textContent = weldPin
+    ? "Load a Weld Pin request workbook and Keyence CSV to preview selected boxes."
+    : "Load shipment files to preview required COAs.";
+}
+
+function fileNameFromContentDisposition(value) {
+  if (!value) return "";
+  const utf8 = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8) return decodeURIComponent(utf8[1].replace(/"/g, ""));
+  const ascii = value.match(/filename="?([^";]+)"?/i);
+  return ascii ? ascii[1] : "";
+}
+
 function optionalNumber(id) {
   const value = $(id).value.trim();
   return value ? Number(value) : null;
@@ -6600,12 +8446,29 @@ async function createManualBackup() {
       <p>${escapeHtml(result.backupPath)}</p>
       <a class="secondary archive-download-link" href="${result.downloadPath}" download>Download backup file</a>
     `;
+    secureMaintenanceDownload($("manualBackupResultPanel"), $("manualBackupMessage"));
   } catch (error) {
     $("manualBackupMessage").textContent = readableError(error);
     $("manualBackupMessage").className = "message error";
   } finally {
     button.disabled = false;
   }
+}
+
+function secureMaintenanceDownload(container, message) {
+  container.querySelector(".archive-download-link")?.addEventListener("click", async event => {
+    event.preventDefault();
+    try {
+      const response = await sessionFetch(event.currentTarget.href, { headers: {
+        "X-SPCStar-User": state.user.userName, "X-SPCStar-Session": state.user.sessionToken
+      }});
+      if (!response.ok) throw new Error(await response.text());
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url; link.download = decodeURIComponent(new URL(response.url).pathname.split("/").pop());
+      link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { message.textContent = readableError(error); message.className = "message error"; }
+  });
 }
 
 function clearHistoryCredentials() {
@@ -6751,6 +8614,7 @@ async function createArchive() {
       <p>${escapeHtml(result.archivePath)}</p>
       <a class="secondary archive-download-link" href="${result.downloadPath}" download>Download archive file</a>
     `;
+    secureMaintenanceDownload($("archiveResultPanel"), $("archiveMessage"));
     await loadSnapshot();
   } catch (error) {
     $("archiveMessage").textContent = readableError(error);
@@ -6785,7 +8649,18 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function formatNumber(value) {
+function formatMeasurementNumber(value, plan = null) {
+  const fixedDecimals = plan ? measurementEntryDecimalPlaces(plan) : null;
+  const displayDecimals = Number.isInteger(fixedDecimals) && fixedDecimals > 0
+    ? Math.max(fixedDecimals, decimalPlacesForNumber(Number(value))) : null;
+  return formatNumber(value, displayDecimals);
+}
+
+function requiresFixedFourDecimalDisplay(plan) {
+  return isCuttingEdgeNeedleBlankL3(plan) || isCalculatedRemovalPlan(plan);
+}
+
+function formatNumber(value, fixedDecimals = null) {
   if (value === null || value === undefined || value === "") {
     return "-";
   }
@@ -6793,6 +8668,10 @@ function formatNumber(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
     return "-";
+  }
+
+  if (Number.isInteger(fixedDecimals) && fixedDecimals >= 0) {
+    return numericValue.toFixed(fixedDecimals);
   }
 
   return expandScientificNotation(String(numericValue));
@@ -6871,6 +8750,11 @@ window.addEventListener("online", async () => {
 });
 window.addEventListener("offline", () => setStatus($("syncStatus"), "Offline", "warn"));
 $("loginForm").addEventListener("submit", login);
+$("sessionSignInForm").addEventListener("submit", renewSession);
+$("sessionSignInDialog").addEventListener("cancel", event => event.preventDefault());
+$("sessionSignOutButton").addEventListener("click", () => {
+  if (window.confirm("Sign out and discard unsaved entries?")) logout();
+});
 $("showChangePasswordButton").addEventListener("click", toggleChangePassword);
 $("changePasswordButton").addEventListener("click", changePassword);
 $("contextForm").addEventListener("submit", loadContext);
@@ -6879,6 +8763,7 @@ $("jobNum").addEventListener("input", () => {
   clearSelectedWorkContext();
 });
 $("partNum").addEventListener("input", () => {
+  updateJobFromPart();
   refreshOperationChoices({ preserve: false });
   refreshMachineDropdowns();
   clearSelectedWorkContext();
@@ -6888,9 +8773,35 @@ $("inspectionPhase").addEventListener("change", clearSelectedWorkContext);
 $("resourceId").addEventListener("change", clearSelectedWorkContext);
 $("logoutButton").addEventListener("click", logout);
 $("measurementForm").addEventListener("submit", submitMeasurement);
+$("endInspectionButton").addEventListener("click", endCurrentInspectionFromPage);
 $("machineCounter").addEventListener("input", () => {
-  applyMachineCounterDueState();
-  updateInspectionSubmitState();
+  commitMachineCounterEntry();
+});
+$("machineCounter").addEventListener("change", commitMachineCounterEntry);
+$("machineCounter").addEventListener("blur", commitMachineCounterEntry);
+$("machineCounter").addEventListener("keydown", (event) => {
+  if ((event.key !== "Enter" && event.key !== "Tab") || event.shiftKey) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  commitMachineCounterEntry();
+  if (!machineCounterComplete()) {
+    $("machineCounter").focus();
+    return;
+  }
+
+  window.setTimeout(() => {
+    const nextInput = firstOpenInspectionEntryInput();
+    if (nextInput) {
+      nextInput.focus();
+      nextInput.select?.();
+      return;
+    }
+    showEntryMessage(noDueInspectionEntryMessage(), "warn");
+    $("machineCounter").focus();
+  }, 0);
 });
 $("jobTagsForm").addEventListener("submit", saveJobTags);
 $("materialChangeForm").addEventListener("submit", saveMaterialChange);
@@ -6903,7 +8814,7 @@ $("refreshLockStatusButton").addEventListener("click", refreshLockStatus);
 $("resetLockFormButton").addEventListener("click", resetLockForm);
 $("connectSerialDeviceButton").addEventListener("click", connectSerialDevice);
 $("disconnectSerialDeviceButton").addEventListener("click", disconnectSerialDevice);
-$("overrideUserName").addEventListener("input", updateSystemManagerReasonVisibility);
+$("causeCategory").addEventListener("change", updateLockCategoryActions);
 $("trendCharacteristic").addEventListener("change", () => {
   state.trendCharacteristic = $("trendCharacteristic").value;
   loadTrend();
@@ -6914,6 +8825,8 @@ $("trendChartType").addEventListener("change", () => {
 });
 $("inspectionTab").addEventListener("click", () => showPanel("inspect"));
 $("setupTab").addEventListener("click", () => showPanel("setup"));
+$("dataTab").addEventListener("click", () => showPanel("data"));
+$("adminTab").addEventListener("click", () => showPanel("admin"));
 $("setupInspectionSectionTab").addEventListener("click", () => showSetupSection("Inspection"));
 $("setupMachinesSectionTab").addEventListener("click", async () => {
   showSetupSection("Machines");
@@ -6921,12 +8834,52 @@ $("setupMachinesSectionTab").addEventListener("click", async () => {
 });
 $("setupUsersSectionTab").addEventListener("click", () => showSetupSection("Users"));
 $("setupRulesSectionTab").addEventListener("click", () => showSetupSection("Rules"));
-$("setupHistorySectionTab").addEventListener("click", () => showSetupSection("History"));
+$("setupCertSectionTab").addEventListener("click", () => showSetupSection("Cert"));
 $("setupArchiveSectionTab").addEventListener("click", () => showSetupSection("Archive"));
+$("setupChangeHistorySectionTab").addEventListener("click", () => showSetupSection("ChangeHistory"));
+$("setupNotesSectionTab").addEventListener("click", () => showSetupSection("Notes"));
+$("adminNotesRows").addEventListener("submit", saveAdminNoteReply);
+$("adminNotesFilterForm").addEventListener("submit", event => { event.preventDefault(); loadAdminNotes(1); });
+$("adminNotesFilterForm").addEventListener("reset", event => {
+  event.preventDefault();
+  event.currentTarget.querySelectorAll("input").forEach(input => { input.value = ""; });
+  loadAdminNotes(1);
+});
+$("adminNotesPrevious").addEventListener("click", () => loadAdminNotes((state.adminNotesPage || 1) - 1));
+$("adminNotesNext").addEventListener("click", () => loadAdminNotes((state.adminNotesPage || 1) + 1));
+$("changeHistoryFilterForm").addEventListener("submit", event=>{event.preventDefault();loadChangeHistory(1);});
+$("changeHistoryPrevious").addEventListener("click", ()=>loadChangeHistory((state.changeHistoryPage || 1)-1));
+$("changeHistoryNext").addEventListener("click", ()=>loadChangeHistory((state.changeHistoryPage || 1)+1));
+$("changeHistoryExport").addEventListener("click", exportChangeHistory);
 $("historyLedgerTab").addEventListener("click", () => showHistoryView("Ledger"));
+$("historyQualityTab").addEventListener("click", () => {
+  showHistoryView("Quality");
+  if ($("qualityPart").value.trim()) loadPartQuality();
+});
+$("qualityForm").addEventListener("submit", loadPartQuality);
+$("qualitySearch").addEventListener("input", renderQualityVariables);
+$("qualityFailureVariable").addEventListener("change", () => loadQualityFailures($("qualityFailureVariable").value));
+$("qualityFailuresPrevious").addEventListener("click", () => loadQualityFailures(state.qualityVariable, (state.qualityResult?.failurePage || 1) - 1));
+$("qualityFailuresNext").addEventListener("click", () => loadQualityFailures(state.qualityVariable, (state.qualityResult?.failurePage || 1) + 1));
+$("qualityForm").addEventListener("input", () => {
+  ++state.qualityRequest; ++state.qualityFailureRequest;
+  $("qualityLoad").disabled = false;
+  $("qualityResults").classList.add("hidden");
+});
+$("qualityPart").addEventListener("input", () => {
+  const job = partNumForJob($("qualityJob").value.trim());
+  const part = $("qualityPart").value.trim().toLowerCase();
+  const exact = (state.snapshot?.parts || []).some(row => row.partNum.toLowerCase() === part);
+  if (job && part && (exact ? job.toLowerCase() !== part : !job.toLowerCase().startsWith(part))) $("qualityJob").value = "";
+  refreshQualityChoices();
+});
+$("qualityJob").addEventListener("input", () => {
+  const part = partNumForJob($("qualityJob").value.trim());
+  if (part) $("qualityPart").value = part;
+  refreshQualityChoices();
+});
 $("historyChartsTab").addEventListener("click", () => showHistoryView("Charts"));
 $("historyIssuesTab").addEventListener("click", () => showHistoryView("Issues"));
-$("historyExportTab").addEventListener("click", () => showHistoryView("Export"));
 $("machineSetupForm").addEventListener("submit", saveMachine);
 $("newMachineButton").addEventListener("click", newMachine);
 $("deleteSelectedMachineButton").addEventListener("click", deleteSelectedMachine);
@@ -6935,6 +8888,9 @@ $("machineProductGroupFilter").addEventListener("change", () => {
   renderMachines();
 });
 $("machineImportForm").addEventListener("submit", importMachinesXlsx);
+$("certPreviewForm").addEventListener("submit", previewCerts);
+$("certType").addEventListener("change", updateCertTypeFields);
+updateCertTypeFields();
 $("exportMachineTemplateButton").addEventListener("click", exportMachineTemplate);
 $("userSetupForm").addEventListener("submit", saveUser);
 $("userImportForm").addEventListener("submit", importUsersXlsx);
@@ -6959,7 +8915,6 @@ $("setupFrequencyType").addEventListener("change", updateSetupFrequencyUnits);
 $("setupAlertRuleSet").addEventListener("change", updateRuleDescription);
 $("globalAlertRuleSet").addEventListener("change", updateRuleDescription);
 $("globalRuleForm").addEventListener("submit", saveGlobalRule);
-$("capabilityThresholdForm").addEventListener("submit", saveCapabilityThresholds);
 document.querySelectorAll(".rule-card[data-rule-key]").forEach((card) => {
   card.addEventListener("click", () => openRuleDetail(card.dataset.ruleKey));
 });
@@ -6977,14 +8932,22 @@ $("gettingStartedModal").addEventListener("click", (event) => {
   }
 });
 $("customRuleForm").addEventListener("submit", saveCustomRule);
+$("customWindowSize").addEventListener("input", updateCustomRuleSummary);
+$("customDirection").addEventListener("change", updateCustomRuleSummary);
+Object.keys(customWatchFields()).forEach(id => {
+  $(id).addEventListener("input", updateCustomRuleSummary);
+  $(id).addEventListener("change", updateCustomRuleSummary);
+});
 $("partsImportForm").addEventListener("submit", importPartsXlsx);
 $("exportSetupTemplateButton").addEventListener("click", exportSetupTemplate);
 $("partReviewFilter").addEventListener("input", () => {
+  updateReviewJobFromPart();
   syncHistoryFiltersFrom("Ledger");
   applyHistoryFilters();
   refreshReviewOperationChoices();
 });
 $("reviewJobNum").addEventListener("input", () => {
+  updateReviewPartFromJob();
   syncHistoryFiltersFrom("Ledger");
   applyHistoryFilters();
 });
@@ -7001,6 +8964,9 @@ $("reviewOperationCode").addEventListener("change", loadReview);
 $("reviewInspectionPhase").addEventListener("change", loadReview);
 $("reviewFrom").addEventListener("change", loadReview);
 $("reviewTo").addEventListener("change", loadReview);
+$("reviewShift").addEventListener("change", loadReview);
+$("reviewMachine").addEventListener("change", loadReview);
+$("reviewVariable").addEventListener("change", loadReview);
 $("reviewJobNum").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
@@ -7017,6 +8983,8 @@ $("reportJobNum").addEventListener("input", () => {
 });
 $("reportPartNum").addEventListener("change", refreshReportOperationChoices);
 $("reportJobNum").addEventListener("change", refreshReportOperationChoices);
+$("reportOperationCode").addEventListener("change", refreshReportCharacteristicChoices);
+$("reportInspectionPhase").addEventListener("change", refreshReportCharacteristicChoices);
 $("topIssuesPartNum").addEventListener("input", () => {
   syncHistoryFiltersFrom("Issues");
   applyHistoryFilters();
@@ -7026,15 +8994,17 @@ $("topIssuesJobNum").addEventListener("input", () => {
   applyHistoryFilters();
 });
 $("topIssuesForm").addEventListener("submit", loadTopIssues);
-$("summaryJobNum").addEventListener("input", () => {
-  syncHistoryFiltersFrom("Export");
-  applyHistoryFilters();
-});
-$("jobSummaryForm").addEventListener("submit", loadJobSummary);
-$("jobSummaryCsvButton").addEventListener("click", openJobSummaryCsv);
 $("reportForm").addEventListener("submit", runReport);
+initializeDataFilters();
+loadApplicationVersion();
 setStatus($("syncStatus"), navigator.onLine ? "Online" : "Offline", navigator.onLine ? "ok" : "warn");
-restoreAuthenticatedSession();
+clearLoginFields();
+resumeRefreshSession();
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    window.location.reload();
+  }
+});
 clearInspectionSetupForm();
 
 if ("serviceWorker" in navigator) {

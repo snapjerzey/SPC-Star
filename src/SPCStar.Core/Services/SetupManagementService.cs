@@ -1,5 +1,6 @@
 using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
+using System.Text.Json.Serialization;
 
 namespace SPCStar.Core.Services;
 
@@ -36,8 +37,8 @@ public sealed record UpsertInspectionSetupRequest(
     string CharacteristicName,
     CharacteristicType CharacteristicType,
     decimal? Nominal,
-    decimal? Lsl,
-    decimal? Usl,
+    [property: JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)] decimal? Lsl,
+    [property: JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)] decimal? Usl,
     decimal? Lcl,
     decimal? Ucl,
     string UnitOfMeasure,
@@ -142,15 +143,14 @@ public sealed class SetupManagementService(ISpcRepository repository)
             return ServiceResult<SettingsSetupDto>.Fail("GlobalAlertRuleSet is not supported.");
         }
 
+        if (request.CustomDriftRule is not null && ValidateCustomRule(request.CustomDriftRule) is { Count: > 0 } ruleErrors)
+            return ServiceResult<SettingsSetupDto>.Fail(ruleErrors);
+        if (request.CapabilityThresholds is not null)
+            return ServiceResult<SettingsSetupDto>.Fail("Global capability thresholds have been removed. Calculated capability is not an automatic acceptance judgment.");
+
         repository.Settings.GlobalAlertRuleSet = request.GlobalAlertRuleSet.Trim();
         if (request.CustomDriftRule is not null)
         {
-            var customErrors = ValidateCustomRule(request.CustomDriftRule);
-            if (customErrors.Count > 0)
-            {
-                return ServiceResult<SettingsSetupDto>.Fail(customErrors);
-            }
-
             repository.Settings.CustomDriftRule = new CustomDriftRuleSettings
             {
                 Name = string.IsNullOrWhiteSpace(request.CustomDriftRule.Name) ? "Custom Drift Rule" : request.CustomDriftRule.Name.Trim(),
@@ -159,23 +159,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 MinimumPointsBeyondThreshold = request.CustomDriftRule.MinimumPointsBeyondThreshold,
                 Direction = request.CustomDriftRule.Direction.Trim(),
                 IncludeWesternElectric = request.CustomDriftRule.IncludeWesternElectric,
-                WarningBehavior = request.CustomDriftRule.WarningBehavior.Trim(),
+                WarningBehavior = "Warning",
+                Options = request.CustomDriftRule.Options ?? new CustomWatchOptions(),
                 Notes = request.CustomDriftRule.Notes?.Trim() ?? string.Empty
-            };
-        }
-
-        if (request.CapabilityThresholds is not null)
-        {
-            var thresholdErrors = ValidateCapabilityThresholds(request.CapabilityThresholds);
-            if (thresholdErrors.Count > 0)
-            {
-                return ServiceResult<SettingsSetupDto>.Fail(thresholdErrors);
-            }
-
-            repository.Settings.CapabilityThresholds = new CapabilityThresholdSettings
-            {
-                YellowMinimum = request.CapabilityThresholds.YellowMinimum,
-                GreenMinimum = request.CapabilityThresholds.GreenMinimum
             };
         }
 
@@ -185,7 +171,6 @@ public sealed class SetupManagementService(ISpcRepository repository)
     private SettingsSetupDto SettingsDto()
     {
         var custom = repository.Settings.CustomDriftRule;
-        var capability = repository.Settings.CapabilityThresholds;
         return new SettingsSetupDto(
             repository.Settings.GlobalAlertRuleSet,
             new CustomDriftRuleSetupDto(
@@ -196,10 +181,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
                 custom.Direction,
                 custom.IncludeWesternElectric,
                 custom.WarningBehavior,
-                custom.Notes),
-            new CapabilityThresholdSetupDto(
-                capability.YellowMinimum,
-                capability.GreenMinimum));
+                custom.Notes, custom.Options));
     }
 
     private static List<string> ValidateCustomRule(CustomDriftRuleSetupDto rule)
@@ -209,6 +191,15 @@ public sealed class SetupManagementService(ISpcRepository repository)
         {
             errors.Add("Custom rule window size must be between 2 and 25.");
         }
+
+        var options = rule.Options ?? new CustomWatchOptions();
+        if (options.ZoneMode is not ("PercentSpan" or "Distance")) errors.Add("Warning zone must use specification span percent or an exact distance.");
+        if (options.ZonePercent <= 0 || options.ZonePercent >= 50) errors.Add("Warning zone percent must be greater than 0 and less than 50.");
+        if (options.ZoneDistance < 0 || (options.ZoneMode == "Distance" && options.ZoneDistance == 0)) errors.Add("Warning distance must be greater than zero in distance mode.");
+        if (options.RepeatedWindow < 2 || options.RepeatedWindow > 25 || options.RepeatedCount < 1 || options.RepeatedCount > options.RepeatedWindow)
+            errors.Add("Repeated near-limit results require 1 to N qualifying inspections in a window of 2 to 25.");
+        if (options.RecoveryInspections < 1 || options.RecoveryInspections > 25) errors.Add("Recovery requires 1 to 25 completed normal inspections.");
+        if (options.Combination is not ("Any" or "All")) errors.Add("Choose any or all enabled warning conditions.");
 
         if (rule.SigmaThreshold <= 0 || rule.SigmaThreshold > 6)
         {
@@ -228,27 +219,6 @@ public sealed class SetupManagementService(ISpcRepository repository)
         if (!new[] { "Lock", "Warning", "AuditOnly" }.Contains(rule.WarningBehavior, StringComparer.OrdinalIgnoreCase))
         {
             errors.Add("Custom rule warning behavior is not supported.");
-        }
-
-        return errors;
-    }
-
-    private static List<string> ValidateCapabilityThresholds(CapabilityThresholdSetupDto thresholds)
-    {
-        var errors = new List<string>();
-        if (thresholds.YellowMinimum <= 0 || thresholds.YellowMinimum > 10)
-        {
-            errors.Add("Capability yellow minimum must be greater than 0 and no more than 10.");
-        }
-
-        if (thresholds.GreenMinimum <= 0 || thresholds.GreenMinimum > 10)
-        {
-            errors.Add("Capability green minimum must be greater than 0 and no more than 10.");
-        }
-
-        if (thresholds.GreenMinimum <= thresholds.YellowMinimum)
-        {
-            errors.Add("Capability green minimum must be greater than the yellow minimum.");
         }
 
         return errors;
@@ -698,7 +668,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
             : request.OriginalCharacteristicName.Trim();
         var characteristic = repository.Characteristics.FirstOrDefault(item =>
             item.OperationId == operation.Id &&
-            item.Name.Equals(originalCharacteristicName, StringComparison.OrdinalIgnoreCase));
+            item.Name.Equals(originalCharacteristicName, StringComparison.OrdinalIgnoreCase))
+            ?? repository.Characteristics.FirstOrDefault(item => item.OperationId == operation.Id &&
+                item.Name.Equals(request.CharacteristicName.Trim(), StringComparison.OrdinalIgnoreCase));
         if (characteristic is null)
         {
             characteristic = new Characteristic
@@ -747,6 +719,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var plan = repository.InspectionPlans.FirstOrDefault(item =>
             item.CharacteristicId == characteristic.Id &&
             item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase));
+        var orderChanged = plan is null || (request.DisplayOrder.HasValue && request.DisplayOrder.Value != plan.DisplayOrder);
         if (plan is null)
         {
             ShiftInspectionDisplayOrdersForInsert(operation.Id, inspectionPhase, request.DisplayOrder.GetValueOrDefault(), characteristic.Id);
@@ -781,14 +754,15 @@ public sealed class SetupManagementService(ISpcRepository repository)
         var resolvedNominal = ResolveNominal(request);
         if (request.CharacteristicType == CharacteristicType.Variable && resolvedNominal.HasValue && CanBuildControlLimit(request))
         {
-            UpsertControlLimit(request, resolvedNominal.Value);
+            UpsertControlLimit(request);
         }
         else
         {
             RemoveControlLimit(request);
         }
 
-        NormalizeInspectionDisplayOrders(operation.Id, inspectionPhase, request.DisplayOrder.HasValue ? characteristic.Id : null);
+        if (orderChanged)
+            NormalizeInspectionDisplayOrders(operation.Id, inspectionPhase, request.DisplayOrder.HasValue ? characteristic.Id : null);
         return ServiceResult<InspectionPlanSetupDto>.Ok(new SetupQueryService(repository).GetInspectionPlans(request.PartNum).First(item =>
             item.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
             item.OperationSeq == request.OperationSeq &&
@@ -940,7 +914,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
             field.DisplayOrder = request.DisplayOrder;
         }
 
-        return ServiceResult<PartJobDataFieldSetupDto>.Ok(new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder));
+        return ServiceResult<PartJobDataFieldSetupDto>.Ok(new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder, field.Instruction));
     }
 
     private static bool IsRedundantJobDataField(string fieldName)
@@ -1044,10 +1018,11 @@ public sealed class SetupManagementService(ISpcRepository repository)
         return null;
     }
 
-    private void UpsertControlLimit(UpsertInspectionSetupRequest request, decimal resolvedNominal)
+    private void UpsertControlLimit(UpsertInspectionSetupRequest request)
     {
-        var lcl = request.Lcl ?? request.Lsl!.Value;
-        var ucl = request.Ucl ?? request.Usl!.Value;
+        var lcl = request.Lcl!.Value;
+        var ucl = request.Ucl!.Value;
+        var resolvedNominal = request.Nominal ?? (lcl + ucl) / 2m;
         var limit = repository.ControlLimits.FirstOrDefault(item =>
             item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
             item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
@@ -1109,8 +1084,7 @@ public sealed class SetupManagementService(ISpcRepository repository)
 
     private static bool CanBuildControlLimit(UpsertInspectionSetupRequest request)
     {
-        return (request.Lcl.HasValue && request.Ucl.HasValue) ||
-            (request.Lsl.HasValue && request.Usl.HasValue);
+        return request.Lcl.HasValue && request.Ucl.HasValue;
     }
 
     private List<string> ValidateUser(UpsertUserRequest request)
@@ -1349,7 +1323,6 @@ public sealed class SetupManagementService(ISpcRepository repository)
         Required(request.ProcessCode, nameof(request.ProcessCode), errors);
         Required(request.ProcessDescription, nameof(request.ProcessDescription), errors);
         Required(request.CharacteristicName, nameof(request.CharacteristicName), errors);
-        Required(request.UnitOfMeasure, nameof(request.UnitOfMeasure), errors);
         Required(request.AlertRuleSet, nameof(request.AlertRuleSet), errors);
         if (!IsValidInspectionPhase(request.InspectionPhase))
         {
@@ -1357,7 +1330,6 @@ public sealed class SetupManagementService(ISpcRepository repository)
         }
 
         if (request.OperationSeq <= 0) errors.Add("OperationSeq must be greater than zero.");
-        if (request.CharacteristicType == CharacteristicType.Variable && request.Lsl.HasValue != request.Usl.HasValue) errors.Add("Both LSL and USL are required when either spec limit is provided.");
         if (request.CharacteristicType == CharacteristicType.Variable && request.Lsl.HasValue && request.Usl.HasValue && request.Lsl.Value >= request.Usl.Value) errors.Add("LSL must be less than USL.");
         if (request.CharacteristicType == CharacteristicType.Variable && request.Lcl.HasValue && request.Ucl.HasValue && request.Lcl.Value >= request.Ucl.Value) errors.Add("LCL must be less than UCL.");
         if (request.SampleSize <= 0) errors.Add("SampleSize must be greater than zero.");
@@ -1535,8 +1507,9 @@ public sealed class SetupManagementService(ISpcRepository repository)
         {
             RoleNames.GOD => 0,
             RoleNames.QA => 1,
-            RoleNames.LineTech => 2,
-            RoleNames.Operator => 3,
+            RoleNames.QAReadOnly => 2,
+            RoleNames.LineTech => 3,
+            RoleNames.Operator => 4,
             _ => 99
         };
     }

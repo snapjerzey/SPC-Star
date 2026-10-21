@@ -24,7 +24,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         "AlertRuleSet"
     ];
 
-    public ServiceResult ImportCsv(string csv)
+    public ServiceResult ImportCsv(string csv, bool replaceSetup = false)
     {
         materialNamesSeenInCurrentImport.Clear();
         var normalizedRows = CsvSupport.ReadRows(csv)
@@ -39,13 +39,58 @@ public sealed class SetupImportService(ISpcRepository repository)
             return ServiceResult.Fail(errors);
         }
 
+        if (replaceSetup) ClearSetupMasterData();
         CleanupRemovedPhaseMatrixAssignments(normalizedRows);
+        RetireSupersededContactLocationPlans(rows);
+        RetireSeparateContactTapePlans(rows);
         foreach (var row in rows)
         {
             Upsert(row);
         }
 
         return ServiceResult.Ok();
+    }
+
+    private void RetireSupersededContactLocationPlans(IReadOnlyList<Dictionary<string, string>> rows)
+    {
+        var replacements = rows.Where(row => RowType(row) == "Variable" && SchneiderContactLocationRules.IsDirectionCheck(
+            row.GetValueOrDefault("PartNum") ?? "", row.GetValueOrDefault("Operation") ?? "",
+            row.GetValueOrDefault("CharacteristicName") ?? ""));
+        foreach (var phase in replacements.GroupBy(row => row.GetValueOrDefault("InspectionPhase") ?? "In Process",
+            StringComparer.OrdinalIgnoreCase))
+        {
+            var names = phase.Select(row => row["CharacteristicName"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!SchneiderContactLocationRules.DirectionChecks.All(names.Contains)) continue;
+            var oldIds = (from characteristic in repository.Characteristics
+                join operation in repository.Operations on characteristic.OperationId equals operation.Id
+                join part in repository.Parts on operation.PartId equals part.Id
+                join process in repository.Processes on operation.ProcessId equals process.Id
+                where part.PartNum.Equals("70122", StringComparison.OrdinalIgnoreCase) && operation.OperationSeq == 10 &&
+                    process.ProcessCode.Equals("Schneider Production", StringComparison.OrdinalIgnoreCase) &&
+                    SchneiderContactLocationRules.RetiredChecks.Contains(characteristic.Name, StringComparer.OrdinalIgnoreCase)
+                select characteristic.Id).ToHashSet();
+            // Retire only the replaced phase assignments. Old identities and inspection history remain intact.
+            repository.InspectionPlans.RemoveAll(plan => oldIds.Contains(plan.CharacteristicId) &&
+                plan.InspectionPhase.Equals(phase.Key, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private void RetireSeparateContactTapePlans(IReadOnlyList<Dictionary<string, string>> rows)
+    {
+        var names = rows.Where(row => RowType(row) == "Variable" &&
+            string.Equals(row.GetValueOrDefault("PartNum"), "70122", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(row.GetValueOrDefault("Operation"), "Schneider Production", StringComparison.OrdinalIgnoreCase))
+            .Select(row => row.GetValueOrDefault("CharacteristicName") ?? "").ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!names.Contains("Shear Force - A") || !names.Contains("Shear Force - B") ||
+            SchneiderShearNoteRules.SeparateChecks.Any(names.Contains)) return;
+        var ids = (from c in repository.Characteristics
+            join op in repository.Operations on c.OperationId equals op.Id
+            join part in repository.Parts on op.PartId equals part.Id
+            join process in repository.Processes on op.ProcessId equals process.Id
+            where part.PartNum == "70122" && process.ProcessCode == "Schneider Production" && op.OperationSeq == 10 &&
+                SchneiderShearNoteRules.SeparateChecks.Contains(c.Name, StringComparer.OrdinalIgnoreCase)
+            select c.Id).ToHashSet();
+        repository.InspectionPlans.RemoveAll(plan => ids.Contains(plan.CharacteristicId));
     }
 
     public void ClearSetupMasterData()
@@ -337,7 +382,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         CopyAlias(normalized, "AlertRuleSet", "Drift Rule", "Rule Set");
         CopyAlias(normalized, "IsRequired", "RequiresLotEntry", "Required");
         CopyAlias(normalized, "DisplayOrder", "ParameterSeq", "Sort Order");
-        CopyAlias(normalized, "Location", "SampleContext", "RequirementText", "Requirement Text", "Location", "Side", "Sample Location");
+        CopyAlias(normalized, "Location", "Sample Context", "SampleContext", "RequirementText", "Requirement Text", "Location", "Side", "Sample Location");
         CopyAlias(normalized, "InspectionMethod", "ToolUsed", "Tool Used", "ToolMethod", "Inspection Method", "Measurement Method", "Tool", "Gauge", "Gage");
 
         CopyAlias(normalized, "FieldName", "Job Data Field", "Job Data Field Name");
@@ -1116,6 +1161,7 @@ public sealed class SetupImportService(ISpcRepository repository)
         }
 
         field.IsRequired = OptionalBool(row, "IsRequired", true);
+        field.Instruction = string.IsNullOrWhiteSpace(row.GetValueOrDefault("Location")) ? null : row["Location"].Trim();
         field.DisplayOrder = OptionalInt(row, "DisplayOrder", repository.PartJobDataFields.Count(item => item.PartId == part.Id && item.InspectionPhase.Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -1312,7 +1358,9 @@ public sealed class SetupImportService(ISpcRepository repository)
 
     private void UpsertControlLimit(Dictionary<string, string> row, Part part, ManufacturingProcess process, int operationSeq)
     {
-        if (!HasCompleteSpecValue(row))
+        var hasExplicitLcl = OptionalDecimal(row, "LCL", out var parsedLcl) && parsedLcl.HasValue;
+        var hasExplicitUcl = OptionalDecimal(row, "UCL", out var parsedUcl) && parsedUcl.HasValue;
+        if (!hasExplicitLcl || !hasExplicitUcl)
         {
             repository.ControlLimits.RemoveAll(limit =>
                 limit.PartNum.Equals(part.PartNum, StringComparison.OrdinalIgnoreCase) &&
@@ -1322,13 +1370,10 @@ public sealed class SetupImportService(ISpcRepository repository)
             return;
         }
 
-        var nominal = ParsedNominalOrMidpoint(row);
-        var hasExplicitLcl = OptionalDecimal(row, "LCL", out var parsedLcl) && parsedLcl.HasValue;
-        var hasExplicitUcl = OptionalDecimal(row, "UCL", out var parsedUcl) && parsedUcl.HasValue;
-        var specLsl = decimal.Parse(row["LSL"]);
-        var specUsl = decimal.Parse(row["USL"]);
-        var lcl = hasExplicitLcl ? parsedLcl!.Value : specLsl;
-        var ucl = hasExplicitUcl ? parsedUcl!.Value : specUsl;
+        var lcl = parsedLcl!.Value;
+        var ucl = parsedUcl!.Value;
+        OptionalDecimal(row, "Nominal", out var explicitNominal);
+        var nominal = explicitNominal ?? (lcl + ucl) / 2m;
 
         if (lcl >= ucl)
         {

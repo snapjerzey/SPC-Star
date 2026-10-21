@@ -33,7 +33,8 @@ public sealed class BackupService(
     CredentialService credentialService,
     PermissionService permissionService,
     string backupDirectory,
-    string quarantineDirectory)
+    string quarantineDirectory,
+    ChangeHistoryService? changeHistory = null)
 {
     public ServiceResult<BackupResultDto> CreateManualBackup(CreateManualBackupRequest request)
     {
@@ -76,6 +77,7 @@ public sealed class BackupService(
         persistence.BackupTo(quarantinePath);
 
         ClearOperationalData();
+        changeHistory?.AddAction(request.UserName,"Admin","Inspection history cleared");
         persistence.SaveChanges();
 
         return ServiceResult<HistoryDataClearResultDto>.Ok(new HistoryDataClearResultDto(clearedAt, quarantineFileName, quarantinePath));
@@ -110,6 +112,7 @@ public sealed class BackupService(
         var quarantinePath = Path.Combine(quarantineDirectory, quarantineFileName);
         Directory.CreateDirectory(quarantineDirectory);
         persistence.BackupTo(quarantinePath);
+        changeHistory?.AddAction(request.UserName,"Admin",$"Backup restored: {latestBackup.Name}");
         persistence.RestoreFrom(latestBackup.FullName);
 
         return ServiceResult<DatabaseRestoreResultDto>.Ok(new DatabaseRestoreResultDto(
@@ -155,13 +158,13 @@ public sealed class BackupService(
         var trimmedUserName = userName.Trim();
         if (string.IsNullOrWhiteSpace(trimmedUserName) || string.IsNullOrWhiteSpace(password))
         {
-            return $"{actionName} requires valid Archon credentials.";
+            return $"{actionName} requires valid System Manager credentials.";
         }
 
         if (!credentialService.ValidateCredential(trimmedUserName, password) ||
             !permissionService.UserHasPermission(trimmedUserName, PermissionNames.CanUseGodMode))
         {
-            return $"{actionName} requires valid Archon credentials.";
+            return $"{actionName} requires valid System Manager credentials.";
         }
 
         return null;

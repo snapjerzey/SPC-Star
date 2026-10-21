@@ -35,7 +35,10 @@ public sealed record LedgerHistoryExportRequest(
     DateTimeOffset? From,
     DateTimeOffset? To,
     string? Operation = null,
-    string? InspectionPhase = null);
+    string? InspectionPhase = null,
+    string? Shift = null,
+    string? ResourceId = null,
+    string? CharacteristicName = null);
 
 public sealed class HistoryExportService(ISpcRepository repository)
 {
@@ -65,7 +68,15 @@ public sealed class HistoryExportService(ISpcRepository repository)
         "OperatorShift",
         "RuleTriggered",
         "LockedAt",
-        "Status"
+        "UnlockedAt",
+        "Status",
+        "ClearedBy",
+        "ClearedByRole",
+        "CauseCategory",
+        "CauseDetails",
+        "ActionTaken",
+        "BypassReason",
+        "LockDetails"
     ];
 
     private static readonly string[] MaterialHeaders =
@@ -79,7 +90,9 @@ public sealed class HistoryExportService(ISpcRepository repository)
         "ResourceID",
         "OperatorUserID",
         "Timestamp",
-        "Reason"
+        "Reason",
+        "MaterialName",
+        "MaterialDescription"
     ];
 
     private static readonly string[] LedgerHeaders =
@@ -100,6 +113,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
     ];
 
     private static readonly string[] SummaryHeaders = ["Item", "Value"];
+    private static readonly string[] JobNoteHeaders = ["Date / Time", "Job", "Part", "Machine", "User", "Note", "Replies"];
 
     private static readonly string[] EditAuditHeaders =
     [
@@ -174,6 +188,12 @@ public sealed class HistoryExportService(ISpcRepository repository)
         var resourceIds = request.ResourceIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var characteristics = request.CharacteristicNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        var overridesByAlert = repository.AlertOverrides
+            .GroupBy(item => item.AlertId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(item => item.UnlockedAt).First());
+
         var rows = repository.Alerts
             .Where(alert =>
                 (request.IncludeOverridden || alert.Status != AlertStatus.Overridden) &&
@@ -184,18 +204,30 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 (!request.From.HasValue || alert.LockedAt >= request.From.Value) &&
                 (!request.To.HasValue || alert.LockedAt <= request.To.Value))
             .OrderBy(alert => alert.LockedAt)
-            .Select(alert => new Dictionary<string, string>
+            .Select(alert =>
             {
-                ["AlertID"] = alert.Id.ToString(),
-                ["JobNum"] = alert.JobNum,
-                ["PartNum"] = alert.PartNum,
-                ["ResourceID"] = alert.ResourceId,
-                ["CharacteristicName"] = alert.CharacteristicName,
-                ["OperatorUserID"] = alert.OperatorUserId,
-                ["OperatorShift"] = alert.OperatorShift,
-                ["RuleTriggered"] = alert.RuleTriggered.ToString(),
-                ["LockedAt"] = alert.LockedAt.ToString("O"),
-                ["Status"] = alert.Status.ToString()
+                overridesByAlert.TryGetValue(alert.Id, out var alertOverride);
+                return new Dictionary<string, string>
+                {
+                    ["AlertID"] = alert.Id.ToString(),
+                    ["JobNum"] = alert.JobNum,
+                    ["PartNum"] = alert.PartNum,
+                    ["ResourceID"] = alert.ResourceId,
+                    ["CharacteristicName"] = alert.CharacteristicName,
+                    ["OperatorUserID"] = alert.OperatorUserId,
+                    ["OperatorShift"] = alert.OperatorShift,
+                    ["RuleTriggered"] = alert.RuleTriggered.ToString(),
+                    ["LockedAt"] = alert.LockedAt.ToString("O"),
+                    ["UnlockedAt"] = alertOverride?.UnlockedAt.ToString("O") ?? "",
+                    ["Status"] = alert.Status.ToString(),
+                    ["ClearedBy"] = alertOverride?.OverrideUserId ?? "",
+                    ["ClearedByRole"] = alertOverride?.OverrideRole ?? "",
+                    ["CauseCategory"] = DisplayCauseCategory(alertOverride) ?? "",
+                    ["CauseDetails"] = DisplayCause(alertOverride) ?? "",
+                    ["ActionTaken"] = DisplaySolution(alertOverride) ?? "",
+                    ["BypassReason"] = alertOverride?.WhyStandardProcessWasBypassed ?? "",
+                    ["LockDetails"] = alert.Detail ?? ""
+                };
             });
 
         return CsvSupport.WriteRows(AlertHeaders, rows);
@@ -220,6 +252,8 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 ["JobNum"] = log.JobNum,
                 ["PartNum"] = log.PartNum,
                 ["MaterialPartNum"] = log.MaterialPartNum,
+                ["MaterialName"] = JobMaterialRules.MaterialName(repository, log),
+                ["MaterialDescription"] = JobMaterialRules.MaterialDescription(repository, log),
                 ["OldLotNum"] = log.OldLotNum,
                 ["NewLotNum"] = log.NewLotNum,
                 ["QuantityLoaded"] = log.QuantityLoaded?.ToString("0.#####") ?? string.Empty,
@@ -237,28 +271,54 @@ public sealed class HistoryExportService(ISpcRepository repository)
         var rows = BuildLedgerRows(request)
             .Where(row =>
                 MatchesTextFilter(request.Operation, row["Operation"]) &&
-                MatchesTextFilter(request.InspectionPhase, row["Phase"]))
+                MatchesTextFilter(request.InspectionPhase, row["Phase"]) &&
+                MatchesShift(request.Shift, row["Shift"]))
+            .Where(row => DataReviewFilter.Text(request.ResourceId, row["Machine"]))
             .OrderByDescending(row => row["Date / Time"])
             .ToArray();
 
         var lockoutRows = BuildLockoutRows(request)
             .Where(row =>
                 MatchesTextFilter(request.Operation, row["Operation"]) &&
-                MatchesTextFilter(request.InspectionPhase, row["Phase"]))
+                MatchesTextFilter(request.InspectionPhase, row["Phase"]) &&
+                MatchesShift(request.Shift, row["Locked By Shift"]))
+            .Where(row => DataReviewFilter.Text(request.ResourceId, row["Machine"]) &&
+                DataReviewFilter.Text(request.CharacteristicName, row["Inspection Item"]))
             .OrderByDescending(row => row["Locked At"])
             .ToArray();
         var editRows = BuildEditAuditRows(request)
             .Where(row =>
                 MatchesTextFilter(request.Operation, row["Operation"]) &&
-                MatchesTextFilter(request.InspectionPhase, row["Phase"]))
+                MatchesTextFilter(request.InspectionPhase, row["Phase"]) &&
+                MatchesShift(request.Shift, row["Shift"]))
+            .Where(row => DataReviewFilter.Text(request.ResourceId, row["Machine"]) &&
+                DataReviewFilter.Text(request.CharacteristicName, row["Inspection Item"]))
             .OrderByDescending(row => row["Edited At"])
             .ToArray();
-        var summaryRows = BuildLedgerSummaryRows(request, rows, lockoutRows, editRows).ToArray();
+        var noteRows = FilterLedgerNotes(request)
+            .Where(note => MatchesShift(request.Shift, UserShift(note.OperatorUserId)))
+            .Where(note => DataReviewFilter.Text(request.ResourceId, note.ResourceId))
+            .OrderByDescending(note => note.Timestamp)
+            .ThenBy(note => note.Id)
+            .Select(note => new Dictionary<string, string>
+            {
+                ["Date / Time"] = note.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                ["Job"] = note.JobNum,
+                ["Part"] = note.PartNum,
+                ["Machine"] = note.ResourceId,
+                ["User"] = note.OperatorUserId,
+                ["Note"] = note.NoteText,
+                ["Replies"] = string.Join(Environment.NewLine + Environment.NewLine, note.Replies.OrderBy(reply => reply.Timestamp).ThenBy(reply => reply.Id)
+                    .Select(reply => $"{reply.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss zzz} / {reply.UserName}{Environment.NewLine}{reply.ReplyText}"))
+            }).ToArray();
+        var summaryRows = BuildLedgerSummaryRows(request, rows, lockoutRows, editRows)
+            .Append(SummaryRow("Job notes rows", noteRows.Length.ToString())).ToArray();
         return XlsxSupport.WriteWorkbook([
             new XlsxWorksheet("Summary", SummaryHeaders, summaryRows),
             new XlsxWorksheet("Ledger", LedgerHeaders, rows),
             new XlsxWorksheet("Lockouts", LockoutHeaders, lockoutRows),
-            new XlsxWorksheet("Edit Audit", EditAuditHeaders, editRows)
+            new XlsxWorksheet("Edit Audit", EditAuditHeaders, editRows),
+            new XlsxWorksheet("Job Notes", JobNoteHeaders, noteRows)
         ]);
     }
 
@@ -275,6 +335,9 @@ public sealed class HistoryExportService(ISpcRepository repository)
         yield return SummaryRow("To", request.To?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "No end date");
         yield return SummaryRow("Operation filter", string.IsNullOrWhiteSpace(request.Operation) ? "All operations" : request.Operation.Trim());
         yield return SummaryRow("Inspection phase filter", string.IsNullOrWhiteSpace(request.InspectionPhase) ? "All phases" : request.InspectionPhase.Trim());
+        yield return SummaryRow("Shift filter", string.IsNullOrWhiteSpace(request.Shift) ? "All shifts" : request.Shift.Trim());
+        yield return SummaryRow("Machine filter", string.IsNullOrWhiteSpace(request.ResourceId) ? "All machines" : request.ResourceId.Trim());
+        yield return SummaryRow("Variable filter", string.IsNullOrWhiteSpace(request.CharacteristicName) ? "All variables" : request.CharacteristicName.Trim());
         yield return SummaryRow("Total ledger rows", rows.Count.ToString());
         yield return SummaryRow("Lockout rows", lockoutRows.Count.ToString());
         yield return SummaryRow("Edit audit rows", editRows.Count.ToString());
@@ -319,13 +382,81 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 ["Locked By Shift"] = alert.OperatorShift,
                 ["Cleared By"] = alertOverride?.OverrideUserId ?? "",
                 ["Cleared By Role"] = alertOverride?.OverrideRole ?? "",
-                ["Cause Category"] = alertOverride?.CauseCategory ?? "",
-                ["Cause Details"] = alertOverride?.CauseText ?? "",
-                ["Action Taken"] = alertOverride?.SolutionText ?? "",
+                ["Cause Category"] = DisplayCauseCategory(alertOverride) ?? "",
+                ["Cause Details"] = DisplayCause(alertOverride) ?? "",
+                ["Action Taken"] = DisplaySolution(alertOverride) ?? "",
                 ["Bypass Reason"] = alertOverride?.WhyStandardProcessWasBypassed ?? "",
                 ["Lock Details"] = alert.Detail ?? ""
             };
         }
+    }
+
+    private string? DisplaySolution(AlertOverride? alertOverride)
+    {
+        if (alertOverride?.OverrideRole.Equals("Failed Inspection", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var failedSolution = repository.FailedInspections
+                .Where(failure => failure.AlertId == alertOverride.AlertId)
+                .OrderByDescending(failure => failure.FailedAt)
+                .Select(failure => string.IsNullOrWhiteSpace(failure.SolutionText) ? failure.Reason : failure.SolutionText)
+                .FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason));
+            if (!string.IsNullOrWhiteSpace(failedSolution))
+            {
+                return failedSolution.Trim();
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(alertOverride?.WhyStandardProcessWasBypassed))
+        {
+            return alertOverride.WhyStandardProcessWasBypassed.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(alertOverride?.SolutionText)
+            ? null
+            : alertOverride.SolutionText.Trim();
+    }
+
+    private string? DisplayCause(AlertOverride? alertOverride)
+    {
+        if (alertOverride?.OverrideRole.Equals("Failed Inspection", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var failedCause = repository.FailedInspections
+                .Where(failure => failure.AlertId == alertOverride.AlertId)
+                .OrderByDescending(failure => failure.FailedAt)
+                .Select(failure => string.IsNullOrWhiteSpace(failure.CauseText) ? failure.FailureDetail : failure.CauseText)
+                .FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason));
+            if (!string.IsNullOrWhiteSpace(failedCause))
+            {
+                return failedCause.Trim();
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(alertOverride?.WhyStandardProcessWasBypassed))
+        {
+            return alertOverride.WhyStandardProcessWasBypassed.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(alertOverride?.CauseText) &&
+            !alertOverride.CauseText.Equals("Standard correction workflow bypassed by System Manager access.", StringComparison.OrdinalIgnoreCase))
+        {
+            return alertOverride.CauseText.Trim();
+        }
+
+        return null;
+    }
+
+    private static string? DisplayCauseCategory(AlertOverride? alertOverride)
+    {
+        if (string.IsNullOrWhiteSpace(alertOverride?.CauseCategory))
+        {
+            return null;
+        }
+
+        var category = alertOverride.CauseCategory.Trim();
+        return category.Equals("System Manager Bypass", StringComparison.OrdinalIgnoreCase) ||
+            category.Equals("Unspecified", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : category;
     }
 
     private IEnumerable<Dictionary<string, string>> BuildEditAuditRows(LedgerHistoryExportRequest request)
@@ -353,7 +484,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
             };
         }
 
-        foreach (var edit in FilterLedgerMachineCounterEdits(request))
+        foreach (var edit in FilterLedgerMachineCounterEdits(request).Where(_ => string.IsNullOrWhiteSpace(request.CharacteristicName)))
         {
             yield return new Dictionary<string, string>
             {
@@ -384,7 +515,8 @@ public sealed class HistoryExportService(ISpcRepository repository)
 
     private IEnumerable<Dictionary<string, string>> BuildLedgerRows(LedgerHistoryExportRequest request)
     {
-        foreach (var measurement in FilterLedgerMeasurements(request))
+        var inspectionNumbers = InspectionSequence.Numbers(repository);
+        foreach (var measurement in FilterLedgerMeasurements(request).Where(item => DataReviewFilter.Text(request.CharacteristicName, item.CharacteristicName)))
         {
             yield return LedgerRow(
                 measurement.Timestamp,
@@ -398,11 +530,11 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 $"{measurement.ProcessCode} {measurement.OperationSeq}",
                 measurement.OperatorUserId,
                 measurement.OperatorShift,
-                "",
-                "");
+                string.IsNullOrWhiteSpace(measurement.WatchReason) ? "" : "Watch",
+                measurement.WatchReason);
         }
 
-        foreach (var note in FilterLedgerNotes(request))
+        foreach (var note in FilterLedgerNotes(request).Where(_ => string.IsNullOrWhiteSpace(request.CharacteristicName)))
         {
             yield return LedgerRow(
                 note.Timestamp,
@@ -420,7 +552,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 "");
         }
 
-        foreach (var material in FilterLedgerMaterials(request))
+        foreach (var material in FilterLedgerMaterials(request).Where(_ => string.IsNullOrWhiteSpace(request.CharacteristicName)))
         {
             yield return LedgerRow(
                 material.Timestamp,
@@ -428,17 +560,19 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 material.JobNum,
                 material.PartNum,
                 "",
-                material.MaterialPartNum,
+                string.IsNullOrWhiteSpace(JobMaterialRules.MaterialName(repository, material))
+                    ? material.MaterialPartNum
+                    : $"{JobMaterialRules.MaterialName(repository, material)} ({material.MaterialPartNum})",
                 material.NewLotNum,
                 material.ResourceId,
                 "",
                 material.OperatorUserId,
                 UserShift(material.OperatorUserId),
                 "",
-                material.Reason);
+                string.Join(" - ", new[] { JobMaterialRules.MaterialDescription(repository, material), material.Reason }.Where(value => !string.IsNullOrWhiteSpace(value))));
         }
 
-        foreach (var tag in FilterLedgerTags(request))
+        foreach (var tag in FilterLedgerTags(request).Where(_ => string.IsNullOrWhiteSpace(request.CharacteristicName)))
         {
             yield return LedgerRow(
                 tag.UpdatedAt,
@@ -456,7 +590,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 "");
         }
 
-        foreach (var completion in FilterLedgerCompletions(request))
+        foreach (var completion in FilterLedgerCompletions(request).Where(item => HasLedgerVariable(item.MeasurementIds, request.CharacteristicName)))
         {
             yield return LedgerRow(
                 completion.CompletedAt,
@@ -464,17 +598,18 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 completion.JobNum,
                 completion.PartNum,
                 completion.InspectionPhase,
-                $"{completion.InspectionPhase} inspection {completion.CompletionNumber} complete",
+                $"{completion.InspectionPhase} inspection {inspectionNumbers[completion.Id]} complete",
                 completion.MachineCounter.HasValue ? $"Machine Counter: {completion.MachineCounter}" : "",
                 completion.ResourceId,
                 $"{completion.ProcessCode} {completion.OperationSeq}",
                 completion.CompletedByUserId,
-                UserShift(completion.CompletedByUserId),
+                completion.OperatorShift,
                 "Complete",
                 $"{completion.MeasurementIds.Count} inspection entries");
         }
 
-        foreach (var failure in FilterLedgerFailures(request))
+        foreach (var failure in FilterLedgerFailures(request).Where(item => HasLedgerVariable(item.MeasurementIds, request.CharacteristicName) ||
+            repository.Alerts.Any(alert => alert.Id == item.AlertId && DataReviewFilter.Text(request.CharacteristicName, alert.CharacteristicName))))
         {
             yield return LedgerRow(
                 failure.FailedAt,
@@ -482,17 +617,17 @@ public sealed class HistoryExportService(ISpcRepository repository)
                 failure.JobNum,
                 failure.PartNum,
                 failure.InspectionPhase,
-                $"{failure.InspectionPhase} inspection {failure.FailureNumber} failed",
+                $"{failure.InspectionPhase} inspection {inspectionNumbers[failure.Id]} failed",
                 failure.MachineCounter.HasValue ? $"Machine Counter: {failure.MachineCounter}" : "",
                 failure.ResourceId,
                 $"{failure.ProcessCode} {failure.OperationSeq}",
                 failure.FailedByUserId,
-                UserShift(failure.FailedByUserId),
+                failure.OperatorShift,
                 "Failed",
-                string.IsNullOrWhiteSpace(failure.Reason) ? $"{failure.MeasurementIds.Count} inspection entries" : failure.Reason);
+                FailedInspectionLedgerDetails(failure));
         }
 
-        foreach (var edit in FilterLedgerMachineCounterEdits(request))
+        foreach (var edit in FilterLedgerMachineCounterEdits(request).Where(_ => string.IsNullOrWhiteSpace(request.CharacteristicName)))
         {
             yield return LedgerRow(
                 edit.EditedAt,
@@ -511,6 +646,42 @@ public sealed class HistoryExportService(ISpcRepository repository)
         }
     }
 
+    private static string FailedInspectionLedgerDetails(FailedInspection failure)
+    {
+        var details = new List<string>();
+        if (!string.IsNullOrWhiteSpace(failure.FailureDetail))
+        {
+            details.Add($"Failed: {failure.FailureDetail.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(failure.CauseCategory))
+        {
+            details.Add($"Cause category: {failure.CauseCategory.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(failure.CauseText))
+        {
+            details.Add($"Cause details: {failure.CauseText.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(failure.SolutionText))
+        {
+            details.Add($"Action taken: {failure.SolutionText.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(failure.Reason))
+        {
+            details.Add($"Reason: {failure.Reason.Trim()}");
+        }
+
+        if (details.Count == 0)
+        {
+            details.Add($"{failure.MeasurementIds.Count} inspection entries");
+        }
+
+        return string.Join("; ", details);
+    }
+
     private IEnumerable<InspectionMeasurement> FilterLedgerMeasurements(LedgerHistoryExportRequest request)
     {
         var partNums = request.PartNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -526,6 +697,7 @@ public sealed class HistoryExportService(ISpcRepository repository)
         var partNums = request.PartNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var jobNums = request.JobNums.ToHashSet(StringComparer.OrdinalIgnoreCase);
         return repository.Alerts.Where(item =>
+            item.Status != AlertStatus.Warning && item.Status != AlertStatus.Resolved &&
             Matches(partNums, item.PartNum) &&
             Matches(jobNums, item.JobNum) &&
             InRange(item.LockedAt, request.From, request.To));
@@ -622,6 +794,9 @@ public sealed class HistoryExportService(ISpcRepository repository)
         return filters.Count == 0 || filters.Contains(value);
     }
 
+    private static bool MatchesShift(string? filter, string value) =>
+        string.IsNullOrWhiteSpace(filter) || value.Equals(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+
     private string UserShift(string userName)
     {
         return repository.Users.FirstOrDefault(user => user.UserName.Equals(userName, StringComparison.OrdinalIgnoreCase))?.Shift ?? "";
@@ -633,10 +808,13 @@ public sealed class HistoryExportService(ISpcRepository repository)
             (!to.HasValue || timestamp <= to.Value);
     }
 
+    private bool HasLedgerVariable(IEnumerable<Guid> ids, string? name) => string.IsNullOrWhiteSpace(name) ||
+        repository.Measurements.Any(item => ids.Contains(item.Id) && DataReviewFilter.Text(name, item.CharacteristicName));
+
     private static bool MatchesTextFilter(string? filter, string value)
     {
         return string.IsNullOrWhiteSpace(filter) ||
-            value.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+            value.Trim().Equals(filter.Trim().Replace('|', ' '), StringComparison.OrdinalIgnoreCase);
     }
 
     private InspectionMeasurement? FindMeasurementForAlert(ProcessAlert alert)
@@ -761,7 +939,8 @@ internal static class XlsxSupport
         AppendRow(builder, 1, headers, isHeader: true);
         for (var index = 0; index < rows.Count; index++)
         {
-            AppendRow(builder, index + 2, headers.Select(header => rows[index].TryGetValue(header, out var value) ? value : "").ToArray(), isHeader: false);
+            AppendRow(builder, index + 2, headers.Select(header => rows[index].TryGetValue(header, out var value) ? value : "").ToArray(), isHeader: false,
+                isWatch: rows[index].TryGetValue("Status", out var status) && status == "Watch");
         }
         builder.Append("</sheetData>");
         builder.Append($"""<autoFilter ref="A1:{CellRef(headers.Count, rows.Count + 1)}"/>""");
@@ -792,6 +971,7 @@ internal static class XlsxSupport
                 "Operation" => 24,
                 "Record Type" => 20,
                 "Value" => 60,
+                "Note" => 80,
                 _ => Math.Clamp(headers[index].Length + 6, 12, 22)
             };
             builder.Append($"""<col min="{index + 1}" max="{index + 1}" width="{width}" customWidth="1"/>""");
@@ -800,13 +980,13 @@ internal static class XlsxSupport
         return builder.ToString();
     }
 
-    private static void AppendRow(StringBuilder builder, int rowNumber, IEnumerable<string> values, bool isHeader)
+    private static void AppendRow(StringBuilder builder, int rowNumber, IEnumerable<string> values, bool isHeader, bool isWatch = false)
     {
         builder.Append($"""<row r="{rowNumber}">""");
         var column = 1;
         foreach (var value in values)
         {
-            builder.Append($"""<c r="{CellRef(column, rowNumber)}" t="inlineStr"{(isHeader ? " s=\"1\"" : "")}><is><t>{Escape(value)}</t></is></c>""");
+            builder.Append($"""<c r="{CellRef(column, rowNumber)}" t="inlineStr"{(isHeader ? " s=\"1\"" : isWatch ? " s=\"2\"" : "")}><is><t>{Escape(value)}</t></is></c>""");
             column++;
         }
         builder.Append("</row>");
@@ -881,5 +1061,5 @@ internal static class XlsxSupport
     }
 
     private static string StylesXml() =>
-        """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>""";
+        """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF3CD"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="2" borderId="0" xfId="0" applyFill="1"/></cellXfs></styleSheet>""";
 }

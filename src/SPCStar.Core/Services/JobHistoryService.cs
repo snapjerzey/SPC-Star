@@ -1,7 +1,5 @@
 using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace SPCStar.Core.Services;
 
@@ -52,7 +50,10 @@ public sealed record JobHistoryEntryDto(
     long? MachineCounter = null,
     string? TagName = null,
     string? TagValue = null,
-    IReadOnlyList<JobHistoryJobDataDto>? JobDataEntries = null);
+    IReadOnlyList<JobHistoryJobDataDto>? JobDataEntries = null,
+    string? MaterialName = null,
+    string? MaterialDescription = null,
+    IReadOnlyList<JobNoteReplyDto>? NoteReplies = null);
 
 public sealed class JobHistoryService(ISpcRepository repository)
 {
@@ -64,6 +65,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
         }
 
         var normalizedJob = jobNum.Trim();
+        var inspectionNumbers = InspectionSequence.Numbers(repository, normalizedJob);
         var notes = repository.JobNotes
             .Where(note => note.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
             .Select(note => new JobHistoryEntryDto(
@@ -75,10 +77,12 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 note.OperatorUserId,
                 UserShift(note.OperatorUserId),
                 note.Timestamp,
-                NoteText: note.NoteText));
+                NoteText: note.NoteText,
+                NoteReplies: note.Replies.OrderBy(reply => reply.Timestamp).ThenBy(reply => reply.Id).Select(JobNoteReplyDto.From).ToArray()));
 
         var locks = repository.Alerts
-            .Where(alert => alert.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
+            .Where(alert => alert.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase) &&
+                alert.Status != AlertStatus.Warning && alert.Status != AlertStatus.Resolved)
             .Select(alert =>
             {
                 var audit = repository.AlertOverrides
@@ -120,10 +124,12 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 change.Timestamp,
                 MaterialPartNum: change.MaterialPartNum,
                 NewLotNum: change.NewLotNum,
+                MaterialName: JobMaterialRules.MaterialName(repository, change),
+                MaterialDescription: JobMaterialRules.MaterialDescription(repository, change),
                 QuantityLoaded: change.QuantityLoaded,
                 Reason: change.Reason));
 
-        var phaseCompletions = BuildPhaseCompletions(normalizedJob);
+        var phaseCompletions = BuildPhaseCompletions(normalizedJob, inspectionNumbers);
         var jobTags = repository.JobTags
             .Where(tag => tag.JobNum.Equals(normalizedJob, StringComparison.OrdinalIgnoreCase))
             .ToArray();
@@ -151,11 +157,17 @@ public sealed class JobHistoryService(ISpcRepository repository)
                 failure.OperatorShift,
                 failure.FailedAt,
                 NoteText: failure.Reason,
-                Detail: failure.Reason,
+                CharacteristicName: repository.Alerts.FirstOrDefault(alert => alert.Id == failure.AlertId)?.CharacteristicName,
+                RuleTriggered: repository.Alerts.FirstOrDefault(alert => alert.Id == failure.AlertId)?.RuleTriggered,
+                Detail: FailureLockDetail(failure),
+                CauseCategory: failure.CauseCategory,
+                CauseText: failure.CauseText,
+                SolutionText: failure.SolutionText,
+                Reason: failure.Reason,
                 InspectionPhase: failure.InspectionPhase,
                 ProcessCode: failure.ProcessCode,
                 OperationSeq: failure.OperationSeq,
-                FailureNumber: Math.Max(failure.FailureNumber, 1),
+                FailureNumber: inspectionNumbers[failure.Id],
                 MeasurementIds: [.. failure.MeasurementIds],
                 MachineCounter: failure.MachineCounter));
 
@@ -205,6 +217,12 @@ public sealed class JobHistoryService(ISpcRepository repository)
             .Concat(machineCounterEdits)
             .OrderByDescending(entry => entry.Timestamp)
             .ToArray();
+    }
+
+    private string FailureLockDetail(FailedInspection failure)
+    {
+        var alert = repository.Alerts.FirstOrDefault(item => item.Id == failure.AlertId);
+        return alert is null ? failure.FailureDetail : $"{alert.CharacteristicName}: {alert.Detail}";
     }
 
     private JobHistoryEntryDto JobTagHistoryEntry(JobTag tag)
@@ -317,7 +335,7 @@ public sealed class JobHistoryService(ISpcRepository repository)
             .Trim() ?? string.Empty;
     }
 
-    private IReadOnlyList<JobHistoryEntryDto> BuildPhaseCompletions(string jobNum)
+    private IReadOnlyList<JobHistoryEntryDto> BuildPhaseCompletions(string jobNum, IReadOnlyDictionary<Guid, int> inspectionNumbers)
     {
         var persistedCompletions = repository.JobPhaseCompletions
             .Where(completion => completion.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase))
@@ -337,7 +355,9 @@ public sealed class JobHistoryService(ISpcRepository repository)
                     .OrderByDescending(item => item.CompletedAt)
                     .FirstOrDefault()
                     ?.CompletedAt;
-                var measurementIds = MeasurementIdsForCompletionWindow(
+                IReadOnlyList<Guid> measurementIds = completion.MeasurementIds.Count > 0
+                    ? [.. completion.MeasurementIds]
+                    : MeasurementIdsForCompletionWindow(
                         completion.JobNum,
                         completion.PartNum,
                         completion.ProcessCode,
@@ -346,10 +366,6 @@ public sealed class JobHistoryService(ISpcRepository repository)
                         completion.InspectionPhase,
                         previousCompletionAt,
                         completion.CompletedAt);
-                if (measurementIds.Count == 0 && completion.MeasurementIds.Count > 0)
-                {
-                    measurementIds = [.. completion.MeasurementIds];
-                }
 
                 return new JobHistoryEntryDto(
                     completion.Id,
@@ -363,102 +379,13 @@ public sealed class JobHistoryService(ISpcRepository repository)
                     InspectionPhase: completion.InspectionPhase,
                     ProcessCode: completion.ProcessCode,
                     OperationSeq: completion.OperationSeq,
-                    CompletionNumber: Math.Max(completion.CompletionNumber, 1),
+                    CompletionNumber: inspectionNumbers[completion.Id],
                     MeasurementIds: measurementIds,
                     MachineCounter: completion.MachineCounter);
             })
             .ToList();
 
-        var existingKeys = persisted
-            .Select(entry => CompletionKey(entry.JobNum, entry.PartNum, entry.ProcessCode ?? "", entry.OperationSeq ?? 0, entry.ResourceId, entry.InspectionPhase ?? "", entry.Timestamp.Date, entry.CompletionNumber ?? 1))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var calculated = CalculatedPhaseCompletions(jobNum)
-            .Where(entry => !existingKeys.Contains(CompletionKey(entry.JobNum, entry.PartNum, entry.ProcessCode ?? "", entry.OperationSeq ?? 0, entry.ResourceId, entry.InspectionPhase ?? "", entry.Timestamp.Date, entry.CompletionNumber ?? 1)));
-
-        persisted.AddRange(calculated);
         return persisted;
-    }
-
-    private IReadOnlyList<JobHistoryEntryDto> CalculatedPhaseCompletions(string jobNum)
-    {
-        return repository.Measurements
-            .Where(measurement => measurement.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase))
-            .GroupBy(measurement => new
-            {
-                measurement.JobNum,
-                measurement.PartNum,
-                measurement.ProcessCode,
-                measurement.OperationSeq,
-                measurement.ResourceId,
-                InspectionPhase = NormalizeInspectionPhase(measurement.InspectionPhase),
-                InspectionDate = measurement.Timestamp.Date
-            })
-            .SelectMany(group => CalculatedPhaseCompletionsForGroup(group.Key.JobNum, group.Key.PartNum, group.Key.ProcessCode, group.Key.OperationSeq, group.Key.ResourceId, group.Key.InspectionPhase, group.Key.InspectionDate))
-            .ToArray();
-    }
-
-    private IReadOnlyList<JobHistoryEntryDto> CalculatedPhaseCompletionsForGroup(
-        string jobNum,
-        string partNum,
-        string processCode,
-        int operationSeq,
-        string resourceId,
-        string inspectionPhase,
-        DateTime inspectionDate)
-    {
-        var plans = PlansForPhase(partNum, processCode, operationSeq, inspectionPhase);
-        if (plans.Count == 0)
-        {
-            return [];
-        }
-
-        var completedRuns = CompletedMeasurementRuns(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, inspectionDate, plans);
-
-        var rows = new List<JobHistoryEntryDto>();
-        for (var run = 1; run <= completedRuns.Count; run++)
-        {
-            var runMeasurements = completedRuns[run - 1];
-            if (runMeasurements.Length == 0)
-            {
-                continue;
-            }
-
-            var finalMeasurement = runMeasurements.OrderByDescending(measurement => measurement.Timestamp).First();
-            rows.Add(new JobHistoryEntryDto(
-                DeterministicGuid(CompletionKey(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, inspectionDate, run)),
-                "PhaseComplete",
-                jobNum,
-                partNum,
-                resourceId,
-                finalMeasurement.OperatorUserId,
-                finalMeasurement.OperatorShift,
-                finalMeasurement.Timestamp,
-                InspectionPhase: inspectionPhase,
-                ProcessCode: processCode,
-                OperationSeq: operationSeq,
-                CompletionNumber: run,
-                MeasurementIds: runMeasurements.Select(measurement => measurement.Id).ToArray()));
-        }
-
-        return rows;
-    }
-
-    private IReadOnlyList<Guid> MeasurementIdsForCompletion(
-        string jobNum,
-        string partNum,
-        string processCode,
-        int operationSeq,
-        string resourceId,
-        string inspectionPhase,
-        DateTime inspectionDate,
-        int completionNumber)
-    {
-        var plans = PlansForPhase(partNum, processCode, operationSeq, inspectionPhase);
-        var completedRuns = CompletedMeasurementRuns(jobNum, partNum, processCode, operationSeq, resourceId, inspectionPhase, inspectionDate, plans);
-        return completedRuns.Count >= completionNumber
-            ? completedRuns[completionNumber - 1].Select(measurement => measurement.Id).ToArray()
-            : [];
     }
 
     private IReadOnlyList<Guid> MeasurementIdsForCompletionWindow(
@@ -525,93 +452,6 @@ public sealed class JobHistoryService(ISpcRepository repository)
             .ToArray();
     }
 
-    private IReadOnlyList<InspectionMeasurement[]> CompletedMeasurementRuns(
-        string jobNum,
-        string partNum,
-        string processCode,
-        int operationSeq,
-        string resourceId,
-        string inspectionPhase,
-        DateTime inspectionDate,
-        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans)
-    {
-        var measurements = repository.Measurements
-            .Where(measurement =>
-                measurement.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase) &&
-                measurement.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase) &&
-                measurement.ProcessCode.Equals(processCode, StringComparison.OrdinalIgnoreCase) &&
-                measurement.OperationSeq == operationSeq &&
-                measurement.ResourceId.Equals(resourceId, StringComparison.OrdinalIgnoreCase) &&
-                NormalizeInspectionPhase(measurement.InspectionPhase).Equals(inspectionPhase, StringComparison.OrdinalIgnoreCase) &&
-                measurement.Timestamp.Date == inspectionDate.Date)
-            .OrderBy(measurement => measurement.Timestamp)
-            .ThenBy(measurement => measurement.SubmittedAt)
-            .ThenBy(measurement => measurement.Id)
-            .ToArray();
-
-        return BuildCompletedMeasurementRuns(plans, measurements);
-    }
-
-    private static IReadOnlyList<InspectionMeasurement[]> BuildCompletedMeasurementRuns(
-        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
-        IReadOnlyList<InspectionMeasurement> measurements)
-    {
-        if (plans.Count == 0)
-        {
-            return [];
-        }
-
-        var runs = new List<InspectionMeasurement[]>();
-        var buffer = new List<InspectionMeasurement>();
-        var planIndex = 0;
-        var sampleCount = 0;
-
-        foreach (var measurement in measurements)
-        {
-            var expected = plans[planIndex];
-            if (!measurement.CharacteristicName.Equals(expected.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
-            {
-                if (measurement.CharacteristicName.Equals(plans[0].Characteristic.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    buffer.Clear();
-                    planIndex = 0;
-                    sampleCount = 0;
-                }
-                else
-                {
-                    continue;
-                }
-            }
-
-            expected = plans[planIndex];
-            if (!measurement.CharacteristicName.Equals(expected.Characteristic.Name, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            buffer.Add(measurement);
-            sampleCount++;
-
-            if (sampleCount < Math.Max(expected.Plan.SampleSize, 1))
-            {
-                continue;
-            }
-
-            planIndex++;
-            sampleCount = 0;
-            if (planIndex < plans.Count)
-            {
-                continue;
-            }
-
-            runs.Add(buffer.ToArray());
-            buffer.Clear();
-            planIndex = 0;
-        }
-
-        return runs;
-    }
-
     private static IReadOnlyList<Guid> BuildCompletionWindow(
         IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
         IReadOnlyList<InspectionMeasurement> measurements)
@@ -648,11 +488,6 @@ public sealed class JobHistoryService(ISpcRepository repository)
             .ToArray();
     }
 
-    private static string CompletionKey(string jobNum, string partNum, string processCode, int operationSeq, string resourceId, string inspectionPhase, DateTime inspectionDate, int completionNumber)
-    {
-        return string.Join("|", jobNum, partNum, processCode, operationSeq, resourceId, NormalizeInspectionPhase(inspectionPhase), inspectionDate.ToString("yyyy-MM-dd"), completionNumber);
-    }
-
     private static string NormalizeInspectionPhase(string value)
     {
         var phase = value.Trim();
@@ -683,11 +518,5 @@ public sealed class JobHistoryService(ISpcRepository repository)
                     phase.Equals("InProcess", StringComparison.OrdinalIgnoreCase)
                     ? "In Process"
                     : phase;
-    }
-
-    private static Guid DeterministicGuid(string value)
-    {
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes(value.ToUpperInvariant()));
-        return new Guid(bytes);
     }
 }

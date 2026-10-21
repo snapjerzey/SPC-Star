@@ -23,6 +23,14 @@ public sealed class AlertOverrideService(
 {
     public ServiceResult<AlertOverride> Override(AlertOverrideRequest request)
     {
+        if (!IsSupportedCauseCategory(request.CauseCategory))
+        {
+            return ServiceResult<AlertOverride>.Fail("CauseCategory is not supported.");
+        }
+        if (!NormalizeCauseCategory(request.CauseCategory).Equals("User Error", StringComparison.OrdinalIgnoreCase))
+        {
+            return ServiceResult<AlertOverride>.Fail("Only User Error can clear a lock. End the inspection as failed for Machine, Tooling, or Material.");
+        }
         var duplicate = FindDuplicate(request.DeviceId, request.ClientRecordId);
         if (duplicate is not null)
         {
@@ -51,10 +59,12 @@ public sealed class AlertOverrideService(
         }
 
         var hasOverrideAccess = permissionService.UserHasPermission(request.OverrideUserName, PermissionNames.CanOverrideDriftLock) ||
-            IsArchonSystemManager(request.OverrideUserName);
+            IsArchonSystemManager(request.OverrideUserName) ||
+            (alert.OperatorUserId.Equals(request.OverrideUserName, StringComparison.OrdinalIgnoreCase) &&
+                permissionService.UserHasPermission(request.OverrideUserName, PermissionNames.CanEnterInspections));
         if (!hasOverrideAccess)
         {
-            return ServiceResult<AlertOverride>.Fail("User is not authorized to override drift locks.");
+            return ServiceResult<AlertOverride>.Fail("Operators may clear only their own entry mistakes. A Line Tech or QA must assist with another user's lock.");
         }
 
         if (!credentialService.ValidateCredential(request.OverrideUserName, request.OverridePassword))
@@ -63,31 +73,7 @@ public sealed class AlertOverrideService(
         }
 
         var isArchonOverride = IsArchonSystemManager(request.OverrideUserName);
-        var overrideRole = isArchonOverride ? "System Manager" : permissionService.HighestOverrideRole(request.OverrideUserName);
-        var isBypassOverride = isArchonOverride &&
-            (string.IsNullOrWhiteSpace(request.CauseText) ||
-                string.IsNullOrWhiteSpace(request.SolutionText) ||
-                !string.IsNullOrWhiteSpace(request.WhyStandardProcessWasBypassed));
-        if (!IsSupportedCauseCategory(request.CauseCategory))
-        {
-            return ServiceResult<AlertOverride>.Fail("CauseCategory is not supported.");
-        }
-
-        if (isBypassOverride && string.IsNullOrWhiteSpace(request.WhyStandardProcessWasBypassed))
-        {
-            return ServiceResult<AlertOverride>.Fail("Bypass reason is required for System Manager bypass.");
-        }
-
-        if (!isBypassOverride && string.IsNullOrWhiteSpace(request.CauseText))
-        {
-            return ServiceResult<AlertOverride>.Fail("CauseText is required.");
-        }
-
-        if (!isBypassOverride && string.IsNullOrWhiteSpace(request.SolutionText))
-        {
-            return ServiceResult<AlertOverride>.Fail("SolutionText is required.");
-        }
-
+        var overrideRole = isArchonOverride ? "System Manager" : permissionService.HighestOverrideRole(request.OverrideUserName) ?? RoleNames.Operator;
         var audit = new AlertOverride
         {
             ClientRecordId = CleanOptional(request.ClientRecordId),
@@ -101,18 +87,17 @@ public sealed class AlertOverrideService(
             ResourceId = alert.ResourceId,
             CharacteristicName = alert.CharacteristicName,
             RuleTriggered = alert.RuleTriggered,
-            CauseCategory = isBypassOverride ? "System Manager Bypass" : NormalizeCauseCategory(request.CauseCategory),
-            CauseText = isBypassOverride ? "Standard correction workflow bypassed by System Manager access." : request.CauseText.Trim(),
-            SolutionText = isBypassOverride ? "Bypass approved. See bypass reason." : request.SolutionText.Trim(),
-            WhyStandardProcessWasBypassed = isBypassOverride ? request.WhyStandardProcessWasBypassed?.Trim() : null,
+            CauseCategory = NormalizeCauseCategory(request.CauseCategory),
+            CauseText = CleanOptional(request.CauseText) ?? "",
+            SolutionText = CleanOptional(request.SolutionText) ?? "",
             LockedAt = alert.LockedAt,
             UnlockedAt = request.UnlockedAt,
             SubmittedAt = request.SubmittedAt ?? request.UnlockedAt,
             SyncedAt = DateTimeOffset.UtcNow
         };
 
-        repository.AlertOverrides.Add(audit);
-        alert.Status = AlertStatus.Overridden;
+        repository.RuleViolations.RemoveAll(violation => violation.AlertId == alert.Id);
+        repository.Alerts.Remove(alert);
         return ServiceResult<AlertOverride>.Ok(audit);
     }
 
@@ -133,9 +118,9 @@ public sealed class AlertOverrideService(
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
-    private static bool IsArchonSystemManager(string userName)
+    private bool IsArchonSystemManager(string userName)
     {
-        return userName.Equals("Archon", StringComparison.OrdinalIgnoreCase);
+        return permissionService.UserHasPermission(userName, PermissionNames.CanUseGodMode);
     }
 
     private static string NormalizeCauseCategory(string? value)
@@ -145,19 +130,10 @@ public sealed class AlertOverrideService(
 
     private static bool IsSupportedCauseCategory(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return true;
-        }
-
         return NormalizeCauseCategory(value) is
             "Machine" or
             "Tooling" or
             "Material" or
-            "User Error" or
-            "Measurement Method" or
-            "Process Drift" or
-            "Other" or
-            "Unspecified";
+            "User Error";
     }
 }

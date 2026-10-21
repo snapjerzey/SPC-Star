@@ -8,6 +8,34 @@ namespace SPCStar.Core.Tests;
 public sealed class QaSummaryExportServiceTests
 {
     [Fact]
+    public void ReviewFilters_AffectPartAndJobSummariesUsingTheSameScope()
+    {
+        var r = RepositoryWithMeasurements();
+        var reading = r.Measurements[0]; reading.OperatorShift = "5 Day";
+        var filter = new DataReviewFilter(reading.ProcessCode, reading.OperationSeq, reading.InspectionPhase,
+            reading.ResourceId, reading.CharacteristicName, reading.Timestamp, reading.Timestamp);
+        var service = new QaSummaryExportService(r);
+        Assert.Equal(1, Assert.Single(service.BuildPartCapability("P100", "5 Day", filter).Value!).Count);
+        Assert.Equal(1, Assert.Single(service.BuildJobVariableMeans(["J100"], "5 Day", filter).Value!).Count);
+        Assert.Equal(0, Assert.Single(service.BuildPartCapability("P100", "5 Day", filter with { ResourceId="Other" }).Value!).Count);
+        Assert.Empty(service.BuildPartCapability("P100", "5 Day", filter with { CharacteristicName="Other" }).Value!);
+    }
+
+    [Fact]
+    public void ShiftFilter_AppliesToPartAndJobCapabilityWithoutChangingAllShiftResults()
+    {
+        var repository = RepositoryWithMeasurements();
+        repository.Measurements[0].OperatorShift = "1st Half Days";
+        repository.Measurements[1].OperatorShift = "1st Half Days";
+        repository.Measurements[2].OperatorShift = "1st Half Nights";
+        var service = new QaSummaryExportService(repository);
+        Assert.Equal(2, Assert.Single(service.BuildPartCapability("P100", "1st Half Days").Value!).Count);
+        Assert.Equal(2, Assert.Single(service.BuildJobVariableMeans(["J100"], "1st Half Days").Value!).Count);
+        Assert.Equal(3, Assert.Single(service.BuildPartCapability("P100").Value!).Count);
+        Assert.Equal(0, Assert.Single(service.BuildJobVariableMeans(["J100"], "5 Day").Value!).Count);
+    }
+
+    [Fact]
     public void BuildSummary_RequiresSelectedCharacteristic()
     {
         var service = new QaSummaryExportService(new InMemorySpcRepository());
@@ -46,7 +74,7 @@ public sealed class QaSummaryExportServiceTests
         Assert.Equal("Diameter", row.CharacteristicName);
         Assert.Equal(3, row.Count);
         Assert.Equal(5.0m, row.Mean);
-        Assert.Equal("Pass", row.Status);
+        Assert.Equal("Calculated; no acceptance requirement", row.Status);
     }
 
     [Fact]
@@ -61,27 +89,30 @@ public sealed class QaSummaryExportServiceTests
         var row = Assert.Single(result.Value!);
         Assert.Equal(CharacteristicType.Variable, row.CharacteristicType);
         Assert.Equal(0.1m, decimal.Round(row.StdDev!.Value, 5));
-        Assert.Equal(1.66667m, decimal.Round(row.Cpk!.Value, 5));
-        Assert.Equal(row.Cpk, row.Ppk);
+        Assert.Null(row.Cpk);
+        Assert.Equal(1.66667m, decimal.Round(row.Ppk!.Value, 5));
     }
 
 
     [Fact]
-    public void BuildJobVariableMeans_ExcludesOutOfSpecMeasurementsFromStats()
+    public void BuildJobVariableMeans_IncludesGenuineFailedMeasurementsInCapabilityStats()
     {
         var repository = RepositoryWithMeasurements();
         repository.Measurements.Add(Measurement(6.1m, 3));
         repository.Measurements.Add(Measurement(3.9m, 4));
+        var failure = new FailedInspection { JobNum="J100",PartNum="P100",ProcessCode="MOLD",OperationSeq=10,ResourceId="PRESS1",InspectionPhase="In Process",FailedByUserId="operator1",Reason="Genuine failed inspection" };
+        failure.MeasurementIds.AddRange(repository.Measurements.TakeLast(2).Select(m=>m.Id)); repository.FailedInspections.Add(failure);
         var service = new QaSummaryExportService(repository);
 
         var result = service.BuildJobVariableMeans("J100");
 
         Assert.True(result.Succeeded);
         var row = Assert.Single(result.Value!);
-        Assert.Equal(3, row.Count);
-        Assert.Equal(2, row.OutOfSpecExcludedCount);
+        Assert.Equal(5, row.Count);
+        Assert.Equal(0, row.OutOfSpecExcludedCount);
+        Assert.Equal(2, row.OutOfSpecCount);
         Assert.Equal(5.0m, row.Mean);
-        Assert.Equal("Pass", row.Status);
+        Assert.Equal("Calculated; no acceptance requirement", row.Status);
     }
 
     [Fact]
@@ -104,6 +135,7 @@ public sealed class QaSummaryExportServiceTests
         var repository = RepositoryWithMeasurements();
         repository.Jobs.Add(new Job { JobNum = "J200", PartNum = "P100" });
         repository.Measurements.Add(Measurement(5.2m, 3, "J200"));
+        FinalizeMeasurements(repository);
         var service = new QaSummaryExportService(repository);
 
         var result = service.BuildJobVariableMeans(["J100", "J200"]);
@@ -120,6 +152,7 @@ public sealed class QaSummaryExportServiceTests
         var repository = RepositoryWithMeasurements();
         repository.Jobs.Add(new Job { JobNum = "J200", PartNum = "P100" });
         repository.Measurements.Add(Measurement(5.2m, 3, "J200"));
+        FinalizeMeasurements(repository);
         var service = new QaSummaryExportService(repository);
 
         var result = service.BuildPartCapability("P100");
@@ -129,7 +162,7 @@ public sealed class QaSummaryExportServiceTests
         Assert.Equal("All Jobs", row.JobNum);
         Assert.Equal(4, row.Count);
         Assert.Equal(5.05m, row.Mean);
-        Assert.NotNull(row.Cpk);
+        Assert.NotNull(row.Ppk);
     }
 
     [Fact]
@@ -155,7 +188,7 @@ public sealed class QaSummaryExportServiceTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(2, result.Value!.Count);
-        Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 4.5m && row.Count == 3 && row.Status == "Pass");
+        Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 4.5m && row.Count == 3 && row.Status == "Calculated; no acceptance requirement");
         Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 7m && row.Count == 0 && row.Status == "NoData");
     }
 
@@ -182,8 +215,18 @@ public sealed class QaSummaryExportServiceTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(2, result.Value!.Count);
-        Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 4.5m && row.Count == 3 && row.Status == "Pass");
+        Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 4.5m && row.Count == 3 && row.Status == "Calculated; no acceptance requirement");
         Assert.Contains(result.Value, row => row.CharacteristicName == "Diameter" && row.Lsl == 7m && row.Count == 0 && row.Status == "NoData");
+    }
+
+    private static void FinalizeMeasurements(InMemorySpcRepository repository)
+    {
+        var linked=repository.JobPhaseCompletions.SelectMany(r=>r.MeasurementIds).ToHashSet();
+        foreach(var group in repository.Measurements.Where(m=>!linked.Contains(m.Id)).GroupBy(m=>(m.JobNum,m.ProcessCode,m.OperationSeq)))
+        {
+            var run=new JobPhaseCompletion { JobNum=group.Key.JobNum,PartNum="P100",ProcessCode=group.Key.ProcessCode,OperationSeq=group.Key.OperationSeq,ResourceId="PRESS1",InspectionPhase="In Process",CompletedByUserId="operator1",CompletedAt=group.Max(m=>m.Timestamp) };
+            run.MeasurementIds.AddRange(group.Select(m=>m.Id));repository.JobPhaseCompletions.Add(run);
+        }
     }
 
     private static InMemorySpcRepository RepositoryWithMeasurements()
@@ -211,6 +254,7 @@ public sealed class QaSummaryExportServiceTests
             Measurement(5.0m, 1),
             Measurement(5.1m, 2)
         ]);
+        FinalizeMeasurements(repository);
         return repository;
     }
 

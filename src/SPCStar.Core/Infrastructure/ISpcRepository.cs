@@ -5,6 +5,7 @@ namespace SPCStar.Core.Infrastructure;
 public interface ISpcRepository
 {
     AppSettings Settings { get; }
+    List<ChangeHistoryEntry> ChangeHistory { get; }
     List<User> Users { get; }
     List<Role> Roles { get; }
     List<Part> Parts { get; }

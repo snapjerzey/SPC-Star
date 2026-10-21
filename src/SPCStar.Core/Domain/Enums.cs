@@ -31,7 +31,8 @@ public enum AlertStatus
 {
     Active,
     Warning,
-    Overridden
+    Overridden,
+    Resolved
 }
 
 public enum RuleTriggered

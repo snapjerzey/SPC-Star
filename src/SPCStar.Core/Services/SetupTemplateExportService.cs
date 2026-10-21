@@ -167,6 +167,7 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
         {
             var row = BaseRow(item.Part);
             row["Job Data Field"] = item.FieldName;
+            row["Location"] = item.Fields.Select(field => field.Instruction).FirstOrDefault(text => !string.IsNullOrWhiteSpace(text)) ?? "";
             row["Required"] = item.Fields.Any(field => field.IsRequired) ? "TRUE" : "FALSE";
             row["Sort Order"] = item.Fields.Select(field => field.DisplayOrder).DefaultIfEmpty(0).Min().ToString(CultureInfo.InvariantCulture);
             foreach (var field in item.Fields)
@@ -299,6 +300,6 @@ public sealed class SetupTemplateExportService(ISpcRepository repository)
 
     private static string FormatDecimal(decimal? value)
     {
-        return value?.ToString("0.####", CultureInfo.InvariantCulture) ?? "";
+        return value?.ToString(CultureInfo.InvariantCulture) ?? "";
     }
 }

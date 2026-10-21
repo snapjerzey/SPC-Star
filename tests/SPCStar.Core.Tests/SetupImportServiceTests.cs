@@ -8,6 +8,66 @@ namespace SPCStar.Core.Tests;
 public sealed class SetupImportServiceTests
 {
     [Fact]
+    public void ImportCsv_70311SideEdgesBecomeSeparateLotChecksWithoutDeletingHistoricalMeasurements()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        const string original = "Armature Side Edge To Compensator Edge";
+        const string header = "Section,Part Number,Part Description,Product Group,Operation,Inspection Item,Attribute/Variable,Requirement Text,Tool Used,Startup Required,Startup Sample Size,Setup Required,Setup Sample Size,In Process Required,In Process Sample Size,In Process Frequency Qty,In Process Frequency Unit,Sort Order";
+        string Row(string name, int order) => $"Inspection,70311,Armature Assy,Schneider,Schneider Production,{name},Attribute,.084 - .104 Keyence OK/NG,Keyence & FX214,X,1,X,1,X,1,5000,Pieces,{order}";
+        Assert.True(service.ImportCsv(header + Environment.NewLine + Row(original, 30)).Succeeded);
+        repository.Measurements.Add(new InspectionMeasurement
+        {
+            JobNum = "J1", PartNum = "70311", ProcessCode = "Schneider Production", OperationSeq = 10,
+            ResourceId = "R1", CharacteristicName = original, OperatorUserId = "operator1", Value = 1m
+        });
+        var split = string.Join(Environment.NewLine, header, Row(original + " - Right", 30), Row(original + " - Left", 31));
+        Assert.True(service.ImportCsv(split).Succeeded);
+        Assert.True(service.ImportCsv(split).Succeeded);
+        var manager = new SetupManagementService(repository);
+        foreach (var phase in new[] { "Startup", "Setup", "In Process" })
+            Assert.True(manager.DeleteInspectionSetupPhase(new DeleteInspectionSetupPhaseRequest("70311", "Schneider Production", 10, original, phase)).Succeeded);
+        Assert.Equal(6, repository.InspectionPlans.Count);
+        Assert.All(repository.InspectionPlans, plan => Assert.Equal(1, plan.SampleSize));
+        var plans = new SetupQueryService(repository).GetInspectionPlans("70311");
+        foreach (var phase in new[] { "Startup", "Setup", "In Process" })
+            Assert.Equal(new[] { original + " - Right", original + " - Left" }, plans.Where(plan => plan.InspectionPhase == phase).OrderBy(plan => plan.DisplayOrder).Select(plan => plan.CharacteristicName));
+        Assert.Equal(original, Assert.Single(repository.Measurements).CharacteristicName);
+        Assert.Empty(repository.JobPhaseCompletions);
+    }
+
+    [Fact]
+    public void ImportCsv_70311ArmatureFlatnessKeepsSourceLimitsPhasesAndSampleCounts()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+        var csv = string.Join(Environment.NewLine, [
+            "Section,Part Number,Part Description,Product Group,Operation,Inspection Item,Attribute/Variable,Requirement Text,Tool Used,Lower Spec,Upper Spec,Target,Unit,Startup Required,Startup Sample Size,Startup Frequency Type,Setup Required,Setup Sample Size,Setup Frequency Type,In Process Required,In Process Sample Size,In Process Frequency Type,In Process Frequency Qty,In Process Frequency Unit,InProcessFirstDueQty,Sort Order,Setup Order,In Process Order",
+            "Inspection,70311,Armature Assy Low Amp,Schneider,Schneider Production,Armature Flatness,Variable,.000 - .002,\"Comparator, FX214\",0,.002,,in,X,3,Event,X,3,Event,X,3,Quantity,5000,Pieces,5000,10,14,14",
+            string.Empty
+        ]);
+        Assert.True(service.ImportCsv(csv).Succeeded);
+        Assert.True(service.ImportCsv(csv).Succeeded);
+        var characteristic = Assert.Single(repository.Characteristics);
+        Assert.Equal("Armature Flatness", characteristic.Name);
+        Assert.Equal("Comparator, FX214", characteristic.InspectionMethod);
+        Assert.Equal(3, repository.InspectionPlans.Count);
+        Assert.Equal(new[] { "In Process", "Setup", "Startup" }, repository.InspectionPlans.Select(plan => plan.InspectionPhase).OrderBy(phase => phase));
+        Assert.All(repository.InspectionPlans, plan =>
+        {
+            Assert.Equal(3, plan.SampleSize);
+            Assert.Equal(0m, plan.Lsl);
+            Assert.Equal(.002m, plan.Usl);
+            Assert.Null(plan.Nominal);
+            Assert.Equal(plan.InspectionPhase == "Startup" ? 10 : 14, plan.DisplayOrder);
+        });
+        var inProcess = repository.InspectionPlans.Single(plan => plan.InspectionPhase == "In Process");
+        Assert.Equal(FrequencyType.Quantity, inProcess.Frequency.Type);
+        Assert.Equal(5000, inProcess.Frequency.Value);
+        Assert.Equal(5000, inProcess.Frequency.FirstDueValue);
+    }
+
+    [Fact]
     public void ImportCsv_RejectsInvalidSpecLimits()
     {
         var repository = new InMemorySpcRepository();
@@ -34,7 +94,7 @@ public sealed class SetupImportServiceTests
         Assert.Single(repository.Characteristics);
         Assert.Single(repository.InspectionPlans);
         Assert.Equal(3, repository.InspectionPlans.Single().SampleSize);
-        Assert.Single(repository.ControlLimits);
+        Assert.Empty(repository.ControlLimits);
     }
 
     [Fact]
@@ -232,6 +292,22 @@ public sealed class SetupImportServiceTests
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal("Reference only; target 0.007", repository.Characteristics.Single().Location);
+    }
+
+    [Fact]
+    public void ImportCsv_UsesSpacedSampleContextBeforeRequirementText()
+    {
+        var repository = new InMemorySpcRepository();
+        var service = new SetupImportService(repository);
+
+        var result = service.ImportCsv(string.Join(Environment.NewLine, [
+            "Section,Part Number,Part Description,Product Group,Operation,Inspection Item,Attribute/Variable,Requirement Text,Sample Context,Unit,In Process Required,In Process Sample Size,In Process Frequency Qty,In Process Frequency Unit",
+            "Inspection,70305,Jaw Assy,Schneider,Schneider Production,Jaw Height,Variable,.585 - .615,\"2 legs, 2 samples per leg\",in,X,4,5000,Pieces",
+            string.Empty
+        ]));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal("2 legs, 2 samples per leg", repository.Characteristics.Single().Location);
     }
 
     [Fact]
@@ -526,52 +602,6 @@ public sealed class SetupImportServiceTests
     }
 
     [Fact]
-    public void ImportCsv_ImportsSchneider70310Template()
-    {
-        var repository = new InMemorySpcRepository();
-        var service = new SetupImportService(repository);
-        var csvPath = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..",
-            "docs", "imports", "schneider-70310-import.csv"));
-
-        var result = service.ImportCsv(File.ReadAllText(csvPath));
-
-        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        Assert.Contains(repository.Parts, part => part.PartNum == "70310" && part.ProductGroup == "Schneider");
-        Assert.Empty(repository.PartMaterialFields);
-        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Jaw Width");
-        Assert.DoesNotContain(repository.Characteristics, characteristic => characteristic.Name.Contains(" - Front", StringComparison.OrdinalIgnoreCase) || characteristic.Name.Contains(" - Back", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Jaw Profile No Clip" && characteristic.Type == CharacteristicType.Attribute);
-        Assert.Contains(repository.Characteristics, characteristic => characteristic.Name == "Weld Pool Clearance from Contact Face" && characteristic.Type == CharacteristicType.Variable);
-
-        var inProcess = new SetupQueryService(repository)
-            .GetInspectionPlans("70310")
-            .Where(plan => plan.InspectionPhase == "In Process")
-            .Select(plan => plan.CharacteristicName)
-            .ToArray();
-        Assert.Equal("Overall Visual", inProcess[0]);
-        Assert.Equal("Jaw Check for Burrs and Cracking at Forms", inProcess[1]);
-        Assert.Equal("Spring Clip Fully Pressed Against Jaw", inProcess[2]);
-        Assert.Equal("Weld Pool Clearance from Contact Face", inProcess[3]);
-        Assert.Equal("Inside Legs Gap No Clip", inProcess[4]);
-        Assert.Equal("Shear Force", inProcess[5]);
-        Assert.Equal("Bottom Contact Location", inProcess[15]);
-        Assert.DoesNotContain("Jaw Leg Width", inProcess);
-        Assert.DoesNotContain("Jaw Tab Width", inProcess);
-        Assert.DoesNotContain("Jaw Tab Center", inProcess);
-
-        var setup = new SetupQueryService(repository)
-            .GetInspectionPlans("70310")
-            .Where(plan => plan.InspectionPhase == "Setup")
-            .Select(plan => plan.CharacteristicName)
-            .ToArray();
-        Assert.Contains("Jaw Leg Width", setup);
-        Assert.Contains("Jaw Tab Width", setup);
-        Assert.Contains("Jaw Tab Center", setup);
-    }
-
-    [Fact]
     public void ImportCsv_ImportsV4OrderedInspectionTemplate()
     {
         var repository = new InMemorySpcRepository();
@@ -674,7 +704,7 @@ public sealed class SetupImportServiceTests
         Assert.Single(repository.Characteristics);
         Assert.Equal(2, repository.InspectionPlans.Count);
         Assert.Single(repository.SpecLimits);
-        Assert.Single(repository.ControlLimits);
+        Assert.Empty(repository.ControlLimits);
         Assert.Equal("Updated Jaw Assy", repository.Parts.Single().Description);
         Assert.Equal("51475-A", repository.PartMaterialFields.Single().MaterialPartNum);
         Assert.Contains(repository.InspectionPlans, plan => plan.InspectionPhase == "Setup" && plan.SampleSize == 4);

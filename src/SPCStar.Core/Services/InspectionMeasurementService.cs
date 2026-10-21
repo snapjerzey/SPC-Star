@@ -16,7 +16,8 @@ public sealed record InspectionMeasurementEntry(
     string? DeviceId = null,
     string? ClientRecordId = null,
     DateTimeOffset? SubmittedAt = null,
-    string InspectionPhase = "In Process");
+    string InspectionPhase = "In Process",
+    int? GagePinNumber = null);
 
 public sealed record CompleteInspectionRequest(
     string JobNum,
@@ -39,7 +40,13 @@ public sealed record FailInspectionRequest(
     long? MachineCounter,
     IReadOnlyList<string>? MeasurementClientRecordIds = null,
     Guid? ActiveAlertId = null,
-    string? Reason = null);
+    string? Reason = null,
+    string? CauseCategory = null,
+    string? CauseText = null,
+    string? SolutionText = null,
+    string? SignOffUserName = null,
+    string? SignOffPassword = null,
+    IReadOnlyList<string>? RequiredCharacteristicNames = null);
 
 internal sealed record ResolvedSpecLimit(decimal? Nominal, decimal? Lsl, decimal? Usl);
 
@@ -52,10 +59,42 @@ public sealed class InspectionMeasurementService(
     public ServiceResult<InspectionMeasurement> EnterMeasurement(InspectionMeasurementEntry entry)
     {
         var errors = Validate(entry);
+        if (entry.Value < 0 && SchneiderContactLocationRules.IsDirectionCheck(entry.PartNum, entry.ProcessCode, entry.CharacteristicName))
+            errors.Add("Inside/Outside measurements must be entered as a non-negative magnitude in the matching direction field.");
+        if (entry.GagePinNumber is not null)
+        {
+            var characteristic = FindCharacteristic(entry);
+            var part = repository.Parts.FirstOrDefault(p => p.PartNum.Equals(entry.PartNum, StringComparison.OrdinalIgnoreCase));
+            var diameter = GagePinBlockRules.TryMapPinToDiameter(part?.ProductGroup, characteristic?.Name,
+                characteristic?.InspectionMethod, part?.HoleSize, entry.GagePinNumber.Value);
+            if (diameter is null || diameter != entry.Value) errors.Add("Gage pin number does not match the configured block diameter.");
+        }
         if (errors.Count > 0)
         {
             return ServiceResult<InspectionMeasurement>.Fail(errors);
         }
+
+        if (SchneiderShearNoteRules.IsWithdrawnEntry(entry.PartNum, entry.ProcessCode, entry.CharacteristicName,
+            NormalizeInspectionPhase(entry.InspectionPhase)))
+        {
+            var characteristic = FindCharacteristic(entry);
+            if (characteristic is not null && !repository.InspectionPlans.Any(p => p.CharacteristicId == characteristic.Id &&
+                p.InspectionPhase.Equals(NormalizeInspectionPhase(entry.InspectionPhase), StringComparison.OrdinalIgnoreCase)))
+                return ServiceResult<InspectionMeasurement>.Fail("This contact-tape change entry is not a scheduled inspection. Reload the inspection to use the current inspection plan.");
+        }
+
+        if (SchneiderContactLocationRules.IsCombinedCheck(entry.PartNum, entry.ProcessCode, entry.CharacteristicName))
+        {
+            var old = FindCharacteristic(entry);
+            var replacements = repository.Characteristics.Where(c => c.OperationId == old?.OperationId &&
+                SchneiderContactLocationRules.DirectionChecks.Contains(c.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
+            if (replacements.Length == 4 && replacements.All(c => repository.InspectionPlans.Any(p => p.CharacteristicId == c.Id &&
+                p.InspectionPhase.Equals(NormalizeInspectionPhase(entry.InspectionPhase), StringComparison.OrdinalIgnoreCase))))
+                return ServiceResult<InspectionMeasurement>.Fail("The combined Inside/Outside check has been replaced. Reload the inspection and use the separate Contact A/B Inside and Outside fields.");
+        }
+
+        var materialIssueMessage = JobMaterialRules.RequiredIssueMessage(repository, entry.JobNum, entry.PartNum);
+        if (materialIssueMessage is not null) return ServiceResult<InspectionMeasurement>.Fail(materialIssueMessage);
 
         var duplicate = FindDuplicate(entry.DeviceId, entry.ClientRecordId);
         if (duplicate is not null)
@@ -98,6 +137,7 @@ public sealed class InspectionMeasurementService(
             CharacteristicName = entry.CharacteristicName.Trim(),
             InspectionPhase = NormalizeInspectionPhase(entry.InspectionPhase),
             Value = NormalizeMeasurementValue(entry.Value),
+            GagePinNumber = entry.GagePinNumber,
             Timestamp = entry.Timestamp,
             OperatorUserId = entry.OperatorUserId.Trim(),
             OperatorShift = operatorShift,
@@ -118,13 +158,13 @@ public sealed class InspectionMeasurementService(
         }
 
         var normalizedValue = NormalizeMeasurementValue(entry.Value);
-        if (measurement.Value == normalizedValue)
+        if (measurement.Value == normalizedValue && measurement.GagePinNumber == entry.GagePinNumber)
         {
             return ServiceResult<InspectionMeasurement>.Ok(measurement);
         }
 
         var draftLockAlertIds = DraftLockAlertIdsForMeasurement(measurement.Id);
-        if (draftLockAlertIds.Count > 0 && !ReleaseDraftAlertsForMeasurement(draftLockAlertIds))
+        if (draftLockAlertIds.Count > 0)
         {
             return ServiceResult<InspectionMeasurement>.Fail("This sample has an active lock. Clear the lock before changing the measurement.");
         }
@@ -136,6 +176,7 @@ public sealed class InspectionMeasurementService(
         }
 
         measurement.Value = normalizedValue;
+        measurement.GagePinNumber = entry.GagePinNumber;
         measurement.Timestamp = entry.Timestamp;
         measurement.OperatorUserId = entry.OperatorUserId.Trim();
         measurement.OperatorShift = OperatorShift(entry.OperatorUserId);
@@ -180,7 +221,7 @@ public sealed class InspectionMeasurementService(
             OperationSeq = measurement.OperationSeq,
             ResourceId = measurement.ResourceId,
             InspectionPhase = phase,
-            CompletionNumber = NextCompletionNumber(measurement.JobNum, measurement.PartNum, phase),
+            CompletionNumber = NextCompletionNumber(measurement.JobNum, measurement.PartNum, measurement.ProcessCode, measurement.OperationSeq, phase),
             CompletedByUserId = measurement.OperatorUserId,
             OperatorShift = measurement.OperatorShift,
             CompletedAt = measurement.Timestamp
@@ -193,10 +234,15 @@ public sealed class InspectionMeasurementService(
     public ServiceResult<JobPhaseCompletion> CompleteInspection(CompleteInspectionRequest request)
     {
         var errors = ValidateCompletion(request);
+        var counterError = JobMachineCounterRules.Validate(repository, request.JobNum, request.MachineCounter);
+        if (counterError is not null) errors.Add(counterError);
         if (errors.Count > 0)
         {
             return ServiceResult<JobPhaseCompletion>.Fail(errors);
         }
+
+        var materialIssueMessage = JobMaterialRules.RequiredIssueMessage(repository, request.JobNum, request.PartNum);
+        if (materialIssueMessage is not null) return ServiceResult<JobPhaseCompletion>.Fail(materialIssueMessage);
 
         var phase = NormalizeInspectionPhase(request.InspectionPhase);
         var hasClientRecordIds = request.MeasurementClientRecordIds?.Any(id => !string.IsNullOrWhiteSpace(id)) == true;
@@ -220,17 +266,44 @@ public sealed class InspectionMeasurementService(
             completion = TryCreateCompletionFromClientRecords(request, phase) ?? TryCreateCompletionFromSavedMeasurements(request, phase);
             if (completion is null)
             {
-                return ServiceResult<JobPhaseCompletion>.Fail("No completed inspection was found for this job, part, machine, operation, and phase.");
+                var ids = MeasurementIdsForClientRecords(request, phase);
+                var readings = repository.Measurements.Where(item => ids.Contains(item.Id)).ToArray();
+                var missing = PlansRequiredOrEnteredForCompletion(
+                    PlansForPhase(request.PartNum.Trim(), request.ProcessCode.Trim(), request.OperationSeq, phase), readings, request)
+                    .Select(item => new { item.Characteristic.Name, Remaining = RequiredMeasurementCount(item) - readings.Count(reading =>
+                        reading.CharacteristicName.Equals(item.Characteristic.Name, StringComparison.OrdinalIgnoreCase)) })
+                    .Where(item => item.Remaining > 0)
+                    .Select(item => $"{item.Name} ({item.Remaining} more sample{(item.Remaining == 1 ? "" : "s")})");
+                var details = hasClientRecordIds ? string.Join(", ", missing) : "";
+                return ServiceResult<JobPhaseCompletion>.Fail("No completed inspection was found for this job, part, machine, operation, and phase." +
+                    (details.Length > 0 ? $" Complete and save: {details}." : ""));
             }
         }
 
         completion.MachineCounter = request.MachineCounter!.Value;
+        if (!completion.WatchEvaluated)
+        {
+            EvaluateCompletedCustomDrift(completion);
+            completion.WatchEvaluated = true;
+        }
         return ServiceResult<JobPhaseCompletion>.Ok(completion);
+    }
+
+    public ServiceResult<FailedInspection> FailInspectionWithSignoff(FailInspectionRequest request)
+    {
+        var signer = request.SignOffUserName?.Trim() ?? "";
+        if (!new PermissionService(repository).UserHasPermission(signer, PermissionNames.CanOverrideDriftLock))
+            return ServiceResult<FailedInspection>.Fail("A Line Tech or QA must sign off the failed inspection.");
+        if (!new CredentialService(repository).ValidateCredential(signer, request.SignOffPassword ?? ""))
+            return ServiceResult<FailedInspection>.Fail("Invalid failure signoff credentials.");
+        return FailInspection(request with { FailedByUserId = signer });
     }
 
     public ServiceResult<FailedInspection> FailInspection(FailInspectionRequest request)
     {
         var errors = ValidateFailure(request);
+        var counterError = JobMachineCounterRules.Validate(repository, request.JobNum, request.MachineCounter);
+        if (counterError is not null) errors.Add(counterError);
         if (errors.Count > 0)
         {
             return ServiceResult<FailedInspection>.Fail(errors);
@@ -240,6 +313,15 @@ public sealed class InspectionMeasurementService(
         var measurementIds = MeasurementIdsForFailure(request, phase);
         var failedAt = DateTimeOffset.UtcNow;
         var alert = FindFailureAlert(request);
+        var failureReason = string.IsNullOrWhiteSpace(request.Reason)
+            ? "Inspection ended after lockout."
+            : request.Reason.Trim();
+        var causeCategory = CleanOptional(request.CauseCategory) ?? "Failed Inspection";
+        var causeText = CleanOptional(request.CauseText) ?? alert?.Detail ?? failureReason;
+        var solutionText = CleanOptional(request.SolutionText) ?? failureReason;
+        var failureDetail = alert is not null
+            ? $"{alert.CharacteristicName}: {alert.Detail}"
+            : FailureDetailFromMeasurements(measurementIds);
         var failure = new FailedInspection
         {
             JobNum = request.JobNum.Trim(),
@@ -248,27 +330,23 @@ public sealed class InspectionMeasurementService(
             OperationSeq = request.OperationSeq,
             ResourceId = request.ResourceId.Trim(),
             InspectionPhase = phase,
-            FailureNumber = repository.FailedInspections
-                .Where(item =>
-                    item.JobNum.Equals(request.JobNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    item.PartNum.Equals(request.PartNum.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    item.ProcessCode.Equals(request.ProcessCode.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    item.OperationSeq == request.OperationSeq &&
-                    item.ResourceId.Equals(request.ResourceId.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
-                .Select(item => Math.Max(item.FailureNumber, 1))
-                .DefaultIfEmpty(0)
-                .Max() + 1,
+            FailureNumber = NextCompletionNumber(request.JobNum.Trim(), request.PartNum.Trim(), request.ProcessCode.Trim(), request.OperationSeq, phase),
             FailedByUserId = request.FailedByUserId.Trim(),
             OperatorShift = OperatorShift(request.FailedByUserId),
             FailedAt = failedAt,
             MachineCounter = request.MachineCounter,
-            Reason = string.IsNullOrWhiteSpace(request.Reason)
-                ? "Inspection ended after lockout."
-                : request.Reason.Trim(),
+            Reason = failureReason,
+            CauseCategory = causeCategory,
+            CauseText = causeText,
+            SolutionText = solutionText,
+            FailureDetail = failureDetail,
             AlertId = alert?.Id
         };
         failure.MeasurementIds.AddRange(measurementIds);
+        var phaseNames = PlansForPhase(request.PartNum, request.ProcessCode, request.OperationSeq, phase)
+            .Select(item => item.Characteristic.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        failure.RequiredCharacteristicNames.AddRange((request.RequiredCharacteristicNames ?? [])
+            .Where(phaseNames.Contains).Distinct(StringComparer.OrdinalIgnoreCase));
         repository.FailedInspections.Add(failure);
 
         if (alert is not null && alert.Status == AlertStatus.Active)
@@ -285,9 +363,9 @@ public sealed class InspectionMeasurementService(
                 ResourceId = alert.ResourceId,
                 CharacteristicName = alert.CharacteristicName,
                 RuleTriggered = alert.RuleTriggered,
-                CauseCategory = "Failed Inspection",
-                CauseText = alert.Detail ?? "Inspection failed before completion.",
-                SolutionText = "Current inspection ended as failed. New inspection started.",
+                CauseCategory = causeCategory,
+                CauseText = causeText,
+                SolutionText = solutionText,
                 LockedAt = alert.LockedAt,
                 UnlockedAt = failedAt,
                 SubmittedAt = failedAt,
@@ -338,7 +416,7 @@ public sealed class InspectionMeasurementService(
         }
 
         var phasePlans = PlansForPhase(request.PartNum.Trim(), request.ProcessCode.Trim(), request.OperationSeq, phase);
-        var plans = PlansRequiredOrEnteredForCompletion(phasePlans, measurements, request.MachineCounter);
+        var plans = PlansRequiredOrEnteredForCompletion(phasePlans, measurements, request);
         var completionMeasurementIds = BuildClientRecordCompletionSet(plans, measurements);
         if (completionMeasurementIds.Count == 0)
         {
@@ -354,7 +432,7 @@ public sealed class InspectionMeasurementService(
             OperationSeq = request.OperationSeq,
             ResourceId = request.ResourceId.Trim(),
             InspectionPhase = phase,
-            CompletionNumber = NextCompletionNumber(request.JobNum.Trim(), request.PartNum.Trim(), phase),
+            CompletionNumber = NextCompletionNumber(request.JobNum.Trim(), request.PartNum.Trim(), request.ProcessCode.Trim(), request.OperationSeq, phase),
             CompletedByUserId = latestMeasurement.OperatorUserId,
             OperatorShift = latestMeasurement.OperatorShift,
             CompletedAt = latestMeasurement.Timestamp
@@ -438,6 +516,20 @@ public sealed class InspectionMeasurementService(
             .FirstOrDefault();
     }
 
+    private string FailureDetailFromMeasurements(HashSet<Guid> measurementIds)
+    {
+        if (measurementIds.Count == 0)
+        {
+            return "";
+        }
+
+        return string.Join("; ", repository.Measurements
+            .Where(measurement => measurementIds.Contains(measurement.Id))
+            .OrderBy(measurement => measurement.Timestamp)
+            .Select(measurement => $"{measurement.CharacteristicName}: {measurement.Value:0.#####}")
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
     private JobPhaseCompletion? TryCreateCompletionFromSavedMeasurements(CompleteInspectionRequest request, string phase)
     {
         var jobNum = request.JobNum.Trim();
@@ -489,7 +581,7 @@ public sealed class InspectionMeasurementService(
                 item.Timestamp > (previousCompletionAt ?? new DateTimeOffset(latestMeasurement.Timestamp.Date, latestMeasurement.Timestamp.Offset)) &&
                 item.Timestamp <= latestMeasurement.Timestamp)
             .ToArray();
-        var plans = PlansRequiredOrEnteredForCompletion(phasePlans, candidates, request.MachineCounter);
+        var plans = PlansRequiredOrEnteredForCompletion(phasePlans, candidates, request);
         if (plans.Count == 0)
         {
             return null;
@@ -509,7 +601,7 @@ public sealed class InspectionMeasurementService(
             OperationSeq = request.OperationSeq,
             ResourceId = resourceId,
             InspectionPhase = phase,
-            CompletionNumber = NextCompletionNumber(jobNum, partNum, phase),
+            CompletionNumber = NextCompletionNumber(jobNum, partNum, processCode, request.OperationSeq, phase),
             CompletedByUserId = latestMeasurement.OperatorUserId,
             OperatorShift = latestMeasurement.OperatorShift,
             CompletedAt = latestMeasurement.Timestamp
@@ -519,16 +611,9 @@ public sealed class InspectionMeasurementService(
         return completion;
     }
 
-    private int NextCompletionNumber(string jobNum, string partNum, string phase)
+    private int NextCompletionNumber(string jobNum, string partNum, string processCode, int operationSeq, string phase)
     {
-        return repository.JobPhaseCompletions
-            .Where(item =>
-                item.JobNum.Equals(jobNum, StringComparison.OrdinalIgnoreCase) &&
-                item.PartNum.Equals(partNum, StringComparison.OrdinalIgnoreCase) &&
-                NormalizeInspectionPhase(item.InspectionPhase).Equals(phase, StringComparison.OrdinalIgnoreCase))
-            .Select(item => Math.Max(item.CompletionNumber, 1))
-            .DefaultIfEmpty(0)
-            .Max() + 1;
+        return InspectionSequence.Next(repository, jobNum, partNum, processCode, operationSeq, phase);
     }
 
     private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansForMeasurementPhase(InspectionMeasurement measurement, string phase)
@@ -591,51 +676,23 @@ public sealed class InspectionMeasurementService(
             .ToArray();
     }
 
-    private static IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> DuePlansForCompletion(
-        IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
-        long? machineCounter)
-    {
-        return plans
-            .Where(item => IsPlanDueAtMachineCounter(item.Plan, machineCounter))
-            .ToArray();
-    }
-
-    private static bool IsPlanDueAtMachineCounter(InspectionPlan plan, long? machineCounter)
-    {
-        if (plan.Frequency.Type != FrequencyType.Quantity)
-        {
-            return true;
-        }
-
-        if (machineCounter is null)
-        {
-            return true;
-        }
-
-        var every = Math.Max(plan.Frequency.Value, 1);
-        var firstDue = Math.Max(plan.Frequency.FirstDueValue ?? every, 1);
-        return machineCounter.Value >= firstDue;
-    }
-
-    private static IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansRequiredOrEnteredForCompletion(
+    private IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> PlansRequiredOrEnteredForCompletion(
         IReadOnlyList<(InspectionPlan Plan, Characteristic Characteristic)> plans,
         IReadOnlyList<InspectionMeasurement> candidates,
-        long? machineCounter)
+        CompleteInspectionRequest request)
     {
-        return plans
-            .Where(item =>
-                IsPlanDueAtMachineCounter(item.Plan, machineCounter) ||
-                HasEnoughMeasurementsForPlan(item, candidates))
-            .ToArray();
-    }
-
-    private static bool HasEnoughMeasurementsForPlan(
-        (InspectionPlan Plan, Characteristic Characteristic) plan,
-        IReadOnlyList<InspectionMeasurement> candidates)
-    {
-        var required = RequiredMeasurementCount(plan);
-        return candidates.Count(measurement =>
-            measurement.CharacteristicName.Equals(plan.Characteristic.Name, StringComparison.OrdinalIgnoreCase)) >= required;
+        var schedule = new MachineCounterSchedule(repository);
+        var frequency = new InspectionFrequencyService(repository);
+        return plans.Where(item =>
+        {
+            if (candidates.Any(reading => reading.CharacteristicName.Equals(item.Characteristic.Name, StringComparison.OrdinalIgnoreCase))) return true;
+            if (item.Plan.Frequency.Type != FrequencyType.Quantity || request.MachineCounter is null) return true;
+            if (frequency.RequiresReinspection(new(request.JobNum, request.PartNum, request.ProcessCode, request.OperationSeq,
+                item.Characteristic.Name, request.ResourceId, DateTimeOffset.UtcNow, null, null, [], request.InspectionPhase), item.Plan)) return true;
+            var nextDue = schedule.NextDue(request.JobNum, request.PartNum, request.ProcessCode, request.OperationSeq,
+                item.Characteristic.Name, item.Plan.Frequency.Value, item.Plan.Frequency.FirstDueValue);
+            return request.MachineCounter.Value >= nextDue;
+        }).ToArray();
     }
 
     private IReadOnlyList<Guid> MeasurementIdsForCompletionWindow(
@@ -854,6 +911,12 @@ public sealed class InspectionMeasurementService(
         Required(request.ResourceId, nameof(request.ResourceId), errors);
         Required(request.InspectionPhase, nameof(request.InspectionPhase), errors);
         Required(request.FailedByUserId, nameof(request.FailedByUserId), errors);
+        if (request.CauseCategory?.Trim() is not ("Machine" or "Tooling" or "Material"))
+        {
+            errors.Add("Failed inspections require a Machine, Tooling, or Material cause. User Error must clear the lock for correction.");
+        }
+        Required(request.CauseText ?? "", nameof(request.CauseText), errors);
+        Required(request.SolutionText ?? "", nameof(request.SolutionText), errors);
         if (request.OperationSeq <= 0)
         {
             errors.Add($"{nameof(request.OperationSeq)} is required.");
@@ -877,30 +940,6 @@ public sealed class InspectionMeasurementService(
                 alert => alert.Id,
                 (_, alert) => alert.Id)
             .ToHashSet();
-    }
-
-    private bool ReleaseDraftAlertsForMeasurement(HashSet<Guid> alertIds)
-    {
-        if (alertIds.Count == 0)
-        {
-            return true;
-        }
-
-        var affectedMeasurementIds = repository.RuleViolations
-            .Where(violation => alertIds.Contains(violation.AlertId))
-            .SelectMany(violation => violation.MeasurementIds)
-            .ToHashSet();
-        if (affectedMeasurementIds.Any(IsCompletedMeasurement))
-        {
-            return false;
-        }
-
-        foreach (var alert in repository.Alerts.Where(alert => alertIds.Contains(alert.Id) && alert.Status == AlertStatus.Active))
-        {
-            alert.Status = AlertStatus.Overridden;
-        }
-
-        return true;
     }
 
     private bool IsCompletedMeasurement(Guid measurementId)
@@ -980,13 +1019,33 @@ public sealed class InspectionMeasurementService(
         }
 
         var plan = FindInspectionPlan(characteristic, entry.InspectionPhase);
-        var ruleSet = ResolveRuleSet(plan);
-        if (plan is null || string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase))
+        if (plan is null)
         {
             return;
         }
 
-        if (CreateSpecLimitAlert(measurement) ||
+        if (CreateSpecLimitAlert(measurement))
+        {
+            return;
+        }
+
+        var ruleSet = ResolveRuleSet(plan);
+        // Custom drift uses completed inspection averages, never individual entry events.
+        if (string.Equals(ruleSet, "Custom", StringComparison.OrdinalIgnoreCase))
+        {
+            var spec = FindSpecLimit(measurement);
+            if (spec is not null)
+            {
+                var reasons = CustomWatchEvaluator.Evaluate([], [measurement.Value], spec.Lsl, spec.Usl, repository.Settings.CustomDriftRule, false);
+                if (reasons.Count > 0)
+                {
+                    measurement.WatchReason = string.Join(" ", reasons);
+                    ApplyCustomWatch(measurement, measurement.WatchReason, [measurement.Id], null);
+                }
+            }
+            return;
+        }
+        if (string.Equals(ruleSet, "None", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ruleSet, "SpecLimitOnly", StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -1050,6 +1109,7 @@ public sealed class InspectionMeasurementService(
             };
 
             repository.Alerts.Add(alert);
+            measurement.WatchReason = alert.Detail ?? "Process drift";
             var ruleViolation = new RuleViolation
             {
                 AlertId = alert.Id,
@@ -1059,6 +1119,108 @@ public sealed class InspectionMeasurementService(
             ruleViolation.MeasurementIds.AddRange(violation.MeasurementIds);
             repository.RuleViolations.Add(ruleViolation);
         }
+    }
+
+    private void EvaluateCompletedCustomDrift(JobPhaseCompletion completion)
+    {
+        var measurements = repository.Measurements.Where(item =>
+            item.JobNum.Equals(completion.JobNum, StringComparison.OrdinalIgnoreCase) &&
+            item.PartNum.Equals(completion.PartNum, StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(completion.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == completion.OperationSeq && item.ResourceId.Equals(completion.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+            NormalizeInspectionPhase(item.InspectionPhase).Equals(NormalizeInspectionPhase(completion.InspectionPhase), StringComparison.OrdinalIgnoreCase)).ToDictionary(item => item.Id);
+        var failedIds = repository.FailedInspections.SelectMany(item => item.MeasurementIds).ToHashSet();
+        var history = repository.JobPhaseCompletions.Where(item => item.CompletedAt <= completion.CompletedAt &&
+            item.JobNum.Equals(completion.JobNum, StringComparison.OrdinalIgnoreCase) &&
+            item.PartNum.Equals(completion.PartNum, StringComparison.OrdinalIgnoreCase) &&
+            item.ProcessCode.Equals(completion.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+            item.OperationSeq == completion.OperationSeq &&
+            item.ResourceId.Equals(completion.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+            NormalizeInspectionPhase(item.InspectionPhase).Equals(NormalizeInspectionPhase(completion.InspectionPhase), StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.CompletedAt).ThenBy(item => item.CompletionNumber).ToArray();
+        var custom = repository.Settings.CustomDriftRule;
+        foreach (var group in completion.MeasurementIds.Where(measurements.ContainsKey).Select(id => measurements[id])
+            .GroupBy(item => item.CharacteristicName, StringComparer.OrdinalIgnoreCase))
+        {
+            var current = group.First();
+            var characteristic = FindCharacteristic(new(current.JobNum, current.PartNum, current.ProcessCode,
+                current.OperationSeq, current.ResourceId, current.CharacteristicName, current.Value, current.Timestamp,
+                current.OperatorUserId, InspectionPhase: current.InspectionPhase));
+            var plan = FindInspectionPlan(characteristic, current.InspectionPhase);
+            if (characteristic?.Type != CharacteristicType.Variable || !string.Equals(ResolveRuleSet(plan), "Custom", StringComparison.OrdinalIgnoreCase)) continue;
+            var spec = FindSpecLimit(current);
+            if (spec is null || (spec.Lsl is null && spec.Usl is null)) continue;
+
+            // Paired samples are interleaved in the entry form; do not average the two sides/nubs together.
+            var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(current.PartNum, StringComparison.OrdinalIgnoreCase));
+            var pairedL3 = part?.ProductGroup.Contains("Cutting Edge", StringComparison.OrdinalIgnoreCase) == true &&
+                !part.ProductGroup.Contains("Drilled", StringComparison.OrdinalIgnoreCase) &&
+                current.CharacteristicName.Contains("L3", StringComparison.OrdinalIgnoreCase) && plan?.SampleSize == 6;
+            var pairedNubs = current.PartNum == "70306" && current.CharacteristicName.Equals("Weld Nub Dia. (2x)", StringComparison.OrdinalIgnoreCase) && plan?.SampleSize == 6;
+            var lanes = pairedL3 || pairedNubs ? 2 : 1;
+            var sets = history.Select(run => run.MeasurementIds.Where(id => measurements.ContainsKey(id) && !failedIds.Contains(id)).Select(id => measurements[id])
+                .Where(item => item.CharacteristicName.Equals(current.CharacteristicName, StringComparison.OrdinalIgnoreCase)).ToArray()).ToArray();
+            var details = new List<string>();
+            var normal = true;
+            var warningIds = new HashSet<Guid>();
+            for (var lane = 0; lane < lanes; lane++)
+            {
+                var values = sets.Select(set => set.Length != plan!.SampleSize || set.Any(item =>
+                    (spec.Lsl.HasValue && item.Value < spec.Lsl) || (spec.Usl.HasValue && item.Value > spec.Usl))
+                    ? null : set.Where((_, index) => index % lanes == lane).Select(item => item.Value).ToArray()).ToArray();
+                var currentValues = group.Where((_, index) => index % lanes == lane).Select(item => item.Value).ToArray();
+                var reasons = CustomWatchEvaluator.Evaluate(values, currentValues, spec.Lsl, spec.Usl, custom, true);
+                normal &= values.LastOrDefault() is not null &&
+                    CustomWatchEvaluator.Evaluate(values, currentValues, spec.Lsl, spec.Usl, custom, true, true).Count == 0;
+                if (reasons.Count == 0) continue;
+                var laneName = pairedL3 ? (lane == 0 ? "Left: " : "Right: ") : pairedNubs ? $"Weld nub {lane + 1}: " : "";
+                details.Add(laneName + string.Join(" ", reasons));
+                foreach (var item in group.Where((_, index) => index % lanes == lane))
+                    item.WatchReason = details[^1];
+                foreach (var item in sets.TakeLast(Math.Max(custom.WindowSize, custom.Options.RepeatedWindow)).SelectMany(set => set.Where((_, index) => index % lanes == lane))) warningIds.Add(item.Id);
+            }
+            var detail = string.Join(" ", details);
+            ApplyCustomWatch(current, detail, warningIds, completion.Id, normal);
+            var stillWatching = repository.Alerts.LastOrDefault(alert => alert.Status == AlertStatus.Warning &&
+                alert.RuleTriggered == RuleTriggered.CustomRuleTriggered && alert.WatchScope == CustomWatchScope(current) &&
+                alert.JobNum == current.JobNum && alert.PartNum == current.PartNum && alert.ResourceId == current.ResourceId && alert.CharacteristicName == current.CharacteristicName);
+            if (stillWatching is not null && details.Count == 0)
+                foreach (var item in group) item.WatchReason = $"{stillWatching.Detail} Recovery: {stillWatching.NormalWatchInspections} of {custom.Options.RecoveryInspections} normal inspections.";
+        }
+    }
+
+    private static string CustomWatchScope(InspectionMeasurement measurement) =>
+        $"{measurement.ProcessCode}|{measurement.OperationSeq}|{NormalizeInspectionPhase(measurement.InspectionPhase)}".ToLowerInvariant();
+
+    private void ApplyCustomWatch(InspectionMeasurement current, string reason, IEnumerable<Guid> evidence, Guid? completionId, bool normal = true)
+    {
+        var scope = CustomWatchScope(current);
+        var alert = repository.Alerts.LastOrDefault(item => item.Status == AlertStatus.Warning && item.RuleTriggered == RuleTriggered.CustomRuleTriggered &&
+            item.JobNum.Equals(current.JobNum, StringComparison.OrdinalIgnoreCase) && item.PartNum.Equals(current.PartNum, StringComparison.OrdinalIgnoreCase) &&
+            item.ResourceId.Equals(current.ResourceId, StringComparison.OrdinalIgnoreCase) && item.CharacteristicName.Equals(current.CharacteristicName, StringComparison.OrdinalIgnoreCase) && item.WatchScope == scope);
+        if (string.IsNullOrEmpty(reason))
+        {
+            if (alert is null || !completionId.HasValue || alert.LastWatchCompletionId == completionId) return;
+            alert.LastWatchCompletionId = completionId;
+            if (!normal) { alert.NormalWatchInspections = 0; return; }
+            alert.NormalWatchInspections++;
+            if (!repository.Settings.CustomDriftRule.Options.Enabled || alert.NormalWatchInspections >= repository.Settings.CustomDriftRule.Options.RecoveryInspections)
+                alert.Status = AlertStatus.Resolved;
+            return;
+        }
+        if (alert is null)
+        {
+            alert = new ProcessAlert { JobNum = current.JobNum, PartNum = current.PartNum, ResourceId = current.ResourceId,
+                CharacteristicName = current.CharacteristicName, OperatorUserId = current.OperatorUserId, OperatorShift = current.OperatorShift,
+                RuleTriggered = RuleTriggered.CustomRuleTriggered, LockedAt = current.Timestamp, Status = AlertStatus.Warning, WatchScope = scope };
+            repository.Alerts.Add(alert);
+            repository.RuleViolations.Add(new RuleViolation { AlertId = alert.Id, RuleTriggered = RuleTriggered.CustomRuleTriggered, DetectedAt = current.Timestamp });
+        }
+        alert.Detail = reason;
+        alert.NormalWatchInspections = 0;
+        if (completionId.HasValue) alert.LastWatchCompletionId = completionId;
+        var violation = repository.RuleViolations.Last(item => item.AlertId == alert.Id);
+        foreach (var id in evidence.Except(violation.MeasurementIds)) violation.MeasurementIds.Add(id);
     }
 
     private bool HasCompletedHistoryForDrift(InspectionMeasurement measurement)
@@ -1129,11 +1291,6 @@ public sealed class InspectionMeasurementService(
         if (string.Equals(ruleSet, "LinearTrendSlope", StringComparison.OrdinalIgnoreCase))
         {
             return DetectLinearTrendSlope(points, sigma);
-        }
-
-        if (string.Equals(ruleSet, "Custom", StringComparison.OrdinalIgnoreCase))
-        {
-            return DetectCustom(points, centerLine, lcl, ucl, sigma, repository.Settings.CustomDriftRule);
         }
 
         return [];
@@ -1252,43 +1409,6 @@ public sealed class InspectionMeasurementService(
         return [];
     }
 
-    private IReadOnlyList<WesternElectricViolation> DetectCustom(IReadOnlyList<WesternElectricPoint> points, decimal centerLine, decimal lcl, decimal ucl, decimal sigma, CustomDriftRuleSettings custom)
-    {
-        var violations = custom.IncludeWesternElectric
-            ? westernElectricRuleService.Detect(points, centerLine, lcl, ucl).ToList()
-            : [];
-        var windowSize = Math.Clamp(custom.WindowSize, 2, 25);
-        if (points.Count < windowSize)
-        {
-            return violations;
-        }
-
-        var window = points.TakeLast(windowSize).ToArray();
-        var sigmaThreshold = custom.SigmaThreshold <= 0 ? 1m : custom.SigmaThreshold;
-        var minimumPoints = Math.Clamp(custom.MinimumPointsBeyondThreshold, 1, windowSize);
-        var upperThreshold = centerLine + sigma * sigmaThreshold;
-        var lowerThreshold = centerLine - sigma * sigmaThreshold;
-        var aboveCount = window.Count(point => point.Value > upperThreshold);
-        var belowCount = window.Count(point => point.Value < lowerThreshold);
-        var triggered = custom.Direction switch
-        {
-            "Above" => aboveCount >= minimumPoints,
-            "Below" => belowCount >= minimumPoints,
-            "EitherSide" => aboveCount + belowCount >= minimumPoints,
-            _ => aboveCount >= minimumPoints || belowCount >= minimumPoints
-        };
-
-        if (triggered)
-        {
-            violations.Add(new WesternElectricViolation(
-                RuleTriggered.CustomRuleTriggered,
-                window.Select(point => point.MeasurementId).ToArray(),
-                window[^1].Timestamp));
-        }
-
-        return violations;
-    }
-
     private static decimal Sigma(decimal centerLine, decimal lcl, decimal ucl)
     {
         var sigma = (ucl - centerLine) / 3m;
@@ -1326,9 +1446,10 @@ public sealed class InspectionMeasurementService(
     private bool CreateSpecLimitAlert(InspectionMeasurement measurement)
     {
         var spec = FindSpecLimit(measurement);
-        if (spec is null ||
+        var rejectedPin = measurement.GagePinNumber == 7;
+        if (!rejectedPin && (spec is null ||
             (!spec.Lsl.HasValue && !spec.Usl.HasValue) ||
-            (!IsBelowLowerSpec(measurement.Value, spec) && !IsAboveUpperSpec(measurement.Value, spec)))
+            (!IsBelowLowerSpec(measurement.Value, spec) && !IsAboveUpperSpec(measurement.Value, spec))))
         {
             return false;
         }
@@ -1342,7 +1463,7 @@ public sealed class InspectionMeasurementService(
             OperatorUserId = measurement.OperatorUserId,
             OperatorShift = measurement.OperatorShift,
             RuleTriggered = RuleTriggered.SpecLimitViolation,
-            Detail = SpecLimitDetail(measurement, spec),
+            Detail = rejectedPin ? $"Gage pin 7 rejected (auto-fail). Recorded diameter {measurement.Value}." : SpecLimitDetail(measurement, spec!),
             LockedAt = measurement.Timestamp
         };
 

@@ -33,9 +33,9 @@ public sealed record JobVariableMeanRow(
     string CharacteristicName,
     CharacteristicType CharacteristicType,
     string UnitOfMeasure,
-    decimal Nominal,
-    decimal Lsl,
-    decimal Usl,
+    decimal? Nominal,
+    decimal? Lsl,
+    decimal? Usl,
     decimal? Mean,
     decimal? Min,
     decimal? Max,
@@ -46,7 +46,10 @@ public sealed record JobVariableMeanRow(
     decimal? Ppk,
     int Count,
     int OutOfSpecExcludedCount,
-    string Status);
+    string Status,
+    int OutOfSpecCount = 0,
+    decimal? WithinStdDev = null,
+    string CalculationMethod = "");
 
 public sealed class QaSummaryExportService(ISpcRepository repository)
 {
@@ -106,7 +109,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         return BuildJobVariableMeans([jobNum]);
     }
 
-    public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildPartCapability(string partNum)
+    public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildPartCapability(string partNum, string? shift = null, DataReviewFilter? filter = null)
     {
         if (string.IsNullOrWhiteSpace(partNum))
         {
@@ -124,26 +127,30 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             join process in repository.Processes on operation.ProcessId equals process.Id
             join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
             join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
-            where operation.PartId == part.Id && characteristic.Type == CharacteristicType.Variable
+            where operation.PartId == part.Id && characteristic.Type == CharacteristicType.Variable &&
+                (filter == null || (DataReviewFilter.Text(filter.ProcessCode, process.ProcessCode) &&
+                    (!filter.OperationSeq.HasValue || operation.OperationSeq == filter.OperationSeq) &&
+                    DataReviewFilter.Text(filter.CharacteristicName, characteristic.Name)))
             orderby operation.OperationSeq, characteristic.Name
             select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Id, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, spec.Nominal, spec.Lsl, spec.Usl };
 
         var rows = plans
-            .Select(plan => BuildCapabilityRow("All Jobs", plan.PartNum, plan.ProcessCode, plan.OperationSeq, PhaseText(plan.Id), plan.Name, plan.Type, plan.UnitOfMeasure, plan.Nominal, plan.Lsl, plan.Usl,
+            .Select(plan => BuildCapabilityRow("All Jobs", plan.PartNum, plan.ProcessCode, plan.OperationSeq, filter?.InspectionPhase ?? PhaseText(plan.Id), plan.Name, plan.Type, plan.UnitOfMeasure, plan.Nominal, plan.Lsl, plan.Usl,
                 repository.Measurements
                     .Where(measurement =>
+                        (string.IsNullOrWhiteSpace(shift) || measurement.OperatorShift.Equals(shift.Trim(), StringComparison.OrdinalIgnoreCase)) &&
+                        (filter == null || filter.Measurement(measurement)) &&
                         measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
                         measurement.ProcessCode.Equals(plan.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
                         measurement.OperationSeq == plan.OperationSeq &&
                         measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
-                    .Select(measurement => measurement.Value)
                     .ToArray()))
             .ToArray();
 
         return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Ok(rows);
     }
 
-    public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildJobVariableMeans(IReadOnlyCollection<string> jobNums)
+    public ServiceResult<IReadOnlyList<JobVariableMeanRow>> BuildJobVariableMeans(IReadOnlyCollection<string> jobNums, string? shift = null, DataReviewFilter? filter = null)
     {
         var requestedJobs = jobNums
             .Where(jobNum => !string.IsNullOrWhiteSpace(jobNum))
@@ -168,7 +175,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         }
 
         var rows = jobs
-            .SelectMany(BuildSingleJobVariableMeans)
+            .SelectMany(job => BuildSingleJobVariableMeans(job, shift, filter))
             .ToArray();
 
         return ServiceResult<IReadOnlyList<JobVariableMeanRow>>.Ok(rows);
@@ -209,7 +216,7 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             "Pp",
             "Ppk",
             "Count",
-            "OutOfSpecExcluded",
+            "OutOfSpecCount",
             "Status"
         };
         var rows = summary.Value.Select(row => new Dictionary<string, string>
@@ -222,9 +229,9 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["CharacteristicName"] = row.CharacteristicName,
             ["CharacteristicType"] = row.CharacteristicType.ToString(),
             ["UnitOfMeasure"] = row.UnitOfMeasure,
-            ["Nominal"] = row.Nominal.ToString("0.#####"),
-            ["LSL"] = row.Lsl.ToString("0.#####"),
-            ["USL"] = row.Usl.ToString("0.#####"),
+            ["Nominal"] = row.Nominal?.ToString("0.#####") ?? "",
+            ["LSL"] = row.Lsl?.ToString("0.#####") ?? "",
+            ["USL"] = row.Usl?.ToString("0.#####") ?? "",
             ["Mean"] = row.Mean?.ToString("0.#####") ?? string.Empty,
             ["Min"] = row.Min?.ToString("0.#####") ?? string.Empty,
             ["Max"] = row.Max?.ToString("0.#####") ?? string.Empty,
@@ -234,14 +241,14 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             ["Pp"] = row.Pp?.ToString("0.#####") ?? string.Empty,
             ["Ppk"] = row.Ppk?.ToString("0.#####") ?? string.Empty,
             ["Count"] = row.Count.ToString(),
-            ["OutOfSpecExcluded"] = row.OutOfSpecExcludedCount.ToString(),
+            ["OutOfSpecCount"] = row.OutOfSpecCount.ToString(),
             ["Status"] = row.Status
         });
 
         return ServiceResult<string>.Ok(CsvSupport.WriteRows(headers, rows));
     }
 
-    private IEnumerable<JobVariableMeanRow> BuildSingleJobVariableMeans(Job job)
+    private IEnumerable<JobVariableMeanRow> BuildSingleJobVariableMeans(Job job, string? shift = null, DataReviewFilter? filter = null)
     {
         var plans =
             from part in repository.Parts
@@ -249,24 +256,28 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             join process in repository.Processes on operation.ProcessId equals process.Id
             join characteristic in repository.Characteristics on operation.Id equals characteristic.OperationId
             join spec in repository.SpecLimits on characteristic.Id equals spec.CharacteristicId
-            where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase)
+            where part.PartNum.Equals(job.PartNum, StringComparison.OrdinalIgnoreCase) &&
+                (filter == null || (DataReviewFilter.Text(filter.ProcessCode, process.ProcessCode) &&
+                    (!filter.OperationSeq.HasValue || operation.OperationSeq == filter.OperationSeq) &&
+                    DataReviewFilter.Text(filter.CharacteristicName, characteristic.Name)))
             orderby operation.OperationSeq, characteristic.Name
             select new { part.PartNum, process.ProcessCode, operation.OperationSeq, characteristic.Id, characteristic.Name, characteristic.Type, characteristic.UnitOfMeasure, spec.Nominal, spec.Lsl, spec.Usl };
 
         return plans.Select(plan =>
-            BuildCapabilityRow(job.JobNum, plan.PartNum, plan.ProcessCode, plan.OperationSeq, PhaseText(plan.Id), plan.Name, plan.Type, plan.UnitOfMeasure, plan.Nominal, plan.Lsl, plan.Usl,
+            BuildCapabilityRow(job.JobNum, plan.PartNum, plan.ProcessCode, plan.OperationSeq, filter?.InspectionPhase ?? PhaseText(plan.Id), plan.Name, plan.Type, plan.UnitOfMeasure, plan.Nominal, plan.Lsl, plan.Usl,
                 repository.Measurements
                 .Where(measurement =>
+                    (string.IsNullOrWhiteSpace(shift) || measurement.OperatorShift.Equals(shift.Trim(), StringComparison.OrdinalIgnoreCase)) &&
+                    (filter == null || filter.Measurement(measurement)) &&
                     measurement.JobNum.Equals(job.JobNum, StringComparison.OrdinalIgnoreCase) &&
                     measurement.PartNum.Equals(plan.PartNum, StringComparison.OrdinalIgnoreCase) &&
                     measurement.ProcessCode.Equals(plan.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
                     measurement.OperationSeq == plan.OperationSeq &&
                     measurement.CharacteristicName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase))
-                .Select(measurement => measurement.Value)
                 .ToArray()));
     }
 
-    private static JobVariableMeanRow BuildCapabilityRow(
+    private JobVariableMeanRow BuildCapabilityRow(
         string jobNum,
         string partNum,
         string processCode,
@@ -278,17 +289,18 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         decimal nominal,
         decimal lsl,
         decimal usl,
-        IReadOnlyCollection<decimal> values)
+        IReadOnlyCollection<InspectionMeasurement> measurements)
     {
-        var acceptedValues = values
-            .Where(value => value >= lsl && value <= usl)
-            .ToArray();
-        var outOfSpecCount = values.Count - acceptedValues.Length;
-        var mean = acceptedValues.Length == 0 ? (decimal?)null : acceptedValues.Average();
-        var stdDev = StandardDeviation(acceptedValues);
-        var capability = characteristicType == CharacteristicType.Variable
-            ? Capability(acceptedValues, lsl, usl)
-            : new CapabilityMetrics(null, null, null, null, null);
+        var characteristic = FindCharacteristic(partNum,processCode,operationSeq,characteristicName);
+        var plans = repository.InspectionPlans.Where(plan => plan.CharacteristicId == characteristic?.Id).ToArray();
+        var applicablePlans = plans.Where(plan => measurements.Count == 0 || measurements.Any(m => m.InspectionPhase.Equals(plan.InspectionPhase,StringComparison.OrdinalIgnoreCase))).ToArray();
+        var specifications = applicablePlans.Select(plan => (plan.Lsl,plan.Usl)).Distinct().ToArray();
+        decimal? lower = plans.Length == 0 ? lsl : specifications.Length == 1 ? specifications[0].Lsl : null;
+        decimal? upper = plans.Length == 0 ? usl : specifications.Length == 1 ? specifications[0].Usl : null;
+        var targets = applicablePlans.Select(plan => plan.Nominal).Distinct().ToArray();
+        decimal? target = plans.Length == 0 ? nominal : targets.Length == 1 ? targets[0] : null;
+        var result = new CapabilityCalculationService(repository).Calculate(measurements,lower,upper);
+        var measured = characteristicType == CharacteristicType.Variable;
 
         return new JobVariableMeanRow(
             jobNum,
@@ -299,20 +311,10 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
             characteristicName,
             characteristicType,
             unitOfMeasure,
-            nominal,
-            lsl,
-            usl,
-            mean,
-            acceptedValues.Length == 0 ? null : acceptedValues.Min(),
-            acceptedValues.Length == 0 ? null : acceptedValues.Max(),
-            stdDev,
-            capability.Cp,
-            capability.Cpk,
-            capability.Pp,
-            capability.Ppk,
-            acceptedValues.Length,
-            outOfSpecCount,
-            values.Count == 0 ? "NoData" : acceptedValues.Length == 0 ? PassFailStatus.Fail.ToString() : PassFailStatus.Pass.ToString());
+            target, lower, upper, result.Mean,result.Min,result.Max,result.OverallStdDev,
+            measured ? result.Cp : null,measured ? result.Cpk : null,measured ? result.Pp : null,measured ? result.Ppk : null,
+            result.Count,0,result.Count == 0 ? "NoData" : specifications.Length > 1 ? "Mixed specification limits" : "Calculated; no acceptance requirement",
+            result.OutOfSpecCount,result.WithinStdDev,specifications.Length > 1 ? "Capability unavailable across mixed phase specification limits" : result.WithinMethod);
     }
 
     public ServiceResult<string> ExportCsv(QaSummaryExportRequest request)
@@ -443,22 +445,4 @@ public sealed class QaSummaryExportService(ISpcRepository repository)
         return (decimal)Math.Sqrt(values.Select(value => Math.Pow((double)(value - mean), 2)).Sum() / (values.Count - 1));
     }
 
-    private sealed record CapabilityMetrics(decimal? StdDev, decimal? Cp, decimal? Cpk, decimal? Pp, decimal? Ppk);
-
-    private static CapabilityMetrics Capability(IReadOnlyCollection<decimal> values, decimal lsl, decimal usl)
-    {
-        var stdDev = StandardDeviation(values);
-        if (!stdDev.HasValue || stdDev.Value <= 0 || values.Count < 2 || lsl == usl)
-        {
-            return new CapabilityMetrics(stdDev, null, null, null, null);
-        }
-
-        var mean = values.Average();
-        var cp = (usl - lsl) / (6 * stdDev.Value);
-        var lowerCapability = (mean - lsl) / (3 * stdDev.Value);
-        var upperCapability = (usl - mean) / (3 * stdDev.Value);
-        var cpk = Math.Min(lowerCapability, upperCapability);
-
-        return new CapabilityMetrics(stdDev, cp, cpk, cp, cpk);
-    }
 }

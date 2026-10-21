@@ -13,7 +13,8 @@ public sealed record ChartDataRequest(
     DateTimeOffset? To,
     string? InspectionPhase = null,
     string? ProcessCode = null,
-    int? OperationSeq = null);
+    int? OperationSeq = null,
+    string? OperatorShift = null);
 
 public sealed record ChartPoint(
     Guid MeasurementId,
@@ -21,7 +22,10 @@ public sealed record ChartPoint(
     decimal Value,
     decimal? MovingRange,
     bool HasRuleViolation,
-    IReadOnlyList<RuleTriggered> RuleViolations);
+    IReadOnlyList<RuleTriggered> RuleViolations,
+    bool IsFailed = false,
+    bool IsWatch = false,
+    string WatchReason = "");
 
 public sealed record ChartDataSet(
     ChartType ChartType,
@@ -43,6 +47,7 @@ public sealed class ChartDataService(ISpcRepository repository)
                 Matches(request.ProcessCode, measurement.ProcessCode) &&
                 (!request.OperationSeq.HasValue || measurement.OperationSeq == request.OperationSeq.Value) &&
                 Matches(request.ResourceId, measurement.ResourceId) &&
+                Matches(request.OperatorShift, measurement.OperatorShift) &&
                 Matches(request.CharacteristicName, measurement.CharacteristicName) &&
                 Matches(request.InspectionPhase, measurement.InspectionPhase) &&
                 (!request.From.HasValue || measurement.Timestamp >= request.From.Value) &&
@@ -58,12 +63,20 @@ public sealed class ChartDataService(ISpcRepository repository)
                 group => (IReadOnlyList<RuleTriggered>)group.Select(item => item.RuleTriggered).Distinct().ToArray());
 
         var points = new List<ChartPoint>();
+        var modernCustomAlertIds = repository.Alerts.Where(alert => alert.RuleTriggered == RuleTriggered.CustomRuleTriggered &&
+            !string.IsNullOrEmpty(alert.WatchScope)).Select(alert => alert.Id).ToHashSet();
+        var legacyWarningIds = repository.RuleViolations.Where(violation =>
+            violation.RuleTriggered is not (RuleTriggered.SpecLimitViolation or RuleTriggered.AttributeRejected) &&
+            !modernCustomAlertIds.Contains(violation.AlertId)).SelectMany(violation => violation.MeasurementIds).ToHashSet();
         decimal? previousValue = null;
         foreach (var measurement in measurements)
         {
             var violations = violationLookup.GetValueOrDefault(measurement.Id) ?? [];
             var movingRange = previousValue.HasValue ? Math.Abs(measurement.Value - previousValue.Value) : (decimal?)null;
-            points.Add(new ChartPoint(measurement.Id, measurement.Timestamp, measurement.Value, movingRange, violations.Count > 0, violations));
+            var isFailed = violations.Any(rule => rule is RuleTriggered.SpecLimitViolation or RuleTriggered.AttributeRejected);
+            var isWatch = !isFailed && (!string.IsNullOrWhiteSpace(measurement.WatchReason) || legacyWarningIds.Contains(measurement.Id));
+            points.Add(new ChartPoint(measurement.Id, measurement.Timestamp, measurement.Value, movingRange, violations.Count > 0, violations,
+                isFailed, isWatch, isWatch ? measurement.WatchReason : ""));
             previousValue = measurement.Value;
         }
 

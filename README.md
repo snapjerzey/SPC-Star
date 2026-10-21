@@ -2,6 +2,10 @@
 
 Internal SPC platform for manufacturing inspection, drift detection, lock overrides, material traceability, job handoff notes, setup management, and QA exports.
 
+Current software version: **1.4.3**. Company databases, setup workbooks, source-sheet
+exports, certificate templates and private audit fixtures are not distributed in
+this repository. See [GitHub Data Boundary](docs/github-data-boundary.md).
+
 ## Current milestone
 
 This repository currently contains a working local browser/tablet-first SPC application:
@@ -20,22 +24,25 @@ This repository currently contains a working local browser/tablet-first SPC appl
 - Part-specific material requirements from setup/import, with lot entry on the inspection screen.
 - Ordered inspection-item entry for measured variables and accept/reject attributes, with inactive phase items removed from the operator view.
 - Accept/Reject inspection support for lot-level attribute disposition.
-- Live row-based min, max, mean, standard deviation, Cp, Cpk, Pp, and Ppk summary for every active measured variable, based on the saved job/machine/operation/phase history for that variable.
-- Cp, Cpk, Pp, and Ppk calculations with shared red/yellow/green visual status cues.
-- Trend chart rendering with chart type selection, filtered to the loaded job, machine, part, process, operation, phase, and inspection item.
-- Drift detection rule selection with a global default, part-level override, and editable system capability thresholds.
+- Job capability and inspection Trend use saved readings across phases and machines for the same job, operation and variable.
+- Cp/Cpk use within-inspection variation; Pp/Ppk use overall variation. Capability indices do not use global pass/fail thresholds.
+- Trend charts distinguish normal, WATCH and failed measurements. Data charts support shared reporting filters.
+- Drift rules support a global default and inspection-item overrides, with configurable custom trend, near-limit and recovery conditions.
 - Western Electric, Nelson-style trend, CUSUM, EWMA, moving average trend, linear trend/slope, custom default, spec-limit-only, and no-automatic-rule options.
 - Full lock enforcement for out-of-spec measured values and rejected attributes. Process drift is shown as a warning beside the inspection variable instead of locking the operator out.
-- Authorized lock-clear workflow with credential validation, cause/action notes, line tech/admin/QA support, and Archon/System Manager authority for system-level actions.
+- Operators can clear their own User Error with their credentials. Genuine Machine, Tooling or Material failures require authorized signoff and End Failed Inspection; those categories cannot clear a lock.
+- Failed inspections permit an immediate repeat at the current counter. Quantity frequencies stack from the actual run's starting counter rather than zero, without sliding after late or extra inspections.
 - Material lot change logging for job/resource traceability.
-- Timestamped job notes for operator handoff and issue history.
-- History tab combining ledger review, charts, top issue analysis, and job-data export. It carries part/job filters across Ledger, Charts, Top Issues, and Export.
-- History ledger for part capability across all jobs, part/job review, measurement history, notes, locks, material history, editable inspection entries, and machine counter edits.
-- Top Issues history report for repeat out-of-spec, drift, and rejected-attribute events by part, inspection item, rule/signal, cause category, shift, timeframe, affected jobs, and affected machines.
-- History measurement highlighting: red for out-of-spec values and yellow for out-of-control values.
+- Timestamped job notes retain their original authors. QA can review and respond in Admin > Notes; operators see replies in inspection-side Job History when it reloads.
+- Data contains Ledger, Part Quality, Charts, Top Issues and certificate functions. The reporting tabs share Part, Job, Operation, Phase, Machine, Shift, Variable, From and To filters.
+- Ledger includes completion details, failed readings and reasons, material history, authorized corrections and XLSX export with job notes and responses.
+- Part Quality summarizes finalized inspections and variable-specific failures with phase, cause, action and notes.
+- Top Issues counts out-of-spec and rejected-attribute events, not custom WATCH warnings or User Error corrections.
+- Failed measurements are red; WATCH measurements are yellow in Ledger and its export.
 - QA summary views and CSV export for one or more jobs, including mean, min, max, standard deviation, Cp, Cpk, Pp, and Ppk.
 - Raw inspection, alert, material, and job history CSV exports, with operator shift stamped on new inspection and alert rows for shift-based reporting.
-- System Manager-only Archive tab for exporting old historical records to a JSON archive file before removing them from the live database.
+- Admin provides read-only Change History for saved changes and the restricted Archive function. QA can view Change History; QA - Read only cannot edit records. Data/configuration imports and database maintenance require System Manager access.
+- Valid sessions survive routine restarts and browser refresh. Invalid sessions request sign-in over the existing screen, retaining current entries without automatically resubmitting them.
 - USB keyboard-style measurement capture support for gauges/scales/calipers that enter values into focused fields, including value cleanup and Enter-to-next-field behavior.
 - Web Serial text-gauge capture for USB devices that expose serial readings instead of acting like a keyboard.
 - Offline-oriented setup snapshot and retry-safe sync contracts.
@@ -49,6 +56,12 @@ With the .NET 8 SDK available, run:
 
 ```powershell
 dotnet test SPCStar.sln
+```
+
+Run browser-code regression tests with Node.js:
+
+```powershell
+node --test tests/SPCStar.Web.Tests/*.test.mjs
 ```
 
 ## Database

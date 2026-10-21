@@ -16,7 +16,9 @@ public sealed record MaterialChangeLogEntry(
     string Reason,
     string? DeviceId = null,
     string? ClientRecordId = null,
-    DateTimeOffset? SubmittedAt = null);
+    DateTimeOffset? SubmittedAt = null,
+    string? MaterialName = null,
+    string? MaterialDescription = null);
 
 public sealed record UpdateMaterialLotRequest(
     string NewLotNum,
@@ -30,6 +32,12 @@ public sealed class MaterialChangeLogService(ISpcRepository repository, Permissi
     public ServiceResult<MaterialChangeLog> Record(MaterialChangeLogEntry entry)
     {
         var errors = Validate(entry);
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum.Equals(entry.PartNum.Trim(), StringComparison.OrdinalIgnoreCase));
+        var fieldNames = repository.PartMaterialFields.Where(field => field.PartId == part?.Id &&
+            field.MaterialPartNum.Equals(entry.MaterialPartNum.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Select(field => field.MaterialName).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (fieldNames.Length > 1 && string.IsNullOrWhiteSpace(entry.MaterialName))
+            errors.Add("Material field name is required when multiple material fields use the same part number. Reload the inspection before saving.");
         if (errors.Count > 0)
         {
             return ServiceResult<MaterialChangeLog>.Fail(errors);
@@ -48,7 +56,11 @@ public sealed class MaterialChangeLogService(ISpcRepository repository, Permissi
             JobNum = entry.JobNum.Trim(),
             PartNum = entry.PartNum.Trim(),
             MaterialPartNum = entry.MaterialPartNum.Trim(),
-            OldLotNum = entry.OldLotNum.Trim(),
+            MaterialName = CleanOptional(entry.MaterialName) ?? "",
+            MaterialDescription = CleanOptional(entry.MaterialDescription) ?? "",
+            OldLotNum = string.IsNullOrWhiteSpace(entry.OldLotNum)
+                ? JobMaterialRules.CurrentIssue(repository, entry.JobNum, entry.PartNum, entry.MaterialPartNum, entry.MaterialName)?.NewLotNum ?? ""
+                : entry.OldLotNum.Trim(),
             NewLotNum = entry.NewLotNum.Trim(),
             QuantityLoaded = entry.QuantityLoaded,
             ResourceId = entry.ResourceId.Trim(),
@@ -59,6 +71,8 @@ public sealed class MaterialChangeLogService(ISpcRepository repository, Permissi
             SyncedAt = DateTimeOffset.UtcNow
         };
 
+        log.MaterialName = JobMaterialRules.MaterialName(repository, log);
+        log.MaterialDescription = JobMaterialRules.MaterialDescription(repository, log);
         repository.MaterialChanges.Add(log);
         return ServiceResult<MaterialChangeLog>.Ok(log);
     }
@@ -102,7 +116,7 @@ public sealed class MaterialChangeLogService(ISpcRepository repository, Permissi
             ResourceId = log.ResourceId,
             OperatorUserId = editedBy,
             Timestamp = editedAt,
-            NoteText = $"Material lot corrected for {log.MaterialPartNum} from {oldLot} to {newLot}."
+            NoteText = $"Material lot corrected for {JobMaterialRules.MaterialName(repository, log)} ({log.MaterialPartNum}) from {oldLot} to {newLot}."
         });
 
         return ServiceResult<MaterialChangeLog>.Ok(log);

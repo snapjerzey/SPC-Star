@@ -9,6 +9,51 @@ public static class SeedData
         SeedSecurity(repository);
         NormalizeLegacyProductGroups(repository);
         NormalizeGeneratedOneSidedSpecLimits(repository);
+        Normalize70310MaterialFields(repository);
+        Normalize70306WeldNubSamples(repository);
+    }
+
+    private static void Normalize70306WeldNubSamples(ISpcRepository repository)
+    {
+        var partIds = repository.Parts.Where(part => part.PartNum == "70306").Select(part => part.Id).ToHashSet();
+        var operationIds = repository.Operations.Where(operation => partIds.Contains(operation.PartId)).Select(operation => operation.Id).ToHashSet();
+        var characteristicIds = repository.Characteristics
+            .Where(characteristic => operationIds.Contains(characteristic.OperationId)
+                && characteristic.Name.Equals("Weld Nub Dia. (2X)", StringComparison.OrdinalIgnoreCase))
+            .Select(characteristic => characteristic.Id).ToHashSet();
+        foreach (var plan in repository.InspectionPlans.Where(plan => characteristicIds.Contains(plan.CharacteristicId) && plan.SampleSize == 3))
+        {
+            plan.SampleSize = 6;
+        }
+    }
+
+    private static void Normalize70310MaterialFields(ISpcRepository repository)
+    {
+        var part = repository.Parts.FirstOrDefault(item => item.PartNum == "70310");
+        if (part is null) return;
+
+        foreach (var field in repository.PartMaterialFields
+            .Where(item => item.PartId == part.Id && item.MaterialPartNum.Replace(" ", "") == "61033/51510")
+            .ToArray())
+        {
+            field.MaterialName = "Raw material 61033";
+            field.MaterialPartNum = "61033";
+            field.MaterialDescription = "";
+            if (!repository.PartMaterialFields.Any(item =>
+                item.PartId == part.Id && item.InspectionPhase == field.InspectionPhase && item.MaterialPartNum == "51510"))
+            {
+                repository.PartMaterialFields.Add(new PartMaterialField
+                {
+                    PartId = part.Id,
+                    InspectionPhase = field.InspectionPhase,
+                    MaterialName = "Raw material 51510",
+                    MaterialPartNum = "51510",
+                    MaterialDescription = "",
+                    IsRequired = field.IsRequired,
+                    DisplayOrder = field.DisplayOrder + 1
+                });
+            }
+        }
     }
 
     public static void SeedSecurity(ISpcRepository repository)
@@ -28,6 +73,9 @@ public static class SeedData
             PermissionNames.CanExportQAData,
             PermissionNames.CanManageUsers);
         qa.Permissions.Remove(PermissionNames.CanImportSetupData);
+        qa.Permissions.UnionWith([PermissionNames.CanViewChangeHistory, PermissionNames.CanEditInspectionHistory, PermissionNames.CanGenerateCerts]);
+        var readOnly = UpsertRole(repository, RoleNames.QAReadOnly, PermissionNames.CanExportQAData, PermissionNames.CanGenerateCerts);
+        readOnly.Permissions.IntersectWith([PermissionNames.CanExportQAData, PermissionNames.CanGenerateCerts]);
         var god = UpsertRole(
             repository,
             RoleNames.GOD,
@@ -40,6 +88,7 @@ public static class SeedData
             PermissionNames.CanUseGodMode);
 
         MigrateAdminRoleToQa(repository, qa);
+        god.Permissions.UnionWith([PermissionNames.CanViewChangeHistory, PermissionNames.CanEditInspectionHistory, PermissionNames.CanGenerateCerts]);
         AddDefaultUser(repository, "Archon", "archon", god);
     }
 
@@ -187,7 +236,16 @@ public static class SeedData
 
     private static void NormalizeGeneratedOneSidedSpecLimits(ISpcRepository repository)
     {
-        foreach (var spec in repository.SpecLimits.Where(spec => IsGeneratedOneSidedSpec(spec.Nominal, spec.Lsl, spec.Usl)).ToArray())
+        bool HasExplicitRange(Guid characteristicId, decimal lsl, decimal usl) => repository.InspectionPlans.Any(plan =>
+            plan.CharacteristicId == characteristicId && plan.Nominal is null && plan.Lsl == lsl && plan.Usl == usl);
+        bool HasExplicitControlRange(ControlLimitSet limit)
+        {
+            var part = repository.Parts.FirstOrDefault(p => p.PartNum == limit.PartNum);
+            var process = repository.Processes.FirstOrDefault(p => p.ProcessCode == limit.ProcessCode);
+            var operations = repository.Operations.Where(o => o.PartId == part?.Id && o.ProcessId == process?.Id && o.OperationSeq == limit.OperationSeq).Select(o => o.Id).ToHashSet();
+            return repository.Characteristics.Any(c => operations.Contains(c.OperationId) && c.Name == limit.CharacteristicName && HasExplicitRange(c.Id, limit.Lcl, limit.Ucl));
+        }
+        foreach (var spec in repository.SpecLimits.Where(spec => IsGeneratedOneSidedSpec(spec.Nominal, spec.Lsl, spec.Usl) && !HasExplicitRange(spec.CharacteristicId, spec.Lsl, spec.Usl)).ToArray())
         {
             foreach (var plan in repository.InspectionPlans.Where(plan => plan.CharacteristicId == spec.CharacteristicId))
             {
@@ -224,8 +282,8 @@ public static class SeedData
             }
         }
 
-        repository.SpecLimits.RemoveAll(spec => IsGeneratedOneSidedSpec(spec.Nominal, spec.Lsl, spec.Usl));
-        repository.ControlLimits.RemoveAll(limit => IsGeneratedOneSidedSpec(limit.CenterLine, limit.Lcl, limit.Ucl));
+        repository.SpecLimits.RemoveAll(spec => IsGeneratedOneSidedSpec(spec.Nominal, spec.Lsl, spec.Usl) && !HasExplicitRange(spec.CharacteristicId, spec.Lsl, spec.Usl));
+        repository.ControlLimits.RemoveAll(limit => IsGeneratedOneSidedSpec(limit.CenterLine, limit.Lcl, limit.Ucl) && !HasExplicitControlRange(limit));
     }
 
     private static bool HasAnyPlanSpec(InspectionPlan plan) =>

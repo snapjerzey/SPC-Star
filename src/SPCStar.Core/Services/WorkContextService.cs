@@ -50,7 +50,9 @@ public sealed record WorkContextDto(
     ActiveLockDto? ActiveLock,
     ProcessWarningDto? ProcessWarning,
     WorkCapabilityDto Capability,
-    IReadOnlyList<ChartPoint> RecentMeasurements);
+    IReadOnlyList<ChartPoint> RecentMeasurements,
+    long MinimumMachineCounter = 0,
+    long? NextMachineCounterDue = null);
 
 public sealed record WorkCapabilityDto(
     decimal? Mean,
@@ -62,7 +64,11 @@ public sealed record WorkCapabilityDto(
     decimal? Pp,
     decimal? Ppk,
     int Count,
-    int OutOfSpecExcludedCount);
+    int OutOfSpecExcludedCount,
+    int OutOfSpecCount = 0,
+    decimal? WithinStdDev = null,
+    int SubgroupCount = 0,
+    string CalculationMethod = "");
 
 public sealed class WorkContextService(
     ISpcRepository repository,
@@ -73,6 +79,7 @@ public sealed class WorkContextService(
     public IReadOnlyList<WorkContextDto> BuildBatch(WorkContextBatchRequest request)
     {
         var now = request.Now ?? DateTimeOffset.UtcNow;
+        var schedule = new MachineCounterSchedule(repository);
         return request.CharacteristicNames
             .Where(characteristicName => !string.IsNullOrWhiteSpace(characteristicName))
             .Select(characteristicName => Build(new WorkContextRequest(
@@ -83,11 +90,14 @@ public sealed class WorkContextService(
                 request.ResourceId,
                 characteristicName.Trim(),
                 now,
-                request.InspectionPhase)))
+                request.InspectionPhase), schedule))
             .ToArray();
     }
 
     public WorkContextDto Build(WorkContextRequest request)
+        => Build(request, new MachineCounterSchedule(repository));
+
+    private WorkContextDto Build(WorkContextRequest request, MachineCounterSchedule schedule)
     {
         var plan = setupQueryService
             .GetInspectionPlans(request.PartNum)
@@ -137,12 +147,22 @@ public sealed class WorkContextService(
         var processWarning = repository.Alerts
             .Where(alert =>
                 alert.Status == AlertStatus.Warning &&
+                (alert.RuleTriggered != RuleTriggered.CustomRuleTriggered || repository.Settings.CustomDriftRule.Options.Enabled) &&
+                (alert.RuleTriggered != RuleTriggered.CustomRuleTriggered || (alert.WatchScope.Length > 0
+                    ? alert.WatchScope == $"{request.ProcessCode}|{request.OperationSeq}|{NormalizeInspectionPhase(request.InspectionPhase)}".ToLowerInvariant()
+                    : repository.RuleViolations.Any(violation =>
+                    violation.AlertId == alert.Id && repository.Measurements.Any(measurement =>
+                        violation.MeasurementIds.Contains(measurement.Id) &&
+                        measurement.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                        measurement.OperationSeq == request.OperationSeq &&
+                        NormalizeInspectionPhase(measurement.InspectionPhase).Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase))))) &&
                 alert.JobNum.Equals(request.JobNum, StringComparison.OrdinalIgnoreCase) &&
                 alert.PartNum.Equals(request.PartNum, StringComparison.OrdinalIgnoreCase) &&
                 alert.ResourceId.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
                 alert.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(alert => alert.LockedAt)
-            .Select(alert => new ProcessWarningDto(alert.Id, alert.CharacteristicName, alert.RuleTriggered, alert.LockedAt, alert.OperatorUserId, alert.Detail))
+            .Select(alert => new ProcessWarningDto(alert.Id, alert.CharacteristicName, alert.RuleTriggered, alert.LockedAt, alert.OperatorUserId,
+                alert.NormalWatchInspections > 0 ? $"{alert.Detail} Recovery: {alert.NormalWatchInspections} of {repository.Settings.CustomDriftRule.Options.RecoveryInspections} normal inspections." : alert.Detail))
             .FirstOrDefault();
 
         return new WorkContextDto(
@@ -156,55 +176,42 @@ public sealed class WorkContextService(
             activeLock,
             processWarning,
             BuildCapability(request, plan),
-            chart.Points.TakeLast(10).ToArray());
+            chart.Points.TakeLast(10).ToArray(),
+            JobMachineCounterRules.Minimum(repository, request.JobNum),
+            plan?.FrequencyType == FrequencyType.Quantity && plan.FrequencyUnit is FrequencyUnit.Pieces or FrequencyUnit.Box
+                ? schedule.NextDue(request.JobNum, request.PartNum, request.ProcessCode, request.OperationSeq,
+                    request.CharacteristicName, plan.FrequencyValue, plan.FirstDueValue)
+                : null);
     }
 
     private WorkCapabilityDto BuildCapability(WorkContextRequest request, InspectionPlanSetupDto? plan)
     {
-        if (plan is null || plan.CharacteristicType == CharacteristicType.Attribute || !plan.Lsl.HasValue || !plan.Usl.HasValue || plan.Lsl.Value == plan.Usl.Value)
+        if (plan is null || plan.CharacteristicType == CharacteristicType.Attribute)
         {
             return new WorkCapabilityDto(null, null, null, null, null, null, null, null, 0, 0);
         }
 
-        var allValues = repository.Measurements
+        var measurements = repository.Measurements
             .Where(measurement =>
                 measurement.JobNum.Equals(request.JobNum, StringComparison.OrdinalIgnoreCase) &&
                 measurement.PartNum.Equals(request.PartNum, StringComparison.OrdinalIgnoreCase) &&
                 measurement.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
                 measurement.OperationSeq == request.OperationSeq &&
-                measurement.ResourceId.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
-                measurement.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase) &&
-                measurement.InspectionPhase.Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase))
-            .Select(measurement => measurement.Value)
+                measurement.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        var values = allValues
-            .Where(value => value >= plan.Lsl.Value && value <= plan.Usl.Value)
-            .ToArray();
-        var outOfSpecExcludedCount = allValues.Length - values.Length;
-        var mean = values.Length == 0 ? (decimal?)null : values.Average();
-        var min = values.Length == 0 ? (decimal?)null : values.Min();
-        var max = values.Length == 0 ? (decimal?)null : values.Max();
-        var stdDev = StandardDeviation(values);
-        if (!stdDev.HasValue || stdDev.Value <= 0 || values.Length < 2)
-        {
-            return new WorkCapabilityDto(mean, min, max, stdDev, null, null, null, null, values.Length, outOfSpecExcludedCount);
-        }
-
-        var meanValue = mean.GetValueOrDefault();
-        var cp = (plan.Usl.Value - plan.Lsl.Value) / (6 * stdDev.Value);
-        var cpk = Math.Min((meanValue - plan.Lsl.Value) / (3 * stdDev.Value), (plan.Usl.Value - meanValue) / (3 * stdDev.Value));
-        return new WorkCapabilityDto(mean, min, max, stdDev, cp, cpk, cp, cpk, values.Length, outOfSpecExcludedCount);
-    }
-
-    private static decimal? StandardDeviation(IReadOnlyCollection<decimal> values)
-    {
-        if (values.Count < 2)
-        {
-            return null;
-        }
-
-        var mean = values.Average();
-        return (decimal)Math.Sqrt(values.Select(value => Math.Pow((double)(value - mean), 2)).Sum() / (values.Count - 1));
+        var specifications = setupQueryService.GetInspectionPlans(request.PartNum)
+            .Where(item => item.ProcessCode.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) &&
+                item.OperationSeq == request.OperationSeq &&
+                item.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase) &&
+                (measurements.Length == 0 || measurements.Any(measurement =>
+                    measurement.InspectionPhase.Equals(item.InspectionPhase, StringComparison.OrdinalIgnoreCase))))
+            .Select(item => (item.Lsl, item.Usl)).Distinct().ToArray();
+        var lower = specifications.Length == 1 ? specifications[0].Lsl : null;
+        var upper = specifications.Length == 1 ? specifications[0].Usl : null;
+        var result = new CapabilityCalculationService(repository).Calculate(measurements,lower,upper);
+        return new(result.Mean,result.Min,result.Max,result.OverallStdDev,result.Cp,result.Cpk,result.Pp,result.Ppk,result.Count,0,
+            result.OutOfSpecCount,result.WithinStdDev,result.SubgroupCount,
+            specifications.Length > 1 ? "Capability unavailable across mixed phase specification limits" : result.WithinMethod);
     }
 
     private static string NormalizeInspectionPhase(string? value)

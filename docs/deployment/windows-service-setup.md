@@ -31,6 +31,8 @@ Run PowerShell as Administrator from the current SPC-Star project or IT handoff 
 
 ## Standard Update
 
+For a packaged pilot USB patch, IT runs only the supplied `UPDATE-SPCSTAR.ps1` as Administrator from the patch folder. It preserves production data and history, refreshes setup from the bundled current workbook with `replaceSetup=true`, and restarts the `SPC-Star` Windows Service. Do not delete/reinstall, run extra source-project scripts, or manually import again. The source-project command below is a separate deployment option, not an additional patch step.
+
 Run PowerShell as Administrator from the current SPC-Star project or IT handoff package:
 
 ```powershell

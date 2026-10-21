@@ -7,10 +7,21 @@ public sealed class PermissionService(ISpcRepository repository)
 {
     public bool UserHasPermission(string userName, string permission)
     {
+        if (UserIsReadOnly(userName) && permission is not (PermissionNames.CanExportQAData or PermissionNames.CanGenerateCerts)) return false;
+        if (permission.Equals(PermissionNames.CanImportSetupData, StringComparison.OrdinalIgnoreCase) &&
+            !UserIsSystemManager(userName)) return false;
         return repository.Users
             .FirstOrDefault(user => string.Equals(user.UserName, userName, StringComparison.OrdinalIgnoreCase))
             ?.Roles.Any(role => role.Permissions.Contains(permission)) == true;
     }
+
+    public bool UserIsSystemManager(string userName) => repository.Users
+        .FirstOrDefault(user => user.UserName.Equals(userName, StringComparison.OrdinalIgnoreCase))
+        ?.Roles.Any(role => role.Name.Equals(RoleNames.GOD, StringComparison.OrdinalIgnoreCase)) == true;
+
+    public bool UserIsReadOnly(string userName) => !UserIsSystemManager(userName) && repository.Users
+        .FirstOrDefault(user => user.UserName.Equals(userName, StringComparison.OrdinalIgnoreCase))
+        ?.Roles.Any(role => role.Name.Equals(RoleNames.QAReadOnly, StringComparison.OrdinalIgnoreCase)) == true;
 
     public string? HighestOverrideRole(string userName)
     {

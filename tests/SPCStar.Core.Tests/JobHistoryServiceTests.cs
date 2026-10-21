@@ -8,6 +8,41 @@ namespace SPCStar.Core.Tests;
 public sealed class JobHistoryServiceTests
 {
     [Fact]
+    public void FailedInspection_IncludesItsLinkedLockViolationWithoutBorrowingOtherLocks()
+    {
+        var repository = new InMemorySpcRepository();
+        var alert = new ProcessAlert
+        {
+            JobNum = "J100", PartNum = "P100", ResourceId = "PRESS1",
+            CharacteristicName = "Overall Width - Upper", OperatorUserId = "operator1",
+            RuleTriggered = RuleTriggered.SpecLimitViolation,
+            Detail = "Entered value 0.210 is above the upper specification limit 0.205.",
+            Status = AlertStatus.Overridden
+        };
+        repository.Alerts.Add(alert);
+        var failure = new FailedInspection
+        {
+            JobNum = "J100", PartNum = "P100", ResourceId = "PRESS1", ProcessCode = "MOLD",
+            OperationSeq = 10, InspectionPhase = "In Process", FailedByUserId = "operator1",
+            AlertId = alert.Id, CauseCategory = "Tooling", CauseText = "Worn tool",
+            SolutionText = "Replaced tool", FailureDetail = "Old incomplete detail"
+        };
+        repository.FailedInspections.Add(failure);
+        var row = Assert.Single(new JobHistoryService(repository).GetForJob("J100"), item => item.EntryType == "InspectionFailed");
+        Assert.Equal("Overall Width - Upper", row.CharacteristicName);
+        Assert.Equal(RuleTriggered.SpecLimitViolation, row.RuleTriggered);
+        Assert.Equal($"Overall Width - Upper: {alert.Detail}", row.Detail);
+        Assert.Equal("Tooling", row.CauseCategory);
+        Assert.Equal("Worn tool", row.CauseText);
+        Assert.Equal("Replaced tool", row.SolutionText);
+        Assert.Single(repository.Alerts);
+        failure.AlertId = null;
+        row = Assert.Single(new JobHistoryService(repository).GetForJob("J100"), item => item.EntryType == "InspectionFailed");
+        Assert.Equal("Old incomplete detail", row.Detail);
+        Assert.Null(row.CharacteristicName);
+    }
+
+    [Fact]
     public void GetForJob_ReturnsNotesAndLockHistory()
     {
         var repository = new InMemorySpcRepository();
@@ -239,7 +274,7 @@ public sealed class JobHistoryServiceTests
     }
 
     [Fact]
-    public void GetForJob_RebuildsCompletedInspectionFromChronologicalChecklistPass()
+    public void GetForJob_PreservesRecordedMeasurementLinksInsteadOfReplacingThemWithChecklistReconstruction()
     {
         var repository = new InMemorySpcRepository();
         var part = new Part { PartNum = "P100", Description = "Test part" };
@@ -274,9 +309,130 @@ public sealed class JobHistoryServiceTests
 
         var completion = Assert.Single(history, entry => entry.EntryType == "PhaseComplete");
         var measurementIds = Assert.IsAssignableFrom<IReadOnlyList<Guid>>(completion.MeasurementIds);
-        Assert.Equal([validFirst.Id, validSecond.Id, validThird.Id], measurementIds);
-        Assert.DoesNotContain(orphanFirst.Id, measurementIds);
+        Assert.Equal([orphanFirst.Id, validSecond.Id, validThird.Id], measurementIds);
+        Assert.DoesNotContain(validFirst.Id, measurementIds);
 
+    }
+
+    [Fact]
+    public void GetForJob_DoesNotCreateCompletionRowsFromMeasurementsOnly()
+    {
+        var repository = new InMemorySpcRepository();
+        var part = new Part { PartNum = "P100", Description = "Test part" };
+        var process = new ManufacturingProcess { ProcessCode = "General Production", Description = "General Production" };
+        var operation = new Operation { PartId = part.Id, ProcessId = process.Id, OperationSeq = 10 };
+        repository.Parts.Add(part);
+        repository.Processes.Add(process);
+        repository.Operations.Add(operation);
+
+        AddCharacteristic(repository, operation.Id, "First", 1);
+        AddCharacteristic(repository, operation.Id, "Second", 2);
+        AddMeasurement(repository, "First", "2026-05-12T08:01:00Z");
+        AddMeasurement(repository, "Second", "2026-05-12T08:02:00Z");
+        AddMeasurement(repository, "First", "2026-05-13T08:01:00Z");
+        AddMeasurement(repository, "Second", "2026-05-13T08:02:00Z");
+
+        var history = new JobHistoryService(repository).GetForJob("J100");
+
+        Assert.DoesNotContain(history, entry => entry.EntryType == "PhaseComplete");
+    }
+
+    [Fact]
+    public void GetForJob_OnlyShowsPersistedCompletionRows()
+    {
+        var repository = new InMemorySpcRepository();
+        var part = new Part { PartNum = "P100", Description = "Test part" };
+        var process = new ManufacturingProcess { ProcessCode = "General Production", Description = "General Production" };
+        var operation = new Operation { PartId = part.Id, ProcessId = process.Id, OperationSeq = 10 };
+        repository.Parts.Add(part);
+        repository.Processes.Add(process);
+        repository.Operations.Add(operation);
+
+        AddCharacteristic(repository, operation.Id, "First", 1);
+        AddCharacteristic(repository, operation.Id, "Second", 2);
+        AddMeasurement(repository, "First", "2026-05-12T08:01:00Z");
+        AddMeasurement(repository, "Second", "2026-05-12T08:02:00Z");
+        var secondDayFirst = AddMeasurement(repository, "First", "2026-05-13T08:01:00Z");
+        var secondDaySecond = AddMeasurement(repository, "Second", "2026-05-13T08:02:00Z");
+        var completion = new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "General Production",
+            OperationSeq = 10,
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = secondDaySecond.Timestamp,
+            MachineCounter = 4500
+        };
+        completion.MeasurementIds.AddRange([secondDayFirst.Id, secondDaySecond.Id]);
+        repository.JobPhaseCompletions.Add(completion);
+
+        var history = new JobHistoryService(repository).GetForJob("J100");
+
+        var completions = history
+            .Where(entry => entry.EntryType == "PhaseComplete")
+            .OrderBy(entry => entry.Timestamp)
+            .ToArray();
+        var persisted = Assert.Single(completions);
+        Assert.Equal(1, persisted.CompletionNumber);
+        Assert.Equal(4500, persisted.MachineCounter);
+        Assert.Equal([secondDayFirst.Id, secondDaySecond.Id], persisted.MeasurementIds);
+    }
+
+    [Fact]
+    public void GetForJob_DisplaysMonotonicPersistedCompletionNumbersWithinOperationAndPhase()
+    {
+        var repository = new InMemorySpcRepository();
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "Needlemaker",
+            OperationSeq = 10,
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-05-12T08:10:00Z")
+        });
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "Needlemaker",
+            OperationSeq = 10,
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-05-13T08:10:00Z")
+        });
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ResourceId = "PRESS1",
+            ProcessCode = "Test Polish",
+            OperationSeq = 20,
+            InspectionPhase = "In Process",
+            CompletionNumber = 1,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-05-13T08:20:00Z")
+        });
+
+        var history = new JobHistoryService(repository).GetForJob("J100");
+
+        var needlemaker = history
+            .Where(entry => entry.EntryType == "PhaseComplete" && entry.ProcessCode == "Needlemaker")
+            .OrderBy(entry => entry.Timestamp)
+            .ToArray();
+        var testPolish = Assert.Single(history, entry => entry.EntryType == "PhaseComplete" && entry.ProcessCode == "Test Polish");
+        Assert.Equal(1, needlemaker[0].CompletionNumber);
+        Assert.Equal(2, needlemaker[1].CompletionNumber);
+        Assert.Equal(1, testPolish.CompletionNumber);
     }
 
     private static Characteristic AddCharacteristic(InMemorySpcRepository repository, Guid operationId, string name, int displayOrder)

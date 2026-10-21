@@ -1,4 +1,4 @@
-const CACHE_NAME = "spc-star-shell-v139-network-only";
+const CACHE_NAME = "spc-star-shell-v144-network-only";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();

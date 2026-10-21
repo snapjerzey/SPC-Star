@@ -7,6 +7,56 @@ namespace SPCStar.Core.Tests;
 
 public sealed class InspectionAndOverrideTests
 {
+    [Theory]
+    [InlineData(193500, 198000)]
+    [InlineData(193510, 198000)]
+    public void FailedAt193500CanRepeatImmediatelyAndOnlyPassingRepeatAdvancesSchedule(long repeatCounter, int nextDue)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var diameter = repository.Characteristics.Single(item => item.Name == "Diameter");
+        repository.InspectionPlans.RemoveAll(item => item.CharacteristicId != diameter.Id);
+        var plan = Assert.Single(repository.InspectionPlans);
+        plan.SampleSize = 1;
+        plan.Frequency = new InspectionFrequency { Type = FrequencyType.Quantity, Value = 4500, Unit = FrequencyUnit.Pieces };
+        repository.ControlLimits.Clear();
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100", PartNum = "P100", ProcessCode = "MOLD", OperationSeq = 10,
+            ResourceId = "OTHER", InspectionPhase = "Coil Change", CompletedByUserId = "operator1",
+            MachineCounter = 189000, CompletedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        });
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        Assert.True(service.EnterMeasurement(Entry(6m) with { Timestamp = DateTimeOffset.UtcNow.AddSeconds(-1),
+            DeviceId = "test", ClientRecordId = "failed-sample" }).Succeeded);
+        var alert = Assert.Single(repository.Alerts);
+        var failed = service.FailInspectionWithSignoff(new FailInspectionRequest("J100", "P100", "MOLD", 10,
+            "PRESS1", "In Process", "operator1", 193500, ["failed-sample"], alert.Id,
+            CauseCategory: "Machine", CauseText: "Fixture shifted", SolutionText: "Fixture repaired",
+            SignOffUserName: "linetech1", SignOffPassword: "linetech1", RequiredCharacteristicNames: ["Diameter"]));
+        Assert.True(failed.Succeeded, string.Join(" | ", failed.Errors));
+        Assert.Single(repository.JobPhaseCompletions);
+        var savedFailure = System.Text.Json.JsonSerializer.Deserialize<FailedInspection>(
+            System.Text.Json.JsonSerializer.Serialize(Assert.Single(repository.FailedInspections)))!;
+        repository.FailedInspections.Clear();
+        repository.FailedInspections.Add(savedFailure);
+        var request = new InspectionFrequencyCheckRequest("J100", "P100", "MOLD", 10, "Diameter", "PRESS1",
+            DateTimeOffset.UtcNow, (int)repeatCounter, 189000, []);
+        var retry = new InspectionFrequencyService(repository).Evaluate(request);
+        Assert.True(retry.RequiresReinspection);
+        Assert.Equal(InspectionDueStatus.DueNow, retry.Status);
+        Assert.Null(JobMachineCounterRules.Validate(repository, "J100", repeatCounter));
+        Assert.True(service.EnterMeasurement(Entry(5m) with { Timestamp = DateTimeOffset.UtcNow.AddSeconds(1),
+            DeviceId = "test", ClientRecordId = "repeat-sample" }).Succeeded);
+        var passed = service.CompleteInspection(CompletionRequest(repeatCounter) with { MeasurementClientRecordIds = ["repeat-sample"] });
+        Assert.True(passed.Succeeded, string.Join(" | ", passed.Errors));
+        Assert.Single(repository.FailedInspections);
+        Assert.Equal(2, repository.JobPhaseCompletions.Count);
+        var after = new InspectionFrequencyService(repository).Evaluate(request with { QuantityAtLastInspection = (int)repeatCounter });
+        Assert.False(after.RequiresReinspection);
+        Assert.Equal(InspectionDueStatus.NotDue, after.Status);
+        Assert.Equal(nextDue, after.NextInspectionDueQuantity);
+    }
+
     [Fact]
     public void EnterMeasurement_CreatesDriftWarningAndAllowsFurtherEntry_WhenRuleViolationOccurs()
     {
@@ -73,6 +123,53 @@ public sealed class InspectionAndOverrideTests
         Assert.Contains("below the lower specification limit 280", alert.Detail);
     }
 
+    [Theory]
+    [InlineData(324, true)]
+    [InlineData(325, false)]
+    [InlineData(326, false)]
+    [InlineData(400, false)]
+    [InlineData(10000, false)]
+    public void EnterMeasurement_MinimumShear325_OnlyLocksBelowMinimum(int value, bool shouldLock)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var characteristic = repository.Characteristics.Single(item => item.Name == "Diameter");
+        var plan = repository.InspectionPlans.Single(item => item.CharacteristicId == characteristic.Id);
+        plan.Nominal = null;
+        plan.Lsl = 325m;
+        plan.Usl = null;
+        SetRuleSet(repository, "Diameter", "SpecLimitOnly");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(value));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(shouldLock, repository.Alerts.Any(alert => alert.Status == AlertStatus.Active));
+        Assert.Empty(repository.FailedInspections);
+    }
+
+    [Theory]
+    [InlineData(87, true)]
+    [InlineData(88, false)]
+    [InlineData(90, false)]
+    [InlineData(92, false)]
+    [InlineData(93, true)]
+    public void EnterMeasurement_Angle88To92_OnlyLocksOutsideLimits(int value, bool shouldLock)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var characteristic = repository.Characteristics.Single(item => item.Name == "Diameter");
+        var plan = repository.InspectionPlans.Single(item => item.CharacteristicId == characteristic.Id);
+        plan.Nominal = 90m;
+        plan.Lsl = 88m;
+        plan.Usl = 92m;
+        SetRuleSet(repository, "Diameter", "SpecLimitOnly");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(value));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(shouldLock, repository.Alerts.Any(alert => alert.Status == AlertStatus.Active));
+    }
+
     [Fact]
     public void EnterMeasurement_CreatesSpecLock_WhenNoControlLimitsExist()
     {
@@ -88,6 +185,70 @@ public sealed class InspectionAndOverrideTests
         Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
         Assert.Equal(AlertStatus.Active, alert.Status);
         Assert.Contains("above the upper specification limit", alert.Detail);
+    }
+
+    [Fact]
+    public void FailInspection_UsesOperatorReasonAsAlertSolution()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        var measurement = service.EnterMeasurement(Entry(6m));
+        var alert = Assert.Single(repository.Alerts);
+
+        var failed = service.FailInspection(new FailInspectionRequest(
+            "J100",
+            "P100",
+            "MOLD",
+            10,
+            "PRESS1",
+            "In Process",
+            "operator1",
+            null,
+            [measurement.Value!.ClientRecordId ?? ""],
+            alert.Id,
+            "Operator stopped inspection after jaw height failed.",
+            "Machine", "Jaw height failed.", "Operator stopped inspection after jaw height failed."));
+
+        Assert.True(failed.Succeeded, string.Join(" | ", failed.Errors));
+        var audit = Assert.Single(repository.AlertOverrides);
+        Assert.Equal("Operator stopped inspection after jaw height failed.", audit.SolutionText);
+        var topIssue = Assert.Single(new HistoryIssueSummaryService(repository).TopIssues(new HistoryIssueSummaryRequest("P100", null, null, null, "Diameter", null, null)));
+        Assert.Equal("Operator stopped inspection after jaw height failed.", topIssue.LatestSolution);
+    }
+
+    [Fact]
+    public void FailInspection_StoresCauseDetailsAndFailureDetail()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        var measurement = service.EnterMeasurement(Entry(6m) with { ClientRecordId = "sample-1", DeviceId = "browser-dev" });
+        var alert = Assert.Single(repository.Alerts);
+
+        var failed = service.FailInspection(new FailInspectionRequest(
+            "J100",
+            "P100",
+            "MOLD",
+            10,
+            "PRESS1",
+            "In Process",
+            "operator1",
+            123,
+            ["sample-1"],
+            alert.Id,
+            "Changed cutoff setup.",
+            "Tooling",
+            "Fixture moved during inspection.",
+            "Reset fixture and started a fresh inspection."));
+
+        Assert.True(failed.Succeeded, string.Join(" | ", failed.Errors));
+        Assert.Equal("Tooling", failed.Value!.CauseCategory);
+        Assert.Equal("Fixture moved during inspection.", failed.Value.CauseText);
+        Assert.Equal("Reset fixture and started a fresh inspection.", failed.Value.SolutionText);
+        Assert.Contains("above the upper specification limit", failed.Value.FailureDetail);
+        var audit = Assert.Single(repository.AlertOverrides);
+        Assert.Equal("Tooling", audit.CauseCategory);
+        Assert.Equal("Fixture moved during inspection.", audit.CauseText);
+        Assert.Equal("Reset fixture and started a fresh inspection.", audit.SolutionText);
     }
 
     [Fact]
@@ -117,21 +278,24 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
-    public void EnterMeasurement_AllowsDraftSampleCorrection_WhenAlertWasCreatedBeforeCompletion()
+    public void EnterMeasurement_RequiresUserErrorClearBeforeDraftCorrection()
     {
         var repository = RepositoryWithSecurityAndLimits();
         SetRuleSet(repository, "Diameter", "SpecLimitOnly");
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
 
         var bad = service.EnterMeasurement(Entry(6m) with { DeviceId = "browser-dev", ClientRecordId = "slot-1" });
+        var blocked = service.EnterMeasurement(Entry(5m, minutes: 1) with { DeviceId = "browser-dev", ClientRecordId = "slot-1" });
+        Assert.False(blocked.Succeeded);
+        var clear = OverrideService(repository).Override(new AlertOverrideRequest(repository.Alerts.Single().Id, "linetech1", "linetech1", "", "", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
+        Assert.True(clear.Succeeded);
         var corrected = service.EnterMeasurement(Entry(5m, minutes: 1) with { DeviceId = "browser-dev", ClientRecordId = "slot-1" });
 
         Assert.True(bad.Succeeded, string.Join(" | ", bad.Errors));
         Assert.True(corrected.Succeeded, string.Join(" | ", corrected.Errors));
         Assert.Single(repository.Measurements);
         Assert.Equal(5m, repository.Measurements.Single().Value);
-        var alert = Assert.Single(repository.Alerts);
-        Assert.Equal(AlertStatus.Overridden, alert.Status);
+        Assert.Empty(repository.Alerts);
         Assert.DoesNotContain(repository.Alerts, alert => alert.Status == AlertStatus.Active);
     }
 
@@ -235,6 +399,22 @@ public sealed class InspectionAndOverrideTests
     }
 
     [Fact]
+    public void EnterMeasurement_CreatesSpecLock_WhenNoAutomaticRuleIsSelected()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        SetRuleSet(repository, "Diameter", "None");
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.EnterMeasurement(Entry(6m));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        var alert = Assert.Single(repository.Alerts);
+        Assert.Equal(RuleTriggered.SpecLimitViolation, alert.RuleTriggered);
+        Assert.Equal(AlertStatus.Active, alert.Status);
+        Assert.Contains("above the upper specification limit", alert.Detail);
+    }
+
+    [Fact]
     public void EnterMeasurement_CreatesNelsonTrendAlert_WhenNelsonRulesAreSelected()
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -306,7 +486,6 @@ public sealed class InspectionAndOverrideTests
     [InlineData("Ewma", RuleTriggered.EwmaShift, new[] { "5.80", "5.80", "5.80" })]
     [InlineData("MovingAverageTrend", RuleTriggered.MovingAverageTrend, new[] { "5.40", "5.40", "5.40", "5.40", "5.40" })]
     [InlineData("LinearTrendSlope", RuleTriggered.LinearTrendSlope, new[] { "4.80", "5.00", "5.20", "5.40", "5.60", "5.80" })]
-    [InlineData("Custom", RuleTriggered.CustomRuleTriggered, new[] { "5.40", "5.40", "5.40", "5.40" })]
     public void EnterMeasurement_CreatesExpectedAlert_ForSelectedDriftRule(string ruleSet, RuleTriggered expectedRule, string[] values)
     {
         var repository = RepositoryWithSecurityAndLimits();
@@ -366,7 +545,7 @@ public sealed class InspectionAndOverrideTests
         var repository = RepositoryWithSecurityAndLimits();
         SetRuleSet(repository, "Diameter", "None");
         var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
-        var entry = Entry(10m) with
+        var entry = Entry(5m) with
         {
             DeviceId = "tablet-press1",
             ClientRecordId = "measurement-001",
@@ -376,7 +555,7 @@ public sealed class InspectionAndOverrideTests
         var first = service.EnterMeasurement(entry);
         var update = service.EnterMeasurement(entry with
         {
-            Value = 10.25m,
+            Value = 5.25m,
             Timestamp = DateTimeOffset.Parse("2026-01-01T00:06:00Z"),
             SubmittedAt = DateTimeOffset.Parse("2026-01-01T00:06:00Z")
         });
@@ -385,7 +564,7 @@ public sealed class InspectionAndOverrideTests
         Assert.True(update.Succeeded, string.Join(" | ", update.Errors));
         Assert.Single(repository.Measurements);
         Assert.Equal(first.Value!.Id, update.Value!.Id);
-        Assert.Equal(10.25m, repository.Measurements.Single().Value);
+        Assert.Equal(5.25m, repository.Measurements.Single().Value);
         Assert.Equal(DateTimeOffset.Parse("2026-01-01T00:06:00Z"), repository.Measurements.Single().Timestamp);
     }
 
@@ -520,7 +699,7 @@ public sealed class InspectionAndOverrideTests
     [InlineData("Coil Change")]
     [InlineData("Spool")]
     [InlineData("End of Spool")]
-    public void CompleteInspection_NumbersNextCompletionAcrossWholeJobPhase_ForEveryInspectionPhase(string phase)
+    public void CompleteInspection_NumbersNextCompletionWithinSameOperationAndPhase_ForEveryInspectionPhase(string phase)
     {
         var repository = RepositoryWithSecurityAndLimits();
         repository.JobPhaseCompletions.Clear();
@@ -533,8 +712,8 @@ public sealed class InspectionAndOverrideTests
         {
             JobNum = "J100",
             PartNum = "P100",
-            ProcessCode = "OTHER",
-            OperationSeq = 20,
+            ProcessCode = "MOLD",
+            OperationSeq = 10,
             ResourceId = "PRESS2",
             InspectionPhase = phase,
             CompletionNumber = 3,
@@ -559,6 +738,41 @@ public sealed class InspectionAndOverrideTests
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
         Assert.Equal(4, result.Value!.CompletionNumber);
         Assert.Equal(44444, result.Value.MachineCounter);
+    }
+
+    [Fact]
+    public void CompleteInspection_StartsSeparateCompletionSequenceForDifferentOperation()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100",
+            PartNum = "P100",
+            ProcessCode = "OTHER",
+            OperationSeq = 20,
+            ResourceId = "PRESS2",
+            InspectionPhase = "In Process",
+            CompletionNumber = 8,
+            CompletedByUserId = "operator1",
+            CompletedAt = DateTimeOffset.Parse("2026-01-01T00:10:00Z")
+        });
+        var currentMeasurements = new[]
+        {
+            SavedMeasurementWithClientId("Diameter", 10m, 21, "current-diameter"),
+            SavedMeasurementWithClientId("Length", 42m, 22, "current-length"),
+            SavedMeasurementWithClientId("Weight", 18m, 23, "current-weight")
+        };
+        repository.Measurements.AddRange(currentMeasurements);
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+
+        var result = service.CompleteInspection(CompletionRequest(44444) with
+        {
+            MeasurementClientRecordIds = ["current-diameter", "current-length", "current-weight"]
+        });
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Equal(1, result.Value!.CompletionNumber);
     }
 
     [Theory]
@@ -851,6 +1065,9 @@ public sealed class InspectionAndOverrideTests
             DeviceId = "browser-dev",
             ClientRecordId = "attribute-sample-1"
         });
+        var alert = Assert.Single(repository.Alerts);
+        var overrideResult = OverrideService(repository).Override(new AlertOverrideRequest(alert.Id, "linetech1", "linetech1", "User entry error", "Corrected measurement", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
+        Assert.True(overrideResult.Succeeded, string.Join(" | ", overrideResult.Errors));
         var corrected = measurementService.EnterMeasurement(Entry(1m, minutes: 1) with
         {
             CharacteristicName = "Comparator profile",
@@ -862,40 +1079,84 @@ public sealed class InspectionAndOverrideTests
         Assert.True(corrected.Succeeded, string.Join(" | ", corrected.Errors));
         Assert.Single(repository.Measurements);
         Assert.Equal(1m, repository.Measurements.Single().Value);
-        var alert = Assert.Single(repository.Alerts);
-        Assert.Equal(AlertStatus.Overridden, alert.Status);
-
-        var overrideResult = OverrideService(repository).Override(new AlertOverrideRequest(alert.Id, "linetech1", "linetech1", "User entry error", "Corrected measurement", null, DateTimeOffset.UtcNow));
-
-        Assert.True(overrideResult.Succeeded, string.Join(" | ", overrideResult.Errors));
-        Assert.Single(repository.AlertOverrides);
+        Assert.Empty(repository.Alerts);
+        Assert.Empty(repository.AlertOverrides);
     }
 
     [Fact]
-    public void Override_RejectsOperator()
+    public void Override_AllowsOperatorToClearTheirOwnUserError()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
         var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "operator1", "operator1", "Cause", "Fix", null, DateTimeOffset.UtcNow));
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Fact]
-    public void Override_AllowsQaAndWritesAuditTrail()
-    {
-        var repository = RepositoryWithSecurityAndLimits();
-        var alert = AddAlert(repository);
-        var service = OverrideService(repository);
-
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "qa1", "qa1", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "operator1", "operator1", "Cause", "Fix", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
 
         Assert.True(result.Succeeded);
-        Assert.Equal(AlertStatus.Overridden, alert.Status);
-        Assert.Single(repository.AlertOverrides);
-        Assert.Equal("Unspecified", result.Value!.CauseCategory);
+        Assert.Empty(repository.Alerts);
+        Assert.Empty(repository.FailedInspections);
+        Assert.Empty(repository.AlertOverrides);
+    }
+
+    [Fact]
+    public void Override_OperatorCannotClearAnotherOperatorsEntryMistake()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        alert.OperatorUserId = "someone-else";
+        var result = OverrideService(repository).Override(new AlertOverrideRequest(alert.Id, "operator1", "operator1",
+            "", "", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
+        Assert.False(result.Succeeded);
+        Assert.Equal(AlertStatus.Active, alert.Status);
+    }
+
+    [Theory]
+    [InlineData("operator1", "operator1", false)]
+    [InlineData("linetech1", "wrong", false)]
+    [InlineData("linetech1", "linetech1", true)]
+    [InlineData("qa1", "qa1", true)]
+    public void FailureSignoffRequiresAuthorizedCredentials(string user, string password, bool allowed)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        var reading = service.EnterMeasurement(Entry(6m));
+        var alert = Assert.Single(repository.Alerts);
+        var result = service.FailInspectionWithSignoff(new FailInspectionRequest("J100", "P100", "MOLD", 10,
+            "PRESS1", "In Process", "operator1", 3000, ActiveAlertId: alert.Id, CauseCategory: "Machine",
+            CauseText: "Fixture moved", SolutionText: "Repaired fixture", SignOffUserName: user, SignOffPassword: password));
+        Assert.Equal(allowed, result.Succeeded);
+        Assert.Equal(allowed ? 1 : 0, repository.FailedInspections.Count);
+        Assert.Equal("operator1", reading.Value!.OperatorUserId);
+        if (allowed) Assert.Equal(user, result.Value!.FailedByUserId);
+        else Assert.Equal(AlertStatus.Active, alert.Status);
+    }
+
+    [Fact]
+    public void OperatorAssignedLineTechAccessCanSignOffFailure()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.Users.Single(u => u.UserName == "operator1").Roles.Add(repository.Roles.Single(r => r.Name == RoleNames.LineTech));
+        var result = new InspectionMeasurementService(repository, new WesternElectricRuleService())
+            .FailInspectionWithSignoff(new FailInspectionRequest("J100", "P100", "MOLD", 10, "PRESS1", "In Process",
+                "operator1", 3000, CauseCategory: "Machine", CauseText: "Fixture moved", SolutionText: "Repaired fixture",
+                SignOffUserName: "operator1", SignOffPassword: "operator1"));
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+    }
+
+    [Fact]
+    public void Override_AllowsQaUserErrorWithoutFailureOrClearEvent()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var service = OverrideService(repository);
+
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "qa1", "qa1", "", "", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
+
+        Assert.True(result.Succeeded);
+        Assert.Empty(repository.Alerts);
+        Assert.Empty(repository.AlertOverrides);
+        Assert.Empty(repository.FailedInspections);
+        Assert.Equal("User Error", result.Value!.CauseCategory);
     }
 
     [Fact]
@@ -905,15 +1166,15 @@ public sealed class InspectionAndOverrideTests
         var alert = AddAlert(repository);
         var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "linetech1", "linetech1", "Tool wear", "Adjusted process", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "linetech1", "linetech1", "", "", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
 
         Assert.True(result.Succeeded);
-        Assert.Equal(AlertStatus.Overridden, alert.Status);
+        Assert.Empty(repository.Alerts);
         Assert.Equal(RoleNames.LineTech, result.Value!.OverrideRole);
     }
 
     [Fact]
-    public void Override_RequiresArchonBypassReason()
+    public void Override_RejectsArchonWithoutUserErrorCategory()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
@@ -922,23 +1183,29 @@ public sealed class InspectionAndOverrideTests
         var result = service.Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "", "", null, DateTimeOffset.UtcNow));
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("Bypass reason", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(AlertStatus.Active, alert.Status);
     }
 
     [Fact]
-    public void Override_AllowsArchonBypassWithoutCauseOrSolution()
+    public void Override_RejectsArchonMachineBypass()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
         var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "", "", "System manager bypass for test entry.", DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(
+            alert.Id,
+            "Archon",
+            "archon",
+            "",
+            "",
+            "System manager bypass for test entry.",
+            DateTimeOffset.UtcNow,
+            CauseCategory: "Machine"));
 
-        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        Assert.Equal(AlertStatus.Overridden, alert.Status);
-        Assert.Equal("System Manager", result.Value!.OverrideRole);
-        Assert.Equal("System Manager Bypass", result.Value.CauseCategory);
-        Assert.Equal("System manager bypass for test entry.", result.Value.WhyStandardProcessWasBypassed);
+        Assert.False(result.Succeeded);
+        Assert.Equal(AlertStatus.Active, alert.Status);
+        Assert.Empty(repository.AlertOverrides);
     }
 
     [Fact]
@@ -948,12 +1215,12 @@ public sealed class InspectionAndOverrideTests
         var alert = AddAlert(repository);
         var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "Setup issue", "Corrected setup", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "Archon", "archon", "", "", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
-        Assert.Equal(AlertStatus.Overridden, alert.Status);
+        Assert.Empty(repository.Alerts);
         Assert.Equal("System Manager", result.Value!.OverrideRole);
-        Assert.Equal("Unspecified", result.Value.CauseCategory);
+        Assert.Equal("User Error", result.Value.CauseCategory);
         Assert.Null(result.Value.WhyStandardProcessWasBypassed);
     }
 
@@ -964,14 +1231,14 @@ public sealed class InspectionAndOverrideTests
         var alert = AddAlert(repository);
         var service = OverrideService(repository);
 
-        var result = service.Override(new AlertOverrideRequest(alert.Id, "qa1", "wrong", "Tool wear", "Changed tool", null, DateTimeOffset.UtcNow));
+        var result = service.Override(new AlertOverrideRequest(alert.Id, "qa1", "wrong", "", "", null, DateTimeOffset.UtcNow, CauseCategory: "User Error"));
 
         Assert.False(result.Succeeded);
         Assert.Contains(result.Errors, error => error.Contains("Invalid override credentials", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void Override_ReturnsExistingAudit_WhenOfflineRecordIsRetried()
+    public void Override_RejectsMachineClearOnEveryRetry()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
@@ -986,21 +1253,19 @@ public sealed class InspectionAndOverrideTests
             DateTimeOffset.Parse("2026-01-01T00:10:00Z"),
             "tablet-qa1",
             "override-001",
-            DateTimeOffset.Parse("2026-01-01T00:11:00Z"));
+            DateTimeOffset.Parse("2026-01-01T00:11:00Z"), CauseCategory: "Machine");
 
         var first = service.Override(request);
         var retry = service.Override(request);
 
-        Assert.True(first.Succeeded);
-        Assert.True(retry.Succeeded);
-        Assert.Single(repository.AlertOverrides);
-        Assert.Equal(first.Value!.Id, retry.Value!.Id);
-        Assert.Equal("tablet-qa1", retry.Value.DeviceId);
-        Assert.Equal("override-001", retry.Value.ClientRecordId);
+        Assert.False(first.Succeeded);
+        Assert.False(retry.Succeeded);
+        Assert.Empty(repository.AlertOverrides);
+        Assert.Equal(AlertStatus.Active, alert.Status);
     }
 
     [Fact]
-    public void Override_SavesCauseCategory()
+    public void Override_RejectsToolingClear()
     {
         var repository = RepositoryWithSecurityAndLimits();
         var alert = AddAlert(repository);
@@ -1016,8 +1281,40 @@ public sealed class InspectionAndOverrideTests
             DateTimeOffset.UtcNow,
             CauseCategory: "Tooling"));
 
-        Assert.True(result.Succeeded);
-        Assert.Equal("Tooling", result.Value!.CauseCategory);
+        Assert.False(result.Succeeded);
+        Assert.Equal(AlertStatus.Active, alert.Status);
+    }
+
+    [Fact]
+    public void Override_UserErrorRemovesDraftLockWithoutWritingClearEvent()
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var alert = AddAlert(repository);
+        var measurement = SavedMeasurement("Diameter", 6m, 0);
+        repository.Measurements.Add(measurement);
+        repository.RuleViolations.Add(new RuleViolation
+        {
+            AlertId = alert.Id,
+            RuleTriggered = alert.RuleTriggered,
+            DetectedAt = alert.LockedAt,
+            MeasurementIds = { measurement.Id }
+        });
+        var service = OverrideService(repository);
+
+        var result = service.Override(new AlertOverrideRequest(
+            alert.Id,
+            "linetech1",
+            "linetech1",
+            "",
+            "",
+            null,
+            DateTimeOffset.UtcNow,
+            CauseCategory: "User Error"));
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Errors));
+        Assert.Empty(repository.Alerts);
+        Assert.Empty(repository.RuleViolations);
+        Assert.Empty(repository.AlertOverrides);
     }
 
     [Fact]
@@ -1039,6 +1336,100 @@ public sealed class InspectionAndOverrideTests
 
         Assert.False(result.Succeeded);
         Assert.Contains(result.Errors, error => error.Contains("CauseCategory is not supported", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("Machine")]
+    [InlineData("Tooling")]
+    [InlineData("Material")]
+    [InlineData("Measurement Method")]
+    [InlineData("Process Drift")]
+    [InlineData("Other")]
+    public void Override_RejectsNonUserErrorForEveryAuthorizedRole(string category)
+    {
+        foreach (var user in new[] { ("Archon", "archon"), ("qa1", "qa1"), ("linetech1", "linetech1") })
+        {
+            var repository = RepositoryWithSecurityAndLimits();
+            var alert = AddAlert(repository);
+            var result = OverrideService(repository).Override(new AlertOverrideRequest(alert.Id, user.Item1, user.Item2,
+                "Cause", "Action", "Bypass request", DateTimeOffset.UtcNow, CauseCategory: category));
+            Assert.False(result.Succeeded);
+            Assert.Equal(AlertStatus.Active, alert.Status);
+            Assert.Empty(repository.AlertOverrides);
+            Assert.Empty(repository.FailedInspections);
+        }
+    }
+
+    [Theory]
+    [InlineData("Machine", true)]
+    [InlineData("Tooling", true)]
+    [InlineData("Material", true)]
+    [InlineData("User Error", false)]
+    [InlineData("Measurement Method", false)]
+    [InlineData("Process Drift", false)]
+    [InlineData("Other", false)]
+    public void FailInspection_OnlyRecordsMachineToolingOrMaterial(string category, bool expectedSuccess)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        service.EnterMeasurement(Entry(6m));
+        var alert = Assert.Single(repository.Alerts);
+        var result = service.FailInspection(new FailInspectionRequest("J100", "P100", "MOLD", 10, "PRESS1",
+            "In Process", "operator1", 4500, ActiveAlertId: alert.Id, CauseCategory: category,
+            CauseText: "Fixture moved", SolutionText: "Repaired fixture"));
+        Assert.Equal(expectedSuccess, result.Succeeded);
+        Assert.Equal(expectedSuccess ? 1 : 0, repository.FailedInspections.Count);
+        Assert.Equal(expectedSuccess ? AlertStatus.Overridden : AlertStatus.Active, alert.Status);
+        if (expectedSuccess)
+        {
+            Assert.Equal(category, result.Value!.CauseCategory);
+            Assert.Equal("Fixture moved", result.Value.CauseText);
+            Assert.Equal("Repaired fixture", result.Value.SolutionText);
+            Assert.DoesNotContain(new JobHistoryService(repository).GetForJob("J100"), entry => entry.EntryType == "PhaseComplete");
+        }
+    }
+
+    [Theory]
+    [InlineData("Setup")]
+    [InlineData("Startup")]
+    [InlineData("In Process")]
+    [InlineData("Coil Change")]
+    [InlineData("Spool")]
+    [InlineData("End of Spool")]
+    public void TerminalInspections_ShareSequenceAcrossSuccessFailureAndMachines(string phase)
+    {
+        var repository = RepositoryWithSecurityAndLimits();
+        repository.JobPhaseCompletions.Clear();
+        foreach (var plan in repository.InspectionPlans) plan.InspectionPhase = phase;
+        repository.JobPhaseCompletions.Add(new JobPhaseCompletion
+        {
+            JobNum = "J100", PartNum = "P100", ProcessCode = "MOLD", OperationSeq = 10,
+            ResourceId = "PRESS2", InspectionPhase = phase, CompletionNumber = 5,
+            CompletedByUserId = "operator1", CompletedAt = DateTimeOffset.Parse("2025-12-01T00:00:00Z")
+        });
+        var service = new InspectionMeasurementService(repository, new WesternElectricRuleService());
+        var failure = service.FailInspection(new FailInspectionRequest("J100", "P100", "MOLD", 10,
+            "PRESS1", phase, "operator1", 4500, CauseCategory: "Machine",
+            CauseText: "Fixture moved", SolutionText: "Repaired fixture"));
+        Assert.True(failure.Succeeded, string.Join(" | ", failure.Errors));
+        Assert.Equal(6, failure.Value!.FailureNumber);
+
+        var measurements = new[]
+        {
+            SavedMeasurementWithClientId("Diameter", 10m, 21, "next-diameter", phase),
+            SavedMeasurementWithClientId("Length", 42m, 22, "next-length", phase),
+            SavedMeasurementWithClientId("Weight", 18m, 23, "next-weight", phase)
+        };
+        repository.Measurements.AddRange(measurements);
+        var completion = service.CompleteInspection(CompletionRequest(9000) with
+        {
+            InspectionPhase = phase,
+            MeasurementClientRecordIds = ["next-diameter", "next-length", "next-weight"]
+        });
+        Assert.True(completion.Succeeded, string.Join(" | ", completion.Errors));
+        Assert.Equal(7, completion.Value!.CompletionNumber);
+        Assert.Equal(2, repository.JobPhaseCompletions.Count);
+        Assert.Single(repository.FailedInspections);
     }
 
     private static InMemorySpcRepository RepositoryWithSecurityAndLimits()

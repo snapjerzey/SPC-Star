@@ -8,6 +8,67 @@ namespace SPCStar.Core.Tests;
 public sealed class ChartDataServiceTests
 {
     [Fact]
+    public void Build_AppliesShiftTogetherWithEveryOtherFilter()
+    {
+        var r = RepositoryWithChartData();
+        var reading = r.Measurements.First(); reading.OperatorShift = "5 Day";
+        var request = new ChartDataRequest(ChartType.Run, reading.JobNum, reading.PartNum, reading.ResourceId,
+            reading.CharacteristicName, reading.Timestamp, reading.Timestamp, reading.InspectionPhase,
+            reading.ProcessCode, reading.OperationSeq, "5 Day");
+        Assert.Equal(reading.Id, Assert.Single(new ChartDataService(r).Build(request).Points).MeasurementId);
+        Assert.Empty(new ChartDataService(r).Build(request with { OperatorShift = "1st Half Nights" }).Points);
+        Assert.Empty(new ChartDataService(r).Build(request with { OperationSeq = 999 }).Points);
+    }
+
+    private static void Flag(InMemorySpcRepository r, InspectionMeasurement measurement, RuleTriggered rule, string scope = "")
+    {
+        var alert = new ProcessAlert { JobNum = measurement.JobNum, PartNum = measurement.PartNum, ResourceId = measurement.ResourceId,
+            CharacteristicName = measurement.CharacteristicName, OperatorUserId = measurement.OperatorUserId,
+            RuleTriggered = rule, LockedAt = measurement.Timestamp, WatchScope = scope,
+            Status = rule is RuleTriggered.SpecLimitViolation or RuleTriggered.AttributeRejected ? AlertStatus.Active : AlertStatus.Warning };
+        r.Alerts.Add(alert);
+        var violation = new RuleViolation { AlertId = alert.Id, RuleTriggered = rule, DetectedAt = measurement.Timestamp };
+        violation.MeasurementIds.Add(measurement.Id); r.RuleViolations.Add(violation);
+    }
+
+    [Fact]
+    public void Build_SeparatesWatchFailureAndNormal_AndKeepsWatchAfterRecovery()
+    {
+        var r = RepositoryWithChartData(); var rows = r.Measurements.Where(m => m.JobNum == "J100").ToArray();
+        rows[1].WatchReason = "Near upper specification limit";
+        Flag(r, rows[1], RuleTriggered.CustomRuleTriggered, "mold|10|In Process");
+        r.Alerts.Single().Status = AlertStatus.Resolved;
+        rows[2].Value = 6m; rows[2].WatchReason = "Earlier warning";
+        Flag(r, rows[2], RuleTriggered.SpecLimitViolation);
+        var points = new ChartDataService(r).Build(new(ChartType.Run,"J100","P100","PRESS1","Diameter",null,null)).Points;
+        Assert.False(points[0].IsFailed); Assert.False(points[0].IsWatch);
+        Assert.True(points[1].IsWatch); Assert.False(points[1].IsFailed); Assert.Equal(rows[1].WatchReason,points[1].WatchReason);
+        Assert.True(points[2].IsFailed); Assert.False(points[2].IsWatch);
+    }
+
+    [Fact]
+    public void Build_DoesNotColorCustomTrendEvidenceAsWatchUnlessItWasActuallyFlagged()
+    {
+        var r=RepositoryWithChartData();var measurement=r.Measurements[0];
+        Flag(r,measurement,RuleTriggered.CustomRuleTriggered,"mold|10|in process");
+        var point=new ChartDataService(r).Build(new(ChartType.Run,"J100","P100","PRESS1","Diameter",null,null)).Points[0];
+        Assert.True(point.HasRuleViolation);Assert.False(point.IsWatch);Assert.False(point.IsFailed);
+    }
+
+    [Fact]
+    public void Build_UserErrorCorrectedSampleIsNotRed()
+    {
+        var r=RepositoryWithChartData();SeedData.SeedSecurity(r);TestSeedData.SeedUsers(r);
+        var measurement=r.Measurements[0];measurement.Value=6m;Flag(r,measurement,RuleTriggered.SpecLimitViolation);
+        var alert=r.Alerts.Single();
+        var cleared=new AlertOverrideService(r,new PermissionService(r),new CredentialService(r)).Override(
+            new(alert.Id,"linetech1","linetech1","","",null,DateTimeOffset.UtcNow,CauseCategory:"User Error"));
+        Assert.True(cleared.Succeeded);measurement.Value=5m;
+        var point=new ChartDataService(r).Build(new(ChartType.Run,"J100","P100","PRESS1","Diameter",null,null)).Points[0];
+        Assert.False(point.IsFailed);Assert.False(point.IsWatch);Assert.False(point.HasRuleViolation);
+    }
+
+    [Fact]
     public void Build_FiltersMeasurementsAndReturnsLimits()
     {
         var repository = RepositoryWithChartData();
@@ -54,6 +115,8 @@ public sealed class ChartDataServiceTests
             .Build(new ChartDataRequest(ChartType.Run, "J100", "P100", "PRESS1", "Diameter", null, null));
 
         Assert.True(result.Points.Last().HasRuleViolation);
+        Assert.True(result.Points.Last().IsWatch);
+        Assert.False(result.Points.Last().IsFailed);
         Assert.Contains(RuleTriggered.OnePointBeyondControlLimit, result.Points.Last().RuleViolations);
     }
 

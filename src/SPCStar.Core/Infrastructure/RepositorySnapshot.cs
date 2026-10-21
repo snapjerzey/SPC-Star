@@ -28,7 +28,8 @@ internal sealed record RepositorySnapshot(
     List<ProcessAlert> Alerts,
     List<RuleViolation> RuleViolations,
     List<AlertOverride> AlertOverrides,
-    List<MaterialChangeLog> MaterialChanges)
+    List<MaterialChangeLog> MaterialChanges,
+    List<ChangeHistoryEntry>? ChangeHistory = null)
 {
     public static RepositorySnapshot FromRepository(ISpcRepository repository)
     {
@@ -58,11 +59,14 @@ internal sealed record RepositorySnapshot(
             [.. repository.Alerts],
             [.. repository.RuleViolations],
             [.. repository.AlertOverrides],
-            [.. repository.MaterialChanges]);
+            [.. repository.MaterialChanges],
+            [.. repository.ChangeHistory]);
     }
 
     public void CopyTo(ISpcRepository repository)
     {
+        var existingChangeIds = repository.ChangeHistory.Select(entry => entry.Id).ToHashSet();
+        repository.ChangeHistory.AddRange((ChangeHistory ?? []).Where(entry => existingChangeIds.Add(entry.Id)));
         repository.Users.Clear();
         repository.Roles.Clear();
         repository.Parts.Clear();
@@ -91,7 +95,6 @@ internal sealed record RepositorySnapshot(
 
         repository.Settings.GlobalAlertRuleSet = Settings?.GlobalAlertRuleSet ?? "WesternElectric";
         repository.Settings.CustomDriftRule = Settings?.CustomDriftRule ?? new CustomDriftRuleSettings();
-        repository.Settings.CapabilityThresholds = Settings?.CapabilityThresholds ?? new CapabilityThresholdSettings();
         repository.Roles.AddRange(Roles.Select(role => role.ToRole()));
         foreach (var user in Users)
         {

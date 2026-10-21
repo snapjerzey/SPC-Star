@@ -22,8 +22,9 @@ public sealed record InspectionFrequencyStatus(
     InspectionDueStatus Status,
     DateTimeOffset? LastInspectionAt,
     DateTimeOffset? NextInspectionDueAt,
-    int? NextInspectionDueQuantity,
-    IReadOnlyList<string> Reasons);
+    long? NextInspectionDueQuantity,
+    IReadOnlyList<string> Reasons,
+    bool RequiresReinspection = false);
 
 public sealed class InspectionFrequencyService(ISpcRepository repository)
 {
@@ -33,6 +34,12 @@ public sealed class InspectionFrequencyService(ISpcRepository repository)
         if (plan is null)
         {
             return new InspectionFrequencyStatus(InspectionDueStatus.NotConfigured, null, null, null, ["No inspection plan found."]);
+        }
+
+        if (RequiresReinspection(request, plan))
+        {
+            return new InspectionFrequencyStatus(InspectionDueStatus.DueNow, null, null, null,
+                ["Repeat the failed inspection now. No additional machine count is required."], true);
         }
 
         var lastInspectionAt = repository.Measurements
@@ -51,10 +58,54 @@ public sealed class InspectionFrequencyService(ISpcRepository repository)
         return plan.Frequency.Type switch
         {
             FrequencyType.Time => EvaluateTime(plan.Frequency, request.Now, lastInspectionAt),
+            FrequencyType.Quantity when plan.Frequency.Unit is FrequencyUnit.Pieces or FrequencyUnit.Box => EvaluateMachineCounter(request, plan, lastInspectionAt),
             FrequencyType.Quantity => EvaluateQuantity(plan.Frequency, request.CurrentQuantity, request.QuantityAtLastInspection, lastInspectionAt),
             FrequencyType.Event => EvaluateEvent(plan.Frequency, request.Events, lastInspectionAt),
             _ => new InspectionFrequencyStatus(InspectionDueStatus.NotConfigured, lastInspectionAt, null, null, ["Unsupported frequency type."])
         };
+    }
+
+    private InspectionFrequencyStatus EvaluateMachineCounter(InspectionFrequencyCheckRequest request, InspectionPlan plan, DateTimeOffset? lastInspectionAt)
+    {
+        var nextDue = new MachineCounterSchedule(repository).NextDue(request.JobNum, request.PartNum, request.ProcessCode,
+            request.OperationSeq, request.CharacteristicName, plan.Frequency.Value, plan.Frequency.FirstDueValue);
+        if (!request.CurrentQuantity.HasValue)
+            return new(InspectionDueStatus.NotConfigured, lastInspectionAt, null, nextDue,
+                ["Current quantity is required for quantity-based frequency."]);
+        var due = request.CurrentQuantity.Value >= nextDue;
+        return new(due ? InspectionDueStatus.DueNow : InspectionDueStatus.NotDue, lastInspectionAt, null, nextDue,
+            due ? ["Quantity-based inspection is due."] : []);
+    }
+
+    internal bool RequiresReinspection(InspectionFrequencyCheckRequest request, InspectionPlan plan)
+    {
+        bool Matches(string job, string part, string process, int operation, string resource, string phase) =>
+            job.Equals(request.JobNum, StringComparison.OrdinalIgnoreCase) &&
+            part.Equals(request.PartNum, StringComparison.OrdinalIgnoreCase) &&
+            process.Equals(request.ProcessCode, StringComparison.OrdinalIgnoreCase) && operation == request.OperationSeq &&
+            resource.Equals(request.ResourceId, StringComparison.OrdinalIgnoreCase) &&
+            NormalizeInspectionPhase(phase).Equals(NormalizeInspectionPhase(request.InspectionPhase), StringComparison.OrdinalIgnoreCase);
+
+        var failure = repository.FailedInspections.Where(item =>
+                !item.CauseCategory.Equals("User Error", StringComparison.OrdinalIgnoreCase) &&
+                Matches(item.JobNum, item.PartNum, item.ProcessCode, item.OperationSeq, item.ResourceId, item.InspectionPhase))
+            .OrderByDescending(item => item.FailedAt).FirstOrDefault();
+        if (failure is null) return false;
+        var completions = repository.JobPhaseCompletions.Where(item =>
+            Matches(item.JobNum, item.PartNum, item.ProcessCode, item.OperationSeq, item.ResourceId, item.InspectionPhase)).ToArray();
+        if (completions.Any(item => item.CompletedAt >= failure.FailedAt)) return false;
+
+        if (failure.RequiredCharacteristicNames.Count > 0)
+            return failure.RequiredCharacteristicNames.Contains(request.CharacteristicName, StringComparer.OrdinalIgnoreCase);
+
+        // Repeat the due or entered checks, not unrelated items with a later frequency.
+        if (plan.Frequency.Type != FrequencyType.Quantity) return true;
+        var nextDue = new MachineCounterSchedule(repository).NextDue(request.JobNum, request.PartNum, request.ProcessCode,
+            request.OperationSeq, request.CharacteristicName, plan.Frequency.Value, plan.Frequency.FirstDueValue);
+        if (failure.MachineCounter >= nextDue) return true;
+        var readingIds = failure.MeasurementIds.ToHashSet();
+        return repository.Measurements.Any(item => readingIds.Contains(item.Id) &&
+            item.CharacteristicName.Equals(request.CharacteristicName, StringComparison.OrdinalIgnoreCase));
     }
 
     private InspectionPlan? FindPlan(InspectionFrequencyCheckRequest request)

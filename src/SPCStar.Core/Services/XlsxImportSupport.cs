@@ -20,8 +20,8 @@ public static class XlsxImportSupport
 
         using var sheetStream = sheetEntry.Open();
         var document = XDocument.Load(sheetStream);
-        var rows = document.Descendants(SpreadsheetNs + "sheetData")
-            .Elements(SpreadsheetNs + "row")
+        var sheetRows = document.Descendants(SpreadsheetNs + "sheetData").Elements(SpreadsheetNs + "row").ToArray();
+        var rows = sheetRows
             .Select(row => ReadRow(row, sharedStrings))
             .ToArray();
 
@@ -29,6 +29,8 @@ public static class XlsxImportSupport
         {
             throw new InvalidOperationException("The selected workbook sheet is empty.");
         }
+
+        PreserveSpecPrecision(archive, sheetRows, rows);
 
         var lastColumn = rows.Max(row => row.Count == 0 ? 0 : row.Keys.Max());
         var matrix = rows
@@ -57,6 +59,35 @@ public static class XlsxImportSupport
             });
 
         return CsvSupport.WriteRows(headers, dataRows);
+    }
+
+    private static void PreserveSpecPrecision(ZipArchive archive, XElement[] sheetRows, Dictionary<int, string>[] rows)
+    {
+        var specColumns = rows[0].Where(cell =>
+            Regex.Replace(cell.Value, "[\\s_]", "").ToLowerInvariant() is "lsl" or "usl" or "lowerspec" or "upperspec")
+            .Select(cell => cell.Key).ToHashSet();
+        if (specColumns.Count == 0 || archive.GetEntry("xl/styles.xml") is not { } entry) return;
+        using var stream = entry.Open();
+        var styles = XDocument.Load(stream);
+        var formats = styles.Descendants(SpreadsheetNs + "numFmt").ToDictionary(
+            element => (string?)element.Attribute("numFmtId") ?? "", element => (string?)element.Attribute("formatCode") ?? "");
+        formats["2"] = "0.00";
+        var cellFormats = styles.Descendants(SpreadsheetNs + "cellXfs").Elements(SpreadsheetNs + "xf").ToArray();
+        for (var i = 1; i < sheetRows.Length; i++)
+        {
+            foreach (var cell in sheetRows[i].Elements(SpreadsheetNs + "c"))
+            {
+                var column = ColumnIndex((string?)cell.Attribute("r"));
+                if (!column.HasValue || !specColumns.Contains(column.Value) ||
+                    (string?)cell.Attribute("t") is "s" or "str" or "inlineStr" or "b" ||
+                    !int.TryParse((string?)cell.Attribute("s") ?? "0", out var index) || index < 0 || index >= cellFormats.Length) continue;
+                var format = formats.GetValueOrDefault((string?)cellFormats[index].Attribute("numFmtId") ?? "");
+                var match = Regex.Match(format ?? "", "^0\\.(0+)$");
+                if (!match.Success || !decimal.TryParse(rows[i].GetValueOrDefault(column.Value), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)) continue;
+                var decimals = Math.Max((decimal.GetBits(value)[3] >> 16) & 0xff, match.Groups[1].Length);
+                if (decimals <= 28) rows[i][column.Value] = value.ToString($"F{decimals}", CultureInfo.InvariantCulture);
+            }
+        }
     }
 
     private static IReadOnlyList<string> ReadSharedStrings(ZipArchive archive)

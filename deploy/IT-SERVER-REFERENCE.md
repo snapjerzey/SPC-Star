@@ -72,6 +72,10 @@ The `-BackupTime` value uses 24-hour time.
 
 ## Update
 
+For the pilot USB patch, run the single `UPDATE-SPCSTAR.ps1` supplied in the current patch folder as Administrator. Do not run the source-project install/update scripts as an additional step. The supplied patch replaces app files, refreshes setup from its current workbook with `replaceSetup=true`, and restarts the existing Windows Service workflow. It preserves production history and live data; it is not a delete/reinstall procedure. Do not manually import the same workbook again after a successful patch.
+
+The commands below are for source-project deployment, not the packaged USB patch.
+
 Run from the updated SPC-Star project/update package folder on the server:
 
 ```powershell
@@ -246,6 +250,8 @@ The password should be changed after server setup.
 
 ## Current Inspection Behavior
 
+Current in-app Operator, Line Tech, and QA SOPs (English and Spanish) are maintained in `src/SPCStar.Api/wwwroot/index.html`, with matching reference copies in `docs/sops`. The SOP revision is October 14, 2026. Updating local files does not deploy them to the pilot; IT must install the next packaged patch.
+
 - Operators select the shift they are actually working at login.
 - Operators select job, machine, part, operation, and inspection phase before entering measurements.
 - Attribute inspections are entered as one lot disposition, Accept or Reject.
@@ -255,6 +261,11 @@ The password should be changed after server setup.
 - Full lockouts are created for out-of-spec measured values and rejected attributes.
 - Process drift appears beside the inspection variable as a warning and is recorded for history/top-issue review, but it does not create the full lock screen.
 - If an inspection fails partway through, the lock screen includes the operator/line-tech workflow to end the current inspection as failed and start a fresh inspection for the same job context.
+- Only User Error permits Clear Lock, with authorized credentials. User Error corrections do not create failure or lock-clear history events. Machine, Tooling, and Material require cause details, action taken, and End Failed Inspection, including for Archon.
+- Clear Lock and subsequent typing must respond immediately. Rejected server clear requests must restore the visible lock and explain the error; do not hide an active server lock.
+- Individual draft readings do not create completed inspections or standalone inspection ledger events. Completion numbers continue by job, part, operation, and phase across logins. Failed inspection records are red; retained lock events are orange in both history views.
+- Opening SPC-Star requires credentials; a saved draft is not a login. Do not promise cross-device draft recovery or mark queued submissions complete until confirmed by the server.
+- QA certificate options include Ethicon (saved In Process job data) and Weld Pin Cert (planning request XLSX plus full-job Keyence CSV). Test seeding is not an update requirement and must not supply production certificates.
 
 ## Quick Health Checks
 

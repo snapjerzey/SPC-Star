@@ -1,9 +1,47 @@
 using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
 using SPCStar.Core.Services;
+using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+var maintenanceWorkbook = builder.Configuration["maintenance-import-workbook"];
+if (maintenanceWorkbook is not null)
+{
+    if (!OperatingSystem.IsWindows() ||
+        !new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent())
+            .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+    {
+        Console.Error.WriteLine("Local setup maintenance requires Windows administrator access.");
+        Environment.ExitCode = 1;
+        return;
+    }
+    var maintenanceDatabase = builder.Configuration["SPCStar:DatabasePath"];
+    if (string.IsNullOrWhiteSpace(maintenanceDatabase) || !File.Exists(maintenanceDatabase))
+    {
+        Console.Error.WriteLine("The existing SPC-Star database must be specified for local setup maintenance.");
+        Environment.ExitCode = 1;
+        return;
+    }
+    try
+    {
+        var maintenanceRepository = new SqliteBackedSpcRepository(maintenanceDatabase);
+        var result = new SetupWorkbookMaintenanceService(maintenanceRepository, maintenanceRepository)
+            .Apply(maintenanceWorkbook, Environment.UserName);
+        if (!result.Succeeded)
+        {
+            Console.Error.WriteLine(string.Join(Environment.NewLine, result.Errors));
+            Environment.ExitCode = 1;
+        }
+        else Console.WriteLine("SPC-Star setup workbook updated.");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Local setup update failed: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
 builder.Host.UseWindowsService(options =>
 {
     options.ServiceName = "SPC-Star";
@@ -37,6 +75,8 @@ builder.Services.AddSingleton<SetupTemplateExportService>();
 builder.Services.AddSingleton<InspectionMeasurementService>();
 builder.Services.AddSingleton<AlertOverrideService>();
 builder.Services.AddSingleton<QaSummaryExportService>();
+builder.Services.AddSingleton<EthiconCoaPreviewService>();
+builder.Services.AddSingleton<WeldPinCertService>();
 builder.Services.AddSingleton<MaterialChangeLogService>();
 builder.Services.AddSingleton<JobNoteService>();
 builder.Services.AddSingleton<JobHistoryService>();
@@ -47,17 +87,22 @@ builder.Services.AddSingleton<HistoryExportService>();
 builder.Services.AddSingleton<HistoryIssueSummaryService>();
 builder.Services.AddSingleton<SetupQueryService>();
 builder.Services.AddSingleton<SetupManagementService>();
+builder.Services.AddSingleton<SetupWriteEndpoint>();
+builder.Services.AddSingleton<ChangeHistoryService>();
 builder.Services.AddSingleton<OfflineSyncService>();
+builder.Services.AddSingleton<IAuthSessionStore>(new SqliteAuthSessionStore(Path.ChangeExtension(repository.StoragePath, ".sessions.db")));
 builder.Services.AddSingleton<AuthSessionService>();
 builder.Services.AddSingleton<WorkContextService>();
 builder.Services.AddSingleton<JobReviewService>();
+builder.Services.AddSingleton<PartQualityService>();
 builder.Services.AddSingleton(provider => new BackupService(
     provider.GetRequiredService<ISpcRepository>(),
     provider.GetRequiredService<IRepositoryPersistence>(),
     provider.GetRequiredService<CredentialService>(),
     provider.GetRequiredService<PermissionService>(),
     backupPath,
-    quarantinePath));
+    quarantinePath,
+    provider.GetRequiredService<ChangeHistoryService>()));
 builder.Services.AddSingleton(provider => new ArchiveService(
     provider.GetRequiredService<ISpcRepository>(),
     provider.GetRequiredService<CredentialService>(),
@@ -70,9 +115,25 @@ SeedData.SeedAll(app.Services.GetRequiredService<ISpcRepository>());
 app.Services.GetRequiredService<IRepositoryPersistence>().SaveChanges();
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseMiddleware<WriteAccessMiddleware>();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        if (context.File.Name is "index.html" or "app.js" or "styles.css")
+        {
+            context.Context.Response.Headers.CacheControl = "no-store";
+        }
+    }
+});
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", app = "SPC Star" }));
+app.MapGet("/health", (HttpContext context) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(new { status = "ok", app = "SPC Star", version = ApplicationVersion.Current });
+});
+app.MapChangeHistory();
+app.MapJobNotesReview();
 
 app.MapPost("/admin/backups", (BackupRequest request, HttpContext httpContext, IRepositoryPersistence persistence) =>
 {
@@ -96,17 +157,15 @@ app.MapPost("/setup/archive/preview", (ArchivePreviewRequest request, ArchiveSer
     return Results.Ok(service.Preview(request));
 });
 
-app.MapPost("/setup/archive", (CreateArchiveRequest request, ArchiveService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/archive", (CreateArchiveRequest request, ArchiveService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.Create(request);
-    if (result.Succeeded)
+    return audit.Observe(request.ArchiveUserName, "Archive", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { archived = false, errors = result.Errors });
+        var result = service.Create(request);
+        return result.Succeeded
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { archived = false, errors = result.Errors });
+    }, actionOnly: true);
 });
 
 app.MapGet("/setup/archive/files/{fileName}", (string fileName, ArchiveService service) =>
@@ -163,38 +222,41 @@ app.MapPost("/auth/login", (LoginRequest request, AuthSessionService service) =>
         : Results.Unauthorized();
 });
 
-app.MapGet("/auth/me", (string userName, AuthSessionService service) =>
+app.MapGet("/auth/me", (string userName, HttpContext context, AuthSessionService service) =>
 {
-    var result = service.CurrentUser(userName);
+    context.Response.Headers.CacheControl = "no-store";
+    var result = service.CurrentUser(userName, context.Request.Headers["X-SPCStar-Session"].ToString());
     return result.Succeeded
         ? Results.Ok(result.Value)
-        : Results.NotFound(new { errors = result.Errors });
+        : Results.Unauthorized();
 });
 
-app.MapPost("/auth/change-password", (ChangePasswordRequest request, AuthSessionService service, IRepositoryPersistence persistence) =>
+app.MapPost("/auth/logout", (HttpContext context, AuthSessionService service) =>
 {
-    var result = service.ChangePassword(request);
-    if (result.Succeeded)
-    {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(new { changed = true })
-        : Results.BadRequest(new { changed = false, errors = result.Errors });
+    service.Logout(context.Request.Headers["X-SPCStar-User"].ToString(),
+        context.Request.Headers["X-SPCStar-Session"].ToString());
+    return Results.NoContent();
 });
 
-app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService service, IRepositoryPersistence persistence) =>
+app.MapPost("/auth/change-password", (ChangePasswordRequest request, AuthSessionService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.ImportCsv(request.Csv);
-    if (result.Succeeded)
+    return audit.Observe(request.UserName, "Users", () =>
     {
-        persistence.SaveChanges();
-    }
+        var result = service.ChangePassword(request);
+        return result.Succeeded
+            ? Results.Ok(new { changed = true })
+            : Results.BadRequest(new { changed = false, errors = result.Errors });
+    });
+});
 
-    return result.Succeeded
-        ? Results.Ok(new { imported = true })
-        : Results.BadRequest(new { imported = false, errors = result.Errors });
+app.MapPost("/setup/import-csv", (CsvImportRequest request, SetupImportService service, HttpContext context, SetupWriteEndpoint audit) =>
+{
+    return audit.Run(context, "Parts & Inspections CSV imported", () =>
+    {
+        var result = service.ImportCsv(request.Csv);
+        return result.Succeeded ? Results.Ok(new { imported = true })
+            : Results.BadRequest(new { imported = false, errors = result.Errors });
+    }, isImport: true);
 });
 
 app.MapGet("/setup/export-template.csv", (SetupTemplateExportService service) =>
@@ -205,8 +267,10 @@ app.MapGet("/setup/export-template.csv", (SetupTemplateExportService service) =>
         $"spc-star-parts-inspections-export-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
 });
 
-app.MapPost("/setup/import-xlsx", async (IFormFile file, bool? replaceSetup, SetupImportService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/import-xlsx", async (IFormFile file, bool? replaceSetup, SetupImportService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
+    var actor = audit.ResolveActor(context, isImport: true);
+    if (!actor.Succeeded) return Results.Json(new { errors = actor.Errors }, statusCode: 403);
     if (file.Length == 0)
     {
         return Results.BadRequest(new { imported = false, errors = new[] { "Select an Excel workbook to import." } });
@@ -216,20 +280,12 @@ app.MapPost("/setup/import-xlsx", async (IFormFile file, bool? replaceSetup, Set
     {
         await using var stream = file.OpenReadStream();
         var csv = XlsxImportSupport.ReadImportSheetAsCsv(stream);
-        if (replaceSetup == true)
+        return audit.Run(context, $"Parts & Inspections workbook imported: {Path.GetFileName(file.FileName)}", () =>
         {
-            service.ClearSetupMasterData();
-        }
-
-        var result = service.ImportCsv(csv);
-        if (result.Succeeded)
-        {
-            persistence.SaveChanges();
-        }
-
-        return result.Succeeded
-            ? Results.Ok(new { imported = true })
-            : Results.BadRequest(new { imported = false, errors = result.Errors });
+            var result = service.ImportCsv(csv, replaceSetup == true);
+            return result.Succeeded ? Results.Ok(new { imported = true })
+                : Results.BadRequest(new { imported = false, errors = result.Errors });
+        }, isImport: true);
     }
     catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
     {
@@ -281,20 +337,18 @@ app.MapGet("/setup/settings", (SetupManagementService service) =>
     return Results.Ok(service.GetSettings());
 });
 
-app.MapPost("/setup/settings", (UpdateSettingsRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/settings", (UpdateSettingsRequest request, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.UpdateSettings(request);
-    if (result.Succeeded)
+    return audit.Observe(audit.RequestActor(context), "Rules", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpdateSettings(request);
+        return result.Succeeded
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapPost("/setup/users", (UpsertUserRequest request, AuthSessionService authService, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/users", (UpsertUserRequest request, AuthSessionService authService, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
     var sessionError = RejectInvalidUserManagementSession(request.ActingUserName, request.ActingSessionToken, authService);
     if (sessionError is not null)
@@ -302,18 +356,16 @@ app.MapPost("/setup/users", (UpsertUserRequest request, AuthSessionService authS
         return sessionError;
     }
 
-    var result = service.UpsertUser(request);
-    if (result.Succeeded)
+    return audit.Observe(request.ActingUserName!, "Users", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpsertUser(request);
+        return result.Succeeded
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapPost("/setup/users/reset-password", (ResetUserPasswordRequest request, AuthSessionService authService, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/users/reset-password", (ResetUserPasswordRequest request, AuthSessionService authService, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
     var sessionError = RejectInvalidUserManagementSession(request.ActingUserName, request.ActingSessionToken, authService);
     if (sessionError is not null)
@@ -321,32 +373,30 @@ app.MapPost("/setup/users/reset-password", (ResetUserPasswordRequest request, Au
         return sessionError;
     }
 
-    var result = service.ResetUserPassword(request);
-    if (result.Succeeded)
+    return audit.Observe(request.ActingUserName!, "Users", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.ResetUserPassword(request);
+        return result.Succeeded
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapPost("/setup/resources", (UpsertResourceMachineRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/resources", (UpsertResourceMachineRequest request, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.UpsertResource(request);
-    if (result.Succeeded)
+    return audit.Observe(audit.RequestActor(context), "Machines", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpsertResource(request);
+        return result.Succeeded
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapPost("/setup/resources/import-xlsx", async (IFormFile file, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/resources/import-xlsx", async (IFormFile file, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
+    var actor = audit.ResolveActor(context, isImport: true);
+    if (!actor.Succeeded) return Results.Json(new { errors = actor.Errors }, statusCode: 403);
     if (file.Length == 0)
     {
         return Results.BadRequest(new { imported = false, errors = new[] { "Select a machine workbook to import." } });
@@ -356,15 +406,13 @@ app.MapPost("/setup/resources/import-xlsx", async (IFormFile file, SetupManageme
     {
         await using var stream = file.OpenReadStream();
         var csv = XlsxImportSupport.ReadImportSheetAsCsv(stream, "SPC-Star Machine Import");
-        var result = service.ImportResourcesCsv(csv);
-        if (result.Succeeded)
+        return audit.Run(context, $"Machine workbook imported: {Path.GetFileName(file.FileName)}", () =>
         {
-            persistence.SaveChanges();
-        }
-
-        return result.Succeeded
-            ? Results.Ok(new { imported = true, count = result.Value!.Imported })
-            : Results.BadRequest(new { imported = false, errors = result.Errors });
+            var result = service.ImportResourcesCsv(csv);
+            return result.Succeeded
+                ? Results.Ok(new { imported = true, count = result.Value!.Imported })
+                : Results.BadRequest(new { imported = false, errors = result.Errors });
+        }, isImport: true);
     }
     catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
     {
@@ -372,13 +420,10 @@ app.MapPost("/setup/resources/import-xlsx", async (IFormFile file, SetupManageme
     }
 }).DisableAntiforgery();
 
-app.MapPost("/setup/users/import-xlsx", async (IFormFile file, string? actingUserName, string? actingSessionToken, AuthSessionService authService, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/users/import-xlsx", async (IFormFile file, HttpContext context, SetupWriteEndpoint audit, SetupManagementService service) =>
 {
-    var sessionError = RejectInvalidUserManagementSession(actingUserName, actingSessionToken, authService);
-    if (sessionError is not null)
-    {
-        return sessionError;
-    }
+    var actor = audit.ResolveActor(context, isImport: true);
+    if (!actor.Succeeded) return Results.Json(new { errors = actor.Errors }, statusCode: 403);
 
     if (file.Length == 0)
     {
@@ -389,15 +434,13 @@ app.MapPost("/setup/users/import-xlsx", async (IFormFile file, string? actingUse
     {
         await using var stream = file.OpenReadStream();
         var csv = XlsxImportSupport.ReadImportSheetAsCsv(stream, "SPC-Star User Import");
-        var result = service.ImportUsersCsv(csv, actingUserName);
-        if (result.Succeeded)
+        return audit.Run(context, $"User workbook imported: {Path.GetFileName(file.FileName)}", () =>
         {
-            persistence.SaveChanges();
-        }
-
-        return result.Succeeded
-            ? Results.Ok(new { imported = true, count = result.Value!.Imported })
-            : Results.BadRequest(new { imported = false, errors = result.Errors });
+            var result = service.ImportUsersCsv(csv, actor.Value);
+            return result.Succeeded
+                ? Results.Ok(new { imported = true, count = result.Value!.Imported })
+                : Results.BadRequest(new { imported = false, errors = result.Errors });
+        }, isImport: true);
     }
     catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
     {
@@ -405,7 +448,7 @@ app.MapPost("/setup/users/import-xlsx", async (IFormFile file, string? actingUse
     }
 }).DisableAntiforgery();
 
-app.MapDelete("/setup/users/{userName}", (string userName, string? actingUserName, string? actingSessionToken, AuthSessionService authService, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapDelete("/setup/users/{userName}", (string userName, string? actingUserName, string? actingSessionToken, AuthSessionService authService, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
     var sessionError = RejectInvalidUserManagementSession(actingUserName, actingSessionToken, authService);
     if (sessionError is not null)
@@ -413,54 +456,42 @@ app.MapDelete("/setup/users/{userName}", (string userName, string? actingUserNam
         return sessionError;
     }
 
-    var result = service.DeleteUser(userName, actingUserName);
-    if (result.Succeeded)
+    return audit.Observe(actingUserName!, "Users", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.NoContent()
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.DeleteUser(userName, actingUserName);
+        return result.Succeeded
+            ? Results.NoContent()
+            : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapDelete("/setup/resources/{resourceId}", (string resourceId, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapDelete("/setup/resources/{resourceId}", (string resourceId, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.DeleteResource(resourceId);
-    if (result.Succeeded)
+    return audit.Observe(audit.RequestActor(context), "Machines", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.NoContent()
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.DeleteResource(resourceId);
+        return result.Succeeded
+            ? Results.NoContent()
+            : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapPost("/setup/inspection-plans", (UpsertInspectionSetupRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/inspection-plans", (UpsertInspectionSetupRequest request, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.UpsertInspectionSetup(request);
-    if (result.Succeeded)
+    return audit.Run(context, "Parts & Inspections", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpsertInspectionSetup(request);
+        return result.Succeeded ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapPost("/setup/inspection-plans/delete-phase", (DeleteInspectionSetupPhaseRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/inspection-plans/delete-phase", (DeleteInspectionSetupPhaseRequest request, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.DeleteInspectionSetupPhase(request);
-    if (result.Succeeded)
+    return audit.Run(context, "Parts & Inspections", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.NoContent()
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.DeleteInspectionSetupPhase(request);
+        return result.Succeeded ? Results.NoContent() : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
 app.MapGet("/setup/parts", (SetupQueryService service) =>
@@ -472,6 +503,7 @@ app.MapGet("/setup/inspection-plans", (string? partNum, SetupQueryService servic
 {
     return Results.Ok(service.GetInspectionPlans(partNum));
 });
+
 
 app.MapGet("/sync/setup-snapshot", (SetupQueryService service) =>
 {
@@ -506,7 +538,7 @@ app.MapPost("/inspections/complete", (CompleteInspectionRequest request, Inspect
 
 app.MapPost("/inspections/fail", (FailInspectionRequest request, InspectionMeasurementService service, IRepositoryPersistence persistence) =>
 {
-    var result = service.FailInspection(request);
+    var result = service.FailInspectionWithSignoff(request);
     if (result.Succeeded)
     {
         persistence.SaveChanges();
@@ -534,26 +566,30 @@ app.MapPatch("/material-changes/{materialChangeId:guid}/lot", (
     Guid materialChangeId,
     UpdateMaterialLotRequest request,
     MaterialChangeLogService service,
-    IRepositoryPersistence persistence) =>
+    HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.UpdateLot(materialChangeId, request);
-    if (result.Succeeded)
+    return audit.Observe(audit.RequestActor(context, request.EditedByUserId), "Inspection Corrections", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpdateLot(materialChangeId, request);
+        return result.Succeeded
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    }, target: new("MaterialLot", materialChangeId));
 });
 
-app.MapGet("/jobs/{jobNum}/notes", (string jobNum, JobNoteService service) =>
+app.MapGet("/jobs/{jobNum}/notes", (string jobNum, JobNoteService service, HttpContext context, AuthSessionService auth) =>
 {
+    if (!auth.ValidateSession(context.Request.Headers["X-SPCStar-User"].ToString(),
+        context.Request.Headers["X-SPCStar-Session"].ToString()))
+        return Results.Json(new { errors = new[] { "Sign in to view job notes." } }, statusCode: 401);
     return Results.Ok(service.GetForJob(jobNum));
 });
 
-app.MapGet("/jobs/{jobNum}/history", (string jobNum, JobHistoryService service) =>
+app.MapGet("/jobs/{jobNum}/history", (string jobNum, JobHistoryService service, HttpContext context, AuthSessionService auth) =>
 {
+    if (!auth.ValidateSession(context.Request.Headers["X-SPCStar-User"].ToString(),
+        context.Request.Headers["X-SPCStar-Session"].ToString()))
+        return Results.Json(new { errors = new[] { "Sign in to view job history." } }, statusCode: 401);
     return Results.Ok(service.GetForJob(jobNum));
 });
 
@@ -575,35 +611,33 @@ app.MapPost("/jobs/{jobNum}/tags", (string jobNum, SaveJobTagsRequest request, J
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapPost("/setup/job-data-fields", (UpsertPartJobDataFieldRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/job-data-fields", (UpsertPartJobDataFieldRequest request, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.UpsertPartJobDataField(request);
-    if (result.Succeeded)
+    return audit.Run(context, "Parts & Inspections", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpsertPartJobDataField(request);
+        return result.Succeeded ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapPost("/setup/material-fields", (UpsertPartMaterialFieldRequest request, SetupManagementService service, IRepositoryPersistence persistence) =>
+app.MapPost("/setup/material-fields", (UpsertPartMaterialFieldRequest request, SetupManagementService service, HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.UpsertPartMaterialField(request);
-    if (result.Succeeded)
+    return audit.Run(context, "Parts & Inspections", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpsertPartMaterialField(request);
+        return result.Succeeded ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+    });
 });
 
-app.MapPost("/jobs/{jobNum}/notes", (string jobNum, JobNoteEntry request, JobNoteService service, IRepositoryPersistence persistence) =>
+app.MapPost("/jobs/{jobNum}/notes", (string jobNum, JobNoteEntry request, JobNoteService service,
+    IRepositoryPersistence persistence, HttpContext context, AuthSessionService auth) =>
 {
-    var result = service.Add(request with { JobNum = jobNum });
+    var actor = auth.CurrentUser(context.Request.Headers["X-SPCStar-User"].ToString(),
+        context.Request.Headers["X-SPCStar-Session"].ToString());
+    if (!actor.Succeeded)
+        return Results.Json(new { errors = new[] { "Sign in to submit a job note." } }, statusCode: 401);
+    var result = service.Add(request with { JobNum = jobNum,
+        OperatorUserId = actor.Value!.UserName, Timestamp = DateTimeOffset.UtcNow });
     if (result.Succeeded)
     {
         persistence.SaveChanges();
@@ -675,6 +709,12 @@ app.MapPost("/charts/data", (ChartDataRequest request, ChartDataService service)
     return Results.Ok(service.Build(request));
 });
 
+app.MapPost("/history/part-quality", (PartQualityRequest request, PartQualityService service) =>
+{
+    var result = service.Build(request);
+    return result.Succeeded ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+});
+
 app.MapPost("/qa/summary", (QaSummaryExportRequest request, QaSummaryExportService service) =>
 {
     var result = service.BuildSummary(request);
@@ -723,17 +763,158 @@ app.MapGet("/qa/job-variable-means.csv", (string jobNums, QaSummaryExportService
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapGet("/review/job", (string partNum, string jobNum, JobReviewService service) =>
+app.MapPost("/certs/ethicon/preview", async ([FromForm] IFormFile shipmentFile, [FromForm] IFormFile masterFile, [FromForm] string family, EthiconCoaPreviewService service) =>
 {
-    var result = service.Build(partNum, jobNum);
+    if (shipmentFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select an Ethicon CE or TP shipment workbook." } });
+    }
+
+    if (masterFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select the Bihler shipment master workbook." } });
+    }
+
+    await using var shipmentStream = shipmentFile.OpenReadStream();
+    await using var masterStream = masterFile.OpenReadStream();
+    var result = service.Preview(family, shipmentStream, masterStream);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+}).DisableAntiforgery();
+
+app.MapPost("/certs/ethicon/generate", async (
+    [FromForm] IFormFile shipmentFile,
+    [FromForm] IFormFile masterFile,
+    [FromForm] string family,
+    [FromForm] string partNum,
+    [FromForm] string wireShipment,
+    EthiconCoaPreviewService service) =>
+{
+    if (shipmentFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select an Ethicon CE or TP shipment workbook." } });
+    }
+
+    if (masterFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select the Bihler shipment master workbook." } });
+    }
+
+    var templatePath = EthiconTemplatePath(builder.Environment.ContentRootPath, family);
+    if (templatePath is null || !File.Exists(templatePath))
+    {
+        return Results.BadRequest(new { errors = new[] { "The Ethicon COA template is not installed for the selected family." } });
+    }
+
+    await using var shipmentStream = shipmentFile.OpenReadStream();
+    await using var masterStream = masterFile.OpenReadStream();
+    await using var templateStream = File.OpenRead(templatePath);
+    var result = service.Generate(family, shipmentStream, masterStream, templateStream, partNum, wireShipment);
+    return result.Succeeded
+        ? Results.File(result.Value!.Content, result.Value.ContentType, result.Value.FileName)
+        : Results.BadRequest(new { errors = result.Errors });
+}).DisableAntiforgery();
+
+app.MapPost("/certs/weld-pin/preview", async (
+    [FromForm] IFormFile requestFile,
+    [FromForm] IFormFile keyenceFile,
+    WeldPinCertService service) =>
+{
+    if (requestFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select the Weld Pin Production Planning cert request workbook." } });
+    }
+
+    if (keyenceFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select the full-job Keyence CSV export." } });
+    }
+
+    await using var requestStream = requestFile.OpenReadStream();
+    await using var keyenceStream = keyenceFile.OpenReadStream();
+    var result = service.Preview(requestStream, keyenceStream);
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+}).DisableAntiforgery();
+
+app.MapPost("/certs/weld-pin/generate", async (
+    [FromForm] IFormFile requestFile,
+    [FromForm] IFormFile keyenceFile,
+    WeldPinCertService service) =>
+{
+    if (requestFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select the Weld Pin Production Planning cert request workbook." } });
+    }
+
+    if (keyenceFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select the full-job Keyence CSV export." } });
+    }
+
+    var templatePath = WeldPinTemplatePath(builder.Environment.ContentRootPath);
+    if (!File.Exists(templatePath))
+    {
+        return Results.BadRequest(new { errors = new[] { "The Weld Pin cert template is not installed." } });
+    }
+
+    await using var requestStream = requestFile.OpenReadStream();
+    await using var keyenceStream = keyenceFile.OpenReadStream();
+    await using var templateStream = File.OpenRead(templatePath);
+    var result = service.Generate(requestStream, keyenceStream, templateStream);
+    return result.Succeeded
+        ? Results.File(result.Value!.Content, result.Value.ContentType, result.Value.FileName)
+        : Results.BadRequest(new { errors = result.Errors });
+}).DisableAntiforgery();
+
+app.MapPost("/certs/ethicon/seed-test-data", async (
+    HttpContext httpContext,
+    [FromForm] IFormFile shipmentFile,
+    [FromForm] string family,
+    [FromForm] string? resourceId,
+    EthiconCoaPreviewService service,
+    IRepositoryPersistence persistence) =>
+{
+    var remoteAddress = httpContext.Connection.RemoteIpAddress;
+    if (remoteAddress is null || !System.Net.IPAddress.IsLoopback(remoteAddress))
+    {
+        return Results.NotFound();
+    }
+
+    if (shipmentFile.Length == 0)
+    {
+        return Results.BadRequest(new { errors = new[] { "Select an Ethicon CE or TP shipment workbook." } });
+    }
+
+    await using var shipmentStream = shipmentFile.OpenReadStream();
+    var result = service.SeedTestData(family, shipmentStream, resourceId);
+    if (result.Succeeded)
+    {
+        persistence.SaveChanges();
+    }
+
+    return result.Succeeded
+        ? Results.Ok(result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+}).DisableAntiforgery();
+
+app.MapGet("/review/job", (string partNum, string jobNum, JobReviewService service, string? shift,
+    string? processCode, int? operationSeq, string? inspectionPhase, string? resourceId,
+    string? characteristicName, DateTimeOffset? from, DateTimeOffset? to) =>
+{
+    var result = service.Build(partNum, jobNum, shift, new(processCode, operationSeq, inspectionPhase, resourceId, characteristicName, from, to));
     return result.Succeeded
         ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 });
 
-app.MapGet("/review/part", (string partNum, QaSummaryExportService service) =>
+app.MapGet("/review/part", (string partNum, QaSummaryExportService service, string? shift,
+    string? processCode, int? operationSeq, string? inspectionPhase, string? resourceId,
+    string? characteristicName, DateTimeOffset? from, DateTimeOffset? to) =>
 {
-    var result = service.BuildPartCapability(partNum);
+    var result = service.BuildPartCapability(partNum, shift, new(processCode, operationSeq, inspectionPhase, resourceId, characteristicName, from, to));
     return result.Succeeded
         ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
@@ -743,34 +924,30 @@ app.MapPatch("/review/measurements/{measurementId:guid}", (
     Guid measurementId,
     UpdateInspectionMeasurementRequest request,
     JobReviewService service,
-    IRepositoryPersistence persistence) =>
+    HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.UpdateMeasurement(measurementId, request);
-    if (result.Succeeded)
+    return audit.Observe(audit.RequestActor(context, request.EditedByUserId), "Inspection Corrections", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpdateMeasurement(measurementId, request);
+        return result.Succeeded
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    }, target: new("Measurement", measurementId), reason: request.Reason);
 });
 
 app.MapPatch("/review/completions/{completionId:guid}/machine-counter", (
     Guid completionId,
     UpdateMachineCounterRequest request,
     JobReviewService service,
-    IRepositoryPersistence persistence) =>
+    HttpContext context, SetupWriteEndpoint audit) =>
 {
-    var result = service.UpdateMachineCounter(completionId, request);
-    if (result.Succeeded)
+    return audit.Observe(audit.RequestActor(context, request.EditedByUserId), "Inspection Corrections", () =>
     {
-        persistence.SaveChanges();
-    }
-
-    return result.Succeeded
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+        var result = service.UpdateMachineCounter(completionId, request);
+        return result.Succeeded
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    }, target: new("MachineCounter", completionId), reason: request.Reason);
 });
 
 app.MapPost("/exports/inspection-data.csv", (InspectionHistoryExportRequest request, HistoryExportService service) =>
@@ -831,6 +1008,23 @@ static string[] SplitCsv(string value)
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
+}
+
+static string? EthiconTemplatePath(string contentRootPath, string family)
+{
+    var fileName = family.Equals("CE", StringComparison.OrdinalIgnoreCase)
+        ? "QF-E112-CE-5-Digits-Epicor.xlsm"
+        : family.Equals("TP", StringComparison.OrdinalIgnoreCase)
+            ? "QF-E113-TP-5-Digits-Epicor.xlsm"
+            : null;
+    return fileName is null
+        ? null
+        : Path.Combine(contentRootPath, "CertTemplates", "Ethicon", fileName);
+}
+
+static string WeldPinTemplatePath(string contentRootPath)
+{
+    return Path.Combine(contentRootPath, "CertTemplates", "WeldPin", "Weld Pin Cert Template.xlsx");
 }
 
 static string FindProjectRoot(string startPath)

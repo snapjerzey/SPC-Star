@@ -17,4 +17,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SPCStar.Core\SPCStar.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\schneider-source-corrections-20261015.csv" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\l3-six-readings-20261015.csv" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\l3-source-sampling-20261016.csv" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\ce-visual-20261015.csv" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\source-alignment*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

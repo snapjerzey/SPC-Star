@@ -2,6 +2,7 @@ using SPCStar.Core.Domain;
 using SPCStar.Core.Infrastructure;
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
 
 namespace SPCStar.Core.Services;
 
@@ -29,7 +30,12 @@ public sealed record InspectionPlanSetupDto(
     int FrequencyValue,
     FrequencyUnit FrequencyUnit,
     int? FirstDueValue,
-    string AlertRuleSet);
+    string AlertRuleSet,
+    IReadOnlyList<string>? GagePinDiameters = null)
+{
+    public string? LslText => Lsl?.ToString(CultureInfo.InvariantCulture);
+    public string? UslText => Usl?.ToString(CultureInfo.InvariantCulture);
+}
 
 public sealed record ProcessSetupDto(Guid Id, string ProcessCode, string Description);
 
@@ -67,21 +73,22 @@ public sealed record CustomDriftRuleSetupDto(
     string Direction,
     bool IncludeWesternElectric,
     string WarningBehavior,
-    string Notes);
+    string Notes,
+    CustomWatchOptions? Options = null);
 
 public sealed record CapabilityThresholdSetupDto(decimal YellowMinimum, decimal GreenMinimum);
 
 public sealed record SettingsSetupDto(
     string GlobalAlertRuleSet,
-    CustomDriftRuleSetupDto CustomDriftRule,
-    CapabilityThresholdSetupDto CapabilityThresholds);
+    CustomDriftRuleSetupDto CustomDriftRule);
 
 public sealed record PartJobDataFieldSetupDto(
     string PartNum,
     string InspectionPhase,
     string FieldName,
     bool IsRequired,
-    int DisplayOrder);
+    int DisplayOrder,
+    string? Instruction = null);
 
 public sealed record PartMaterialFieldSetupDto(
     string PartNum,
@@ -166,9 +173,17 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 plan.Frequency.Value,
                 plan.Frequency.Unit,
                 plan.Frequency.FirstDueValue,
-                plan.AlertRuleSet);
+                plan.AlertRuleSet,
+                PinDiameters(part, characteristic));
 
         return query.ToArray();
+    }
+
+    private static IReadOnlyList<string>? PinDiameters(Part part, Characteristic characteristic)
+    {
+        if (GagePinBlockRules.TryResolveBlock(part.ProductGroup, characteristic.Name, characteristic.InspectionMethod, part.HoleSize) is null) return null;
+        return Enumerable.Range(1, 7).Select(pin => GagePinBlockRules.TryMapPinToDiameter(
+            part.ProductGroup, characteristic.Name, characteristic.InspectionMethod, part.HoleSize, pin)!.Value.ToString("F4", CultureInfo.InvariantCulture)).ToArray();
     }
 
     public SetupSnapshotDto GetSetupSnapshot(DateTimeOffset? generatedAt = null)
@@ -236,7 +251,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
              join part in repository.Parts on field.PartId equals part.Id
              where !IsRedundantJobDataField(field.FieldName)
              orderby part.PartNum, field.InspectionPhase, field.DisplayOrder, field.FieldName
-             select new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder))
+             select new PartJobDataFieldSetupDto(part.PartNum, field.InspectionPhase, field.FieldName, field.IsRequired, field.DisplayOrder, field.Instruction))
             .ToArray();
         var materialFields =
             (from field in repository.PartMaterialFields
@@ -267,7 +282,6 @@ public sealed class SetupQueryService(ISpcRepository repository)
     private SettingsSetupDto SettingsDto()
     {
         var custom = repository.Settings.CustomDriftRule;
-        var capability = repository.Settings.CapabilityThresholds;
         return new SettingsSetupDto(
             repository.Settings.GlobalAlertRuleSet,
             new CustomDriftRuleSetupDto(
@@ -278,10 +292,7 @@ public sealed class SetupQueryService(ISpcRepository repository)
                 custom.Direction,
                 custom.IncludeWesternElectric,
                 custom.WarningBehavior,
-                custom.Notes),
-            new CapabilityThresholdSetupDto(
-                capability.YellowMinimum,
-                capability.GreenMinimum));
+                custom.Notes, custom.Options));
     }
 
     private IReadOnlyList<string> LoadedProductGroups()
